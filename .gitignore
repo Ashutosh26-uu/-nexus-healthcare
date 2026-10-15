@@ -1,0 +1,29 @@
+.neon
+.env.local
+
+# Secrets — never commit (examples are fine)
+.env
+.env.*
+!.env.example
+!.env.production.example
+server/.env
+
+# Dependencies & builds
+node_modules/
+client/dist/
+catalyst-build/
+
+# Local data (SQLite database, uploads)
+server/data/
+*.db
+*.db-*
+
+# Claude Code per-user settings
+.claude/settings.local.json
+
+# OS / editor / logs
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

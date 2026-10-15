@@ -1,0 +1,98 @@
+import { createContext, useContext } from 'react';
+import { Check } from 'lucide-react';
+import { useLive } from '../../live';
+import { cx, fmtDateTime } from '../../components/ui';
+import QR from '../../components/QR';
+
+/* ---------- patient context (active family profile + home payload) ---------- */
+export const PatientContext = createContext(null);
+export const usePatient = () => useContext(PatientContext);
+
+// useLive that refetches when the active family profile changes.
+export function usePatientLive(url, topics) {
+  const { profileKey } = usePatient();
+  return useLive(url, topics, [profileKey]);
+}
+
+export const HOME_TOPICS = ['consults', 'queue', 'prescriptions', 'pharmacy', 'consents', 'records', 'lab', 'dispatch', 'advisories'];
+
+export const LANGUAGES = ['Hindi', 'English', 'Bengali', 'Marathi', 'Telugu', 'Tamil', 'Gujarati', 'Urdu', 'Kannada', 'Odia', 'Malayalam', 'Punjabi', 'Assamese', 'Awadhi', 'Bhojpuri', 'Maithili'];
+export const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'Unknown'];
+export const SPEECH_LANG = { Hindi: 'hi-IN', English: 'en-IN', Bengali: 'bn-IN', Marathi: 'mr-IN', Telugu: 'te-IN', Tamil: 'ta-IN', Gujarati: 'gu-IN', Urdu: 'ur-IN', Kannada: 'kn-IN', Malayalam: 'ml-IN', Punjabi: 'pa-IN', Odia: 'or-IN', Awadhi: 'hi-IN', Bhojpuri: 'hi-IN', Maithili: 'hi-IN', Assamese: 'as-IN' };
+
+export const firstName = (name = '') => name.split(/\s+/)[0] || '';
+export const splitList = (v) => String(v || '').split(',').map((s) => s.trim()).filter(Boolean);
+
+export function greeting(d = new Date()) {
+  const h = d.getHours();
+  if (h < 5) return 'Still up';
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+/* ---------- prescription status tracker ---------- */
+export function rxSteps(rx) {
+  const pickup = rx.fulfilment === 'pickup';
+  return pickup
+    ? [
+      { key: 'issued', label: 'Issued' },
+      { key: 'sent', label: 'Sent to pharmacy' },
+      { key: 'dispensed', label: 'Packed' },
+      { key: 'collected', label: 'Collected' },
+    ]
+    : [
+      { key: 'issued', label: 'Issued' },
+      { key: 'sent', label: 'Sent to pharmacy' },
+      { key: 'dispensed', label: 'Packed' },
+      { key: 'out_for_delivery', label: 'On the way' },
+      { key: 'delivered', label: 'Delivered' },
+    ];
+}
+
+export function RxTracker({ rx, compact }) {
+  const steps = rxSteps(rx);
+  let idx = steps.findIndex((s) => s.key === rx.status);
+  if (idx < 0 && (rx.status === 'delivered' || rx.status === 'collected')) idx = steps.length - 1;
+  if (idx < 0) idx = 0;
+  return (
+    <ol className={cx('pt-track', compact && 'compact')} aria-label="Prescription progress">
+      {steps.map((s, i) => {
+        const state = i < idx ? 'done' : i === idx ? 'current' : '';
+        const at = rx[`${s.key}At`] || (s.key === 'issued' ? rx.createdAt : s.key === 'sent' ? rx.orderedAt : null);
+        return (
+          <li key={s.key} className={cx('pt-track-step', state)}>
+            <span className="pt-track-dot">{i <= idx ? <Check size={12} strokeWidth={3} /> : null}</span>
+            <span className="pt-track-label">{s.label}</span>
+            {!compact && at && i <= idx && <span className="pt-track-time">{fmtDateTime(at)}</span>}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+// Real, scannable QR (was a decorative pattern). Kept the same API for every caller.
+export function PassportQR({ value = '', size = 168, label }) {
+  return <QR value={value} size={size} label={label || `QR code for health passport ${value}`} className="pt-qr" />;
+}
+
+/* ---------- skeleton block ---------- */
+export function Skeleton({ h = 18, w = '100%', r, style }) {
+  return <div className="skeleton" style={{ height: h, width: w, borderRadius: r, ...style }} aria-hidden="true" />;
+}
+
+export function PageSkeleton() {
+  return (
+    <div className="stack lg" aria-busy="true" aria-label="Loading">
+      <Skeleton h={34} w="40%" />
+      <div className="grid two">
+        <Skeleton h={160} r={14} />
+        <Skeleton h={160} r={14} />
+      </div>
+      <Skeleton h={220} r={14} />
+    </div>
+  );
+}
+
+export const relationOf = (p) => (p.self ? 'You' : p.relation || (p.age < 18 ? 'Child' : 'Family'));

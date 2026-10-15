@@ -1,0 +1,20 @@
+/* Shared stock table (pharmacy + supply) */
+.stock-table td { vertical-align: middle; }
+.stock-table .row-out { background: #fffaf8; }
+.cold-tag { margin-inline-start: 8px; height: 20px; font-size: 0.68rem; }
+.qty-input { display: inline-flex; align-items: center; gap: 6px; }
+.qty-input .input { width: 96px; font-variant-numeric: tabular-nums; font-weight: 600; border-color: transparent; background: transparent; padding: 0 8px; }
+.qty-input .input:hover { border-color: var(--line); background: #fff; }
+.qty-input .input:focus { background: #fff; }
+.qty-input.saving .input { opacity: 0.6; }
+.stock-level { display: flex; flex-direction: column; gap: 5px; min-width: 130px; }
+.stock-level .lvl-out, .stock-level .lvl-low { color: #9b2c24; font-weight: 600; }
+.stock-level .lvl-watch { color: #87590b; font-weight: 600; }
+.stock-level .lvl-ok { color: var(--ink-3); }
+.stock-foot { padding: 10px 16px; border-top: 1px solid var(--line-2); background: #fcfaf6; }
+
+.scan-box { display: grid; place-items: center; padding: 10px 0 18px; }
+.scan-frame { position: relative; width: 200px; height: 130px; border-radius: 16px; background: var(--ink); color: #9fb5ae; display: grid; place-items: center; overflow: hidden; }
+.scan-frame::before { content: ''; position: absolute; inset: 12px; border: 2px dashed rgba(242, 181, 68, 0.75); border-radius: 10px; }
+.scan-line { position: absolute; inset-inline-start: 20px; inset-inline-end: 20px; height: 2px; background: var(--clay); box-shadow: 0 0 12px var(--clay); animation: scan 1.8s ease-in-out infinite alternate; }
+@keyframes scan { from { top: 22px; } to { top: calc(100% - 24px); } }

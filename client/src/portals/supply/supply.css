@@ -1,0 +1,20 @@
+/* Supply / distributor portal */
+.sup-head { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.sup-trend { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; font-size: 0.85rem; white-space: nowrap; }
+.sup-trend.up { color: #9a4524; }
+.sup-trend.hot { color: #fff; background: var(--rose); padding: 2px 8px; border-radius: 99px; }
+.sup-trend.down { color: #1d8a63; }
+.sup-trend.flat { color: var(--ink-3); }
+
+.sup-short { display: flex; gap: 14px; align-items: flex-start; }
+.sup-short-icon { width: 40px; height: 40px; border-radius: 12px; background: var(--rose-soft); color: var(--rose); display: grid; place-items: center; flex-shrink: 0; }
+.sup-short-act { align-self: center; }
+@media (max-width: 640px) { .sup-short { flex-wrap: wrap; } .sup-short-act { width: 100%; } .sup-short-act .btn { width: 100%; } }
+
+.sup-lines { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.sup-line { display: grid; grid-template-columns: 1fr 130px 38px; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line-2); }
+.sup-line.head { background: #fcfaf6; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-3); }
+.sup-add { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; background: none; padding: 10px 12px; color: var(--green); font-weight: 600; font-size: 0.86rem; cursor: pointer; }
+.sup-add:hover { background: #fcfaf6; }
+@media (max-width: 520px) { .sup-line { grid-template-columns: 1fr 90px 38px; } }

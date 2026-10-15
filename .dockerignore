@@ -1,0 +1,9 @@
+**/node_modules
+client/dist
+server/data
+server/.env
+.env*
+!.env.production.example
+.git
+.claude
+*.log

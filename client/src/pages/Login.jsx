@@ -1,0 +1,141 @@
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Smartphone, Mail, ArrowRight, ArrowLeft, Lock, ShieldCheck, ChevronRight, Eye, EyeOff } from 'lucide-react';
+import Logo from '../components/Logo';
+import LanguagePicker from '../components/LanguagePicker';
+import OtpFlow from '../components/OtpFlow';
+import { api } from '../api';
+import { useAuth, ROLE_HOME, ROLE_LABEL } from '../auth';
+import { Button, Field, cx } from '../components/ui';
+import './auth.css';
+import { usePublicConfig } from '../config';
+
+const DEMO = [
+  { role: 'patient', email: 'patient@omnicare.in', who: 'Sunita Devi', note: 'Health Passport, family, consults' },
+  { role: 'doctor', email: 'doctor@omnicare.in', who: 'Dr. Meera Iyer', note: '3 patients waiting in queue' },
+  { role: 'kiosk_operator', email: 'kiosk@omnicare.in', who: 'Pooja Verma, ASHA', note: 'E-Clinic touchscreen flow' },
+  { role: 'hospital_admin', email: 'hospital@omnicare.in', who: 'District Hospital', note: 'Beds, referrals, roster' },
+  { role: 'lab_tech', email: 'lab@omnicare.in', who: 'Barabanki Diagnostics', note: 'Orders and reports' },
+  { role: 'pharmacist', email: 'pharmacy@omnicare.in', who: 'Jan Aushadhi Kendra', note: 'E-prescriptions, stock' },
+  { role: 'distributor', email: 'distributor@omnicare.in', who: 'UP State Drug Store', note: 'Warehouse & dispatch' },
+  { role: 'delivery', email: 'rider@omnicare.in', who: 'Manoj, rider', note: 'Pickups and drops' },
+  { role: 'official', email: 'official@omnicare.in', who: 'CMO Barabanki', note: 'District command center' },
+  { role: 'official', email: 'national@omnicare.in', who: 'National officer', note: 'Country-wide view' },
+  { role: 'super_admin', email: 'admin@omnicare.in', who: 'Ops team', note: 'Verification, AI rules, audit' },
+];
+
+export { OtpInput } from '../components/OtpFlow';
+
+export default function Login() {
+  const config = usePublicConfig();
+  const { user, signIn } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [mode, setMode] = useState('staff');
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (user) navigate(location.state?.from && location.state.from.startsWith(ROLE_HOME[user.role]) ? location.state.from : ROLE_HOME[user.role], { replace: true });
+  }, [user, navigate, location.state]);
+
+  const loginPassword = async (e) => {
+    e?.preventDefault();
+    setBusy(true); setError('');
+    try {
+      const r = await api.post('/auth/login', { identifier, password, dialCode: '+91' });
+      await signIn(r.token);
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
+  };
+
+  const onOtp = async (r, who) => {
+    if (r.newUser) navigate('/signup', { state: { ticket: r.ticket, phone: who.phone, email: who.email, country: who.country?.iso } });
+    else await signIn(r.token);
+  };
+
+  const pickDemo = (d) => {
+    setMode('staff');
+    setIdentifier(d.email);
+    setPassword('Demo@123');
+    setError('');
+  };
+
+  return (
+    <div className="auth">
+      <div className="auth-form-side">
+        <div className="auth-top"><Logo /><div className="row"><LanguagePicker /><Link to="/" className="small muted row" style={{ gap: 6 }}><ArrowLeft size={15} /> Home</Link></div></div>
+        <div className="auth-card fade-in">
+          <h1 className="auth-title">Welcome back</h1>
+          <p className="muted">Sign in to your Nexus Healthcare account.</p>
+
+          <div className="pills auth-pills">
+            <button className={cx('pill', mode === 'patient' && 'active')} onClick={() => { setMode('patient'); setError(''); }}><Smartphone size={15} /> Patient · One-time code</button>
+            <button className={cx('pill', mode === 'staff' && 'active')} onClick={() => { setMode('staff'); setError(''); }}><Mail size={15} /> Email & password</button>
+          </div>
+
+          {error && <div className="form-error mb-2">{error}</div>}
+
+          {mode === 'staff' && (
+            <form className="stack" onSubmit={loginPassword}>
+              <Field label="Email or mobile number">
+                <div className="input-wrap"><Mail /><input className="input" value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="you@hospital.in" autoComplete="username" required /></div>
+              </Field>
+              <Field label="Password">
+                <div className="input-wrap">
+                  <Lock />
+                  <input className="input" type={showPw ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Your password" autoComplete="current-password" required style={{ paddingRight: 44 }} />
+                  <button type="button" className="pw-toggle" onClick={() => setShowPw((v) => !v)} aria-label={showPw ? 'Hide password' : 'Show password'}>{showPw ? <EyeOff size={17} /> : <Eye size={17} />}</button>
+                </div>
+              </Field>
+              <Button type="submit" size="lg" block loading={busy}>Sign in <ArrowRight /></Button>
+              <p className="tiny muted center mb-0"><ShieldCheck size={13} style={{ display: 'inline', verticalAlign: '-2px' }} /> Doctors, admins and officials get a second factor in production.</p>
+            </form>
+          )}
+
+          {mode === 'patient' && (
+            <>
+              <OtpFlow mode="login" onDone={onOtp} />
+              <p className="small muted center mt-2 mb-0">New here? Enter your number — we&apos;ll help you create a Health Passport.</p>
+            </>
+          )}
+
+          <p className="small center mt-3 mb-0">New to Nexus Healthcare? <Link to="/signup">Create your Health Passport</Link></p>
+          <p className="small center mt-1 mb-0 muted">Doctor or facility? <Link to="/join">Join the network</Link></p>
+        </div>
+      </div>
+
+      {config?.demo === false ? (
+        <aside className="auth-side">
+          <div className="auth-side-inner">
+            <span className="eyebrow" style={{ color: '#f3b89f' }}>Nexus Healthcare</span>
+            <h2>One secure sign-in for every part of the network.</h2>
+            <p>Patients sign in with a one-time code. Doctors, hospitals, labs, pharmacies and E-Clinic staff use their email and password — every access is logged and you control who sees your records.</p>
+          </div>
+        </aside>
+      ) : (
+      <aside className="auth-side">
+          <div className="auth-side-inner">
+            <span className="eyebrow" style={{ color: '#f3b89f' }}>Exploring the proof of concept?</span>
+            <h2>Try any portal with a demo account</h2>
+            <p>Tap an account to fill it in. Every password is <span className="mono demo-pw">Demo@123</span>. Changes you make show up live in the other portals — try booking as a patient and watching the doctor&apos;s queue.</p>
+            <div className="demo-list">
+              {DEMO.map((d) => (
+                <button key={d.email} className={cx('demo-item', identifier === d.email && 'on')} onClick={() => pickDemo(d)}>
+                  <span className="demo-role">{ROLE_LABEL[d.role]}</span>
+                  <span className="grow">
+                    <span className="demo-who">{d.who}</span>
+                    <span className="demo-note">{d.note}</span>
+                  </span>
+                  <ChevronRight size={16} />
+                </button>
+              ))}
+            </div>
+          </div>
+        </aside>
+      )}
+    </div>
+  );
+}

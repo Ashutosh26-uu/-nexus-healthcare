@@ -1,0 +1,104 @@
+// Price & logistics catalogue for medicines and lab tests.
+// MRPs are indicative Indian retail prices (₹ per unit) for the POC; each pharmacy / lab applies its
+// own price factor (e.g. Jan Aushadhi generics are far cheaper). Replace with live partner price
+// feeds in production.
+
+const DRUG_PRICES = {
+  'Paracetamol 500mg': { unit: 'tablet', mrp: 1.2 },
+  'Paracetamol 650mg': { unit: 'tablet', mrp: 2.0 },
+  'Metformin 500mg': { unit: 'tablet', mrp: 1.8 },
+  'Amlodipine 5mg': { unit: 'tablet', mrp: 2.5 },
+  'Telmisartan 40mg': { unit: 'tablet', mrp: 6.5 },
+  'Azithromycin 500mg': { unit: 'tablet', mrp: 24 },
+  'Amoxicillin 500mg': { unit: 'capsule', mrp: 7 },
+  'Amoxicillin-Clavulanate 625mg': { unit: 'tablet', mrp: 19 },
+  'Cetirizine 10mg': { unit: 'tablet', mrp: 1.9 },
+  'Pantoprazole 40mg': { unit: 'tablet', mrp: 8 },
+  'ORS sachet': { unit: 'sachet', mrp: 21 },
+  'Zinc 20mg': { unit: 'tablet', mrp: 3 },
+  'Salbutamol inhaler 100mcg': { unit: 'inhaler', mrp: 160, pack: true },
+  'Budesonide inhaler 200mcg': { unit: 'inhaler', mrp: 410, pack: true },
+  'Ibuprofen 400mg': { unit: 'tablet', mrp: 1.6 },
+  'Insulin Glargine 100IU/ml': { unit: 'pen', mrp: 690, pack: true },
+  'Atorvastatin 10mg': { unit: 'tablet', mrp: 5.5 },
+  'Glimepiride 1mg': { unit: 'tablet', mrp: 4 },
+  'Doxycycline 100mg': { unit: 'capsule', mrp: 6 },
+  'Vitamin B12 1500mcg': { unit: 'tablet', mrp: 9 },
+  'Artemether-Lumefantrine': { unit: 'course', mrp: 120, pack: true },
+  'Clopidogrel 75mg': { unit: 'tablet', mrp: 7.5 },
+  'Dengue NS1 rapid kit': { unit: 'kit', mrp: 450, pack: true },
+  'Platelet count kit': { unit: 'kit', mrp: 300, pack: true },
+};
+
+// LOINC-coded tests: sample, preparation, report turnaround and base price.
+const TESTS = {
+  '58410-2': { name: 'Complete Blood Count (CBC)', sample: 'Blood (2 ml, EDTA)', prep: 'No fasting needed', tatHours: 6, base: 300 },
+  '7905-3': { name: 'Dengue NS1 Antigen', sample: 'Blood (serum)', prep: 'No fasting needed', tatHours: 4, base: 600 },
+  '4548-4': { name: 'HbA1c', sample: 'Blood (2 ml, EDTA)', prep: 'No fasting needed', tatHours: 12, base: 450 },
+  '2093-3': { name: 'Lipid profile', sample: 'Blood (serum)', prep: '10–12 hours fasting', tatHours: 12, base: 550 },
+  '1558-6': { name: 'Fasting Blood Sugar', sample: 'Blood (fluoride)', prep: '8–10 hours fasting', tatHours: 3, base: 80 },
+  '70569-9': { name: 'Malaria antigen', sample: 'Blood (finger-prick)', prep: 'No fasting needed', tatHours: 2, base: 350 },
+  '5762-1': { name: 'Widal (typhoid)', sample: 'Blood (serum)', prep: 'No fasting needed', tatHours: 8, base: 250 },
+  // Imaging & cardiac diagnostics (done at diagnostic centres)
+  '36643-5': { name: 'Chest X-ray (PA view)', sample: 'Imaging — no sample', prep: 'Remove metal jewellery', tatHours: 2, base: 350, imaging: true },
+  '24558-9': { name: 'Ultrasound — whole abdomen', sample: 'Imaging — no sample', prep: '6 hours fasting, full bladder', tatHours: 3, base: 900, imaging: true },
+  '11524-6': { name: 'ECG (12-lead)', sample: 'Recording — no sample', prep: 'No preparation', tatHours: 1, base: 200, imaging: true },
+};
+
+const round = (n) => Math.round(n);
+const nameOfTest = (code, fallback) => TESTS[code]?.name || fallback || code;
+
+// How many units does this prescription line need? "1-0-1 × 5 days" → 10 tablets.
+function unitsFor(item) {
+  const p = priceOf(item.drug);
+  if (p?.pack) return 1;
+  const days = Math.max(1, Number(item.days) || 1);
+  const m = String(item.freq || '').match(/(\d)-(\d)-(\d)(?:-(\d))?/);
+  if (m) return Math.max(1, m.slice(1).filter(Boolean).reduce((s, x) => s + Number(x), 0) * days);
+  if (/sos|when needed/i.test(item.freq || '')) return Math.min(10, days * 2);
+  const f = String(item.freq || '').toLowerCase();
+  if (/thrice|three times|1-1-1/.test(f)) return days * 3;
+  if (/twice|two times|bd\b/.test(f)) return days * 2;
+  if (/sachet|sip/i.test(`${item.drug} ${item.freq}`)) return days * 2;
+  return days;
+}
+
+// Loose match so "Cetirizine 10 mg" (doctor's own list) still finds "Cetirizine 10mg".
+function priceOf(drug = '') {
+  const key = String(drug).toLowerCase().replace(/\s+/g, '');
+  const hit = Object.keys(DRUG_PRICES).find((k) => k.toLowerCase().replace(/\s+/g, '') === key)
+    || Object.keys(DRUG_PRICES).find((k) => key.startsWith(k.toLowerCase().replace(/\s+/g, '').replace(/\d.*$/, '')) && k.toLowerCase().replace(/\s+/g, '').replace(/^\D+/, '') === key.replace(/^\D+/, ''));
+  return hit ? { name: hit, ...DRUG_PRICES[hit] } : null;
+}
+
+// Plain-language suggestions for a report, so the patient understands it before the doctor calls.
+// Rule-based and conservative: it explains and advises next steps, it never diagnoses.
+const ADVICE = [
+  { re: /hba1c/i, high: 'Your average blood sugar over the last 3 months is above target. Cut down on sugar, sweets and refined flour (maida), walk 30 minutes a day — your doctor may adjust your diabetes medicines.' },
+  { re: /glucose|sugar|fbs|ppbs/i, high: 'Blood sugar is higher than normal. Avoid sweets and sugary drinks, take medicines on time, and recheck as your doctor advises.', low: 'Blood sugar is low. Eat something with sugar now (juice, glucose, a sweet) and tell your doctor — your medicine dose may need changing.' },
+  { re: /ldl|cholesterol|triglycer/i, high: 'Cholesterol is above the healthy range. Less fried food, ghee and red meat; more fibre, fruit and daily walking. Usually rechecked in about 3 months.' },
+  { re: /h(a)?emoglobin|\bhb\b/i, low: 'Haemoglobin is low (possible anaemia). Eat iron-rich food — green leafy vegetables, jaggery, pulses, dates — your doctor may prescribe iron tablets.' },
+  { re: /platelet/i, low: 'Platelets are low. Drink plenty of fluids, avoid painkillers like ibuprofen/aspirin, and watch for bleeding gums, nose bleeds or rashes — follow up within 24–48 hours.' },
+  { re: /wbc|white blood|leucocyte|tlc/i, high: 'White blood cells are raised, which often points to an infection. Your doctor will decide whether you need treatment.', low: 'White blood cells are low — avoid crowded places and tell your doctor if you get a fever.' },
+  { re: /dengue|ns1/i, positive: 'The dengue test is positive. Rest, drink lots of fluids (ORS, coconut water), take only paracetamol for fever, and go to hospital at once if you have severe stomach pain, vomiting, bleeding or feel very weak.' },
+  { re: /malaria/i, positive: 'The malaria test is positive. Start the treatment your doctor prescribes today and complete the full course.' },
+  { re: /widal|typhoid/i, positive: 'The typhoid test is positive. Take the antibiotics exactly as prescribed, drink boiled water and eat light, freshly cooked food.' },
+  { re: /creatinine|urea/i, high: 'Kidney markers are raised. Drink water as advised and avoid painkillers without asking your doctor — they will review this.' },
+  { re: /tsh|thyroid/i, high: 'TSH is high (thyroid may be underactive). Your doctor may start or adjust thyroid medicine.', low: 'TSH is low (thyroid may be overactive). Your doctor will review this with you.' },
+];
+
+function interpret(results = []) {
+  const out = [];
+  for (const r of results) {
+    const flag = String(r.flag || '').toLowerCase();
+    if (!flag || flag === 'normal' || flag === 'negative') continue;
+    if (flag === 'critical') { out.push({ level: 'urgent', test: r.name, text: `${r.name} (${r.value} ${r.unit || ''}) needs urgent attention. Your doctor has been alerted — if you feel unwell, go to the nearest emergency or call 108.` }); continue; }
+    const rule = ADVICE.find((a) => a.re.test(r.name));
+    const text = rule?.[flag] || `${r.name} is ${flag === 'positive' ? 'positive' : `${flag}er than the normal range`} (${r.value} ${r.unit || ''}). Your doctor will review it and tell you if anything needs to change.`;
+    out.push({ level: flag === 'positive' ? 'attention' : 'watch', test: r.name, text });
+  }
+  if (!out.length && results.length) out.push({ level: 'ok', test: null, text: 'All your results are within the normal range. Keep up your current routine and follow your doctor’s advice.' });
+  return out;
+}
+
+module.exports = { DRUG_PRICES, TESTS, unitsFor, priceOf, nameOfTest, round, interpret };

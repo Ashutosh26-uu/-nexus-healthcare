@@ -1,0 +1,27 @@
+{
+  "name": "nexus-healthcare",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Nexus Healthcare — national health network (React PWA + Express API, SQLite/PostgreSQL)",
+  "scripts": {
+    "install:all": "npm install && npm install --prefix server && npm install --prefix client",
+    "dev": "concurrently -n api,web -c green,yellow \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "build": "npm run build --prefix client",
+    "start": "npm start --prefix server",
+    "reset-data": "node -e \"const fs=require('fs');for(const f of ['server/data/omnicare.db','server/data/omnicare.db-wal','server/data/omnicare.db-shm','server/data/db.json'])fs.rmSync(f,{force:true});console.log('Local database removed — demo data will be re-seeded on next start')\"",
+    "i18n:status": "node server/i18n/tools/seed-tool.mjs status",
+    "icons": "node client/scripts/make-icons.mjs",
+    "prod:local": "npm run build && cross-env NODE_ENV=production npm start",
+    "docker:build": "docker build -t nexus-healthcare .",
+    "docker:up": "docker compose up -d --build",
+    "catalyst:build": "node scripts/catalyst-build.mjs",
+    "catalyst:deploy": "npm run catalyst:build && cd catalyst-build && catalyst deploy"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6",
+    "cross-env": "^7.0.3"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}

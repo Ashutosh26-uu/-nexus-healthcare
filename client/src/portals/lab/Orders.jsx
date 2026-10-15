@@ -1,0 +1,79 @@
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Search, Upload, ArrowRight, Stethoscope, AlertTriangle, MapPin, FileText } from 'lucide-react';
+import { PageHeader } from '../../components/PortalLayout';
+import { Button, Tabs, Empty, StatusBadge, Avatar, timeAgo, useAction } from '../../components/ui';
+import { api } from '../../api';
+import { NEXT, ORDER, STATUS_LABEL, TestChips, genderShort } from './shared';
+import { getLocale } from '../../i18n';
+
+const TABS = ['all', ...ORDER];
+
+export default function Orders({ orders, reload, onReport }) {
+  const [tab, setTab] = useState(() => (orders.some((o) => o.status === 'ordered') ? 'ordered' : 'all'));
+  const [q, setQ] = useState('');
+  const [run, busy] = useAction();
+  const count = (s) => (s === 'all' ? orders.length : orders.filter((o) => o.status === s).length);
+
+  const list = orders
+    .filter((o) => tab === 'all' || o.status === tab)
+    .filter((o) => !q || `${o.patientName} ${o.patientId} ${o.tests.map((t) => `${t.name} ${t.code}`).join(' ')}`.toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  const advance = async (o) => {
+    const n = NEXT[o.status];
+    const ok = await run(o.id, () => api.put(`/lab-orders/${o.id}/status`, { status: n.status }), `${n.done} · ${o.patientName}`);
+    if (ok) reload();
+  };
+
+  return (
+    <>
+      <PageHeader title="Orders inbox" subtitle="Test orders from Nexus Healthcare doctors. Each one carries the patient's Health Passport ID and LOINC test codes, so nothing needs re-typing.">
+        <div className="input-wrap lab-search">
+          <Search />
+          <input className="input" placeholder="Search patient, ID or test" value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
+      </PageHeader>
+
+      <Tabs value={tab} onChange={setTab} tabs={TABS.map((s) => ({ value: s, label: s === 'all' ? 'All' : STATUS_LABEL[s], count: count(s) }))} />
+
+      {list.length === 0 ? (
+        <div className="card"><Empty title={tab === 'ordered' ? 'No new orders' : 'Nothing here'}>{tab === 'ordered' ? 'New orders from doctors land here instantly. Time for chai.' : 'Try another tab or clear the search.'}</Empty></div>
+      ) : (
+        <div className="lab-orders">
+          {list.map((o) => (
+            <article key={o.id} className={`card lab-order ${o.critical ? 'critical' : ''}`}>
+              <div className="lab-order-who">
+                <Avatar name={o.patientName} />
+                <div className="grow">
+                  <div className="row wrap" style={{ gap: 8 }}>
+                    <strong translate="no">{o.patientName}</strong>
+                    <span className="small muted">{o.patientAge ?? '—'} {genderShort(o.patientGender)}</span>
+                    {o.critical && <span className="badge solid-rose"><AlertTriangle /> Critical</span>}
+                  </div>
+                  <div className="tiny muted mono">{o.patientId}</div>
+                </div>
+              </div>
+              <div className="lab-order-tests">
+                <TestChips tests={o.tests} />
+                <div className="row wrap tiny muted mt-1" style={{ gap: 12 }}>
+                  <span className="row" style={{ gap: 4 }}><Stethoscope size={12} /> {o.doctorName || 'Network doctor'}</span>
+                  <span className="row" style={{ gap: 4 }}><MapPin size={12} /> Pin {o.pincode}</span>
+                  <span title={new Date(o.createdAt).toLocaleString(getLocale())}>Ordered {timeAgo(o.createdAt)}</span>
+                  {o.referredByDoctor && <span className="lab-chip">Referred to you by the doctor</span>}
+                  {o.sharedRx && <button type="button" className="lab-rx-link" onClick={() => window.open(`/rx/${o.sharedRx}`, '_blank', 'noopener')}><FileText size={12} /> Prescription shared{o.sharedBy === 'patient' ? ' by patient' : ''} · View</button>}
+                </div>
+              </div>
+              <div className="lab-order-status"><StatusBadge status={o.status === 'collected' ? 'collected_sample' : o.status}>{STATUS_LABEL[o.status]}</StatusBadge></div>
+              <div className="lab-order-act">
+                {NEXT[o.status] && <Button size="sm" variant={o.status === 'ordered' ? undefined : 'secondary'} loading={busy === o.id} onClick={() => advance(o)}>{NEXT[o.status].label}</Button>}
+                {o.status === 'processing' && <Button size="sm" variant="clay" icon={Upload} onClick={() => onReport(o)}>Upload report</Button>}
+                {o.status === 'reported' && <Link to="/lab/reports" className="btn sm ghost">View report <ArrowRight /></Link>}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}

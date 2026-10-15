@@ -1,0 +1,30 @@
+.lang-wrap { position: relative; }
+.lang-btn {
+  display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 12px; border-radius: 99px;
+  border: 1px solid var(--line); background: #fff; cursor: pointer; font-weight: 600; font-size: 0.86rem; color: var(--ink-2);
+  transition: border-color 0.15s, background 0.15s;
+}
+.lang-btn:hover { border-color: var(--ink-3); color: var(--ink); }
+.lang-btn svg { width: 17px; height: 17px; color: var(--green); }
+.lang-btn.compact { padding: 0 10px; }
+.lang-wrap.light .lang-btn { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.25); color: #fff; }
+.lang-wrap.light .lang-btn svg { color: #f3b89f; }
+.spin { animation: spin 0.9s linear infinite; }
+
+.lang-pop {
+  position: absolute; top: calc(100% + 8px); inset-inline-end: 0; width: 300px; max-width: calc(100vw - 24px);
+  background: #fff; border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-lg); z-index: 120;
+  overflow: hidden; animation: rise 0.2s var(--ease); color: var(--ink);
+}
+.lang-pop.start { inset-inline-end: auto; inset-inline-start: 0; }
+.lang-search { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line-2); color: var(--ink-3); }
+.lang-search input { border: 0; outline: none; flex: 1; font: inherit; font-size: 0.92rem; background: none; color: var(--ink); }
+.lang-list { max-height: min(420px, 60vh); overflow-y: auto; padding: 6px; }
+.lang-group { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--clay); padding: 10px 10px 4px; }
+.lang-item { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: none; padding: 8px 10px; border-radius: 9px; cursor: pointer; text-align: start; color: var(--ink); }
+.lang-item:hover { background: var(--paper-2); }
+.lang-item.on { background: var(--green-soft); }
+.lang-item svg { color: var(--green); margin-inline-start: auto; flex-shrink: 0; }
+.lang-native { font-weight: 600; font-size: 0.95rem; }
+.lang-en { color: var(--ink-3); font-size: 0.8rem; }
+.lang-note { padding: 10px 14px; font-size: 0.8rem; color: var(--ink-3); background: var(--sun-soft); }
