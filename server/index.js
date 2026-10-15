@@ -3221,9 +3221,10 @@ app.get('/api/gov/overview', auth, role('official'), (req, res) => {
     totals: {
       freeBeds: capacity.reduce((s, c) => s + c.freeBeds, 0),
       icuFree: capacity.reduce((s, c) => s + c.icuFree, 0),
-      doctorsOnline: scoped ? d.doctors.filter((x) => x.online && x.state === req.user.region.state).length + 38 : d.regions.reduce((s, r) => s + r.doctorsOnline, 0),
-      kiosksOnline: d.facilities.filter((f) => f.type === 'kiosk' && f.status === 'online' && inScope(f)).length + (scoped ? 0 : d.regions.reduce((s, r) => s + r.kiosks, 0) - 4),
-      consultsToday: scoped ? 412 : 18640,
+      doctorsOnline: DATA_MODE !== 'demo' ? d.doctors.filter((x) => x.verified && availabilityOf(x, { facilities: d.facilities }).available && (!scoped || x.state === req.user.region.state)).length
+        : scoped ? d.doctors.filter((x) => x.online && x.state === req.user.region.state).length + 38 : d.regions.reduce((s, r) => s + r.doctorsOnline, 0),
+      kiosksOnline: d.facilities.filter((f) => f.type === 'kiosk' && f.status === 'online' && inScope(f)).length + (DATA_MODE !== 'demo' || scoped ? 0 : Math.max(0, d.regions.reduce((s, r) => s + r.kiosks, 0) - 4)),
+      consultsToday: DATA_MODE !== 'demo' ? d.consults.filter((c) => istDay(c.createdAt) === istDay(nowIso()) && (!scoped || inScope(d.patients.find((x) => x.id === c.patientId) || {}))).length : scoped ? 412 : 18640,
       openAlerts: d.alerts.filter((a) => a.status === 'open' && inScope(a)).length,
     },
     regions: scoped ? null : d.regions,
@@ -3316,7 +3317,10 @@ app.get('/api/admin/home', auth, role('super_admin'), (_req, res) => {
       pendingVerification: d.doctors.filter((x) => !x.verified).length + d.facilities.filter((f) => !f.verified).length,
       breakGlassUnreviewed: d.audit.filter((a) => a.action === 'break_glass' && !a.reviewed).length,
     },
-    monitoring: { uptime: 99.94, apiErrorRate: 0.21, p95LatencyMs: 312, videoQuality: 4.4, activeCalls: d.consults.filter((c) => c.status === 'in_progress').length + 37, uptimeSeries: [99.9, 99.95, 100, 99.8, 99.97, 99.99, 99.94] },
+    // Demo shows illustrative monitoring; a live network shows only what the server actually knows.
+    monitoring: DATA_MODE === 'demo'
+      ? { uptime: 99.94, apiErrorRate: 0.21, p95LatencyMs: 312, videoQuality: 4.4, activeCalls: d.consults.filter((c) => c.status === 'in_progress').length + 37, uptimeSeries: [99.9, 99.95, 100, 99.8, 99.97, 99.99, 99.94] }
+      : { uptime: null, apiErrorRate: null, p95LatencyMs: null, videoQuality: null, activeCalls: d.consults.filter((c) => c.status === 'in_progress').length, uptimeSeries: [], processUptimeHours: Math.round(process.uptime() / 360) / 10 },
   });
 });
 

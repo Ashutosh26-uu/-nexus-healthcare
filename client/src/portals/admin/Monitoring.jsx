@@ -26,6 +26,19 @@ export default function Monitoring() {
   return (
     <LiveGate live={live}>
       {({ monitoring: m }) => {
+        // Live network: we don't invent figures — point to the hosting platform's real metrics.
+        if (m.uptime == null) {
+          return (
+            <>
+              <PageHeader eyebrow="Monitoring" title="System health" subtitle="Real uptime, errors and latency come from your hosting platform." />
+              <div className="grid four mb-2">
+                <Stat label="Server running for" icon={Server} value={`${m.processUptimeHours ?? 0} h`} sub="since the last restart / deploy" />
+                <Stat label="Consults live now" icon={Video} value={m.activeCalls} sub="in progress" />
+              </div>
+              <div className="card"><p className="mb-0 small">For request rates, error rates and latency, open <strong>Zoho Catalyst → AppSail → your app → Logs &amp; Metrics</strong>. Database load is in the <strong>Neon console → Monitoring</strong>.</p></div>
+            </>
+          );
+        }
         const day = range === '24h';
         const n = day ? 12 : 7;
         const labels = day ? Array.from({ length: 12 }, (_, i) => `${String((i * 2) % 24).padStart(2, '0')}h`) : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

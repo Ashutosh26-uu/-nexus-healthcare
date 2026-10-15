@@ -58,6 +58,13 @@ export default function Overview() {
 
             <div className="grid side">
               <Card title="System health" action={<Link to="/admin/monitoring" className="small">Monitoring →</Link>}>
+                {m.uptime == null ? (
+                  <div className="ad-health-grid">
+                    <Health icon={Server} label="Server running for" value={m.processUptimeHours ?? 0} unit=" h" ok hint="since the last restart / deploy" />
+                    <Health icon={PhoneCall} label="Active calls" value={m.activeCalls} unit="" ok hint="consults in progress now" />
+                    <p className="tiny muted mb-0">Request, error and latency metrics: Catalyst → AppSail → Logs &amp; Metrics.</p>
+                  </div>
+                ) : (<>
                 <div className="ad-health-grid">
                   <Health icon={Server} label="Uptime (30 days)" value={m.uptime} unit="%" ok={m.uptime >= 99.9} hint="target 99.9%" />
                   <Health icon={AlertTriangle} label="API error rate" value={m.apiErrorRate} unit="%" ok={m.apiErrorRate < 1} hint="5xx over all requests" />
@@ -70,6 +77,7 @@ export default function Overview() {
                   <Sparkline data={m.uptimeSeries} height={56} />
                   <div className="row between tiny muted"><span>7 days ago</span><span>today</span></div>
                 </div>
+                </>)}
               </Card>
 
               <Card title="Recent activity" action={<Link to="/admin/audit" className="small">Audit log →</Link>}>
