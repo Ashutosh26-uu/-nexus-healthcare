@@ -7,3 +7,4 @@ server/.env
 .git
 .claude
 *.log
+.secrets

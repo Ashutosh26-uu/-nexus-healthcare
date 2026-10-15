@@ -27,3 +27,6 @@ server/data/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local-only credentials (never commit)
+.secrets/
