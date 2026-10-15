@@ -1,0 +1,44 @@
+# Render Blueprint — one always-on Node web service (API + built PWA) in Singapore, next to the Neon database.
+# Deploy: Render dashboard → New → Blueprint → pick this GitHub repo. Fill in the secrets it asks for.
+services:
+  - type: web
+    name: nexus-healthcare
+    runtime: node
+    region: singapore
+    plan: starter # always on; the free plan sleeps after 15 min idle (slow first load, live updates drop)
+    # NODE_ENV=production would skip devDependencies, so the client (Vite) installs them explicitly.
+    buildCommand: npm ci --prefix server --omit=dev && npm ci --prefix client --include=dev && npm run build --prefix client
+    startCommand: node server/index.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: DATA_MODE
+        value: live
+      - key: TRUST_PROXY
+        value: "1"
+      - key: JWT_SECRET
+        generateValue: true # Render generates a strong random secret
+      - key: DATABASE_URL # Neon production branch, pooled, sslmode=verify-full
+        sync: false
+      - key: ADMIN_EMAIL
+        value: ashutosh@reasonateai.com
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: CORS_ORIGIN # e.g. https://nexus-healthcare.onrender.com (or your custom domain)
+        sync: false
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        value: reasonateai.otp@gmail.com
+      - key: SMTP_PASS # Gmail app password, no spaces
+        sync: false
+      - key: SMTP_FROM
+        value: Nexus Healthcare <reasonateai.otp@gmail.com>

@@ -25,11 +25,13 @@ const { OtpError, normalizePhone, samePhone } = otp;
 
 // Zoho Catalyst AppSail tells the app which port to listen on via X_ZOHO_CATALYST_LISTEN_PORT.
 const ON_CATALYST = Boolean(process.env.X_ZOHO_CATALYST_LISTEN_PORT);
+// Render (and similar PaaS) disks are also wiped on every deploy/restart.
+const EPHEMERAL_DISK = ON_CATALYST || Boolean(process.env.RENDER);
 const PORT = process.env.X_ZOHO_CATALYST_LISTEN_PORT || process.env.PORT || 4000;
 // AppSail's disk is temporary: a SQLite file would be wiped on every redeploy/restart. Refuse to run a
 // production Catalyst instance without an external PostgreSQL (DATABASE_URL).
-if (ON_CATALYST && process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL) {
-  console.error('[boot] Running on Catalyst AppSail without DATABASE_URL — data would be lost on restart. Set DATABASE_URL to a PostgreSQL database.');
+if (EPHEMERAL_DISK && process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL) {
+  console.error('[boot] This host has a temporary disk and DATABASE_URL is not set — data would be lost on restart. Set DATABASE_URL to a PostgreSQL database.');
   process.exit(1);
 }
 security.checkSecrets();
