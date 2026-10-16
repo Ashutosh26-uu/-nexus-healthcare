@@ -101,4 +101,32 @@ function interpret(results = []) {
   return out;
 }
 
-module.exports = { DRUG_PRICES, TESTS, unitsFor, priceOf, nameOfTest, round, interpret };
+// "What to do next" after a report — concrete steps, most urgent first. Specialist by the test that's off.
+const SPECIALIST_FOR = [
+  { re: /hba1c|glucose|sugar|tsh|thyroid|t3|t4/i, dept: 'Endocrinology', why: 'sugar / thyroid levels' },
+  { re: /cholesterol|ldl|hdl|triglycer|lipid|troponin|ecg/i, dept: 'Cardiology', why: 'heart health' },
+  { re: /creatinine|urea|egfr|kidney|urine/i, dept: 'Nephrology', why: 'kidney function' },
+  { re: /sgot|sgpt|alt|ast|bilirubin|liver/i, dept: 'Gastroenterology', why: 'liver function' },
+  { re: /x-?ray|chest|sputum/i, dept: 'Pulmonology', why: 'lungs and chest' },
+];
+function nextSteps(results = [], { doctorName } = {}) {
+  const off = results.filter((r) => r.flag && !['normal', 'negative'].includes(String(r.flag).toLowerCase()));
+  const steps = [];
+  if (off.some((r) => String(r.flag).toLowerCase() === 'critical' || /dengue|malaria/i.test(r.name) && String(r.flag).toLowerCase() === 'positive')) {
+    steps.push({ kind: 'urgent', text: 'Some results need care today. If you feel unwell — high fever, bleeding, breathlessness, chest pain — go to the nearest emergency or call 108 now.', action: 'call108' });
+  }
+  if (off.length) {
+    steps.push({ kind: 'followup', text: `Book a follow-up${doctorName ? ` with ${doctorName}` : ''} within a week to go over these results and adjust treatment.`, action: 'book_doctor' });
+    const seen = new Set();
+    for (const r of off) {
+      const sp = SPECIALIST_FOR.find((x) => x.re.test(r.name));
+      if (sp && !seen.has(sp.dept)) { seen.add(sp.dept); steps.push({ kind: 'specialist', text: `If it stays out of range, see ${/^[AEIOU]/i.test(sp.dept) ? 'an' : 'a'} ${sp.dept} specialist about your ${sp.why}.`, action: 'find_specialist', department: sp.dept }); }
+    }
+    steps.push({ kind: 'repeat', text: 'Repeat the test when your doctor advises, to see if things are improving.' });
+  } else if (results.length) {
+    steps.push({ kind: 'ok', text: 'All results are normal — no action needed now. Keep your routine and repeat tests only if your doctor advises.' });
+  }
+  return steps;
+}
+
+module.exports = { DRUG_PRICES, TESTS, unitsFor, priceOf, nameOfTest, round, interpret, nextSteps };

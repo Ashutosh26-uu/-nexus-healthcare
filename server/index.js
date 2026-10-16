@@ -1559,11 +1559,32 @@ app.get('/api/patient/tests', auth, role('patient', 'caregiver'), (req, res) => 
     return {
       ...enrichLab(o), tests: o.tests.map(testInfo), stepIndex: LAB_STEPS.indexOf(o.status),
       insights: o.status === 'reported' ? (o.insights || catalog.interpret(o.results || [])) : [],
-      quote: lab ? labQuote(lab, o.tests, origin) : null, canChangeLab: o.status === 'ordered',
+      nextSteps: o.status === 'reported' ? (o.nextSteps || catalog.nextSteps(o.results || [], { doctorName: d.doctors.find((x) => x.id === o.doctorId)?.name })) : [],
+      quote: lab ? labQuote(lab, o.tests, origin) : null, canChangeLab: o.status === 'ordered' && !o.booking?.paidAt,
+      bookingState: o.status !== 'ordered' ? 'in_lab' : o.booking?.paidAt ? 'paid' : o.booking ? 'awaiting_payment' : 'to_book',
+      paymentId: o.booking && !o.booking.paidAt ? o.booking.paymentId : null, reviewed: !!o.review,
     };
   }).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   res.json({ orders, steps: LAB_STEPS });
 });
+
+// Lab trust signals: rating & reviews, and how many tests it has completed on Nexus (popularity).
+const LAB_ADVANCE_SHARE = 0.2; // paid online to confirm a lab booking (cuts fake bookings); the rest at the lab
+function labStats(lab, doneCount) {
+  const r = lab.reviewStats || { count: 0, sum: 0 };
+  return { rating: r.count ? Math.round((r.sum / r.count) * 10) / 10 : (lab.rating || 0), reviewCount: r.count, testsDone: (lab.testsDoneBase || 0) + (doneCount || 0) };
+}
+// Where the patient saw the doctor who ordered the test: that consult's clinic, else the doctor's clinic / area.
+function doctorPlaceFor(d, o) {
+  const rx = o.rxId && d.prescriptions.find((r) => r.id === o.rxId);
+  const c = rx?.consultId && d.consults.find((x) => x.id === rx.consultId);
+  const doc = d.doctors.find((x) => x.id === o.doctorId);
+  const fac = (c?.location?.facilityId && d.facilities.find((f) => f.id === c.location.facilityId))
+    || (rx?.facilityId && d.facilities.find((f) => f.id === rx.facilityId))
+    || (doc?.facilityId && d.facilities.find((f) => f.id === doc.facilityId));
+  const point = geo.pointOf(fac || doc);
+  return point ? { point, label: fac ? fac.name : `${doc?.name || 'your doctor'}'s area${doc?.district ? ` (${doc.district})` : ''}` } : null;
+}
 
 app.get('/api/lab-orders/:id/labs', auth, role('patient', 'caregiver'), (req, res) => {
   const d = db();
@@ -1572,41 +1593,70 @@ app.get('/api/lab-orders/:id/labs', auth, role('patient', 'caregiver'), (req, re
   if (!ownsPatient(req.user, o.patientId)) return res.status(403).json({ error: 'This test isn\'t on your account.' });
   const p = d.patients.find((x) => x.id === o.patientId);
   const lat = Number(req.query.lat); const lng = Number(req.query.lng);
-  const origin = req.query.lat != null && geo.validCoord(lat, lng) ? { lat, lng } : patientPoint(p);
-  const labs = d.facilities.filter((f) => f.type === 'lab' && f.verified).map((f) => labQuote(f, o.tests, origin))
-    .filter((l) => l.lines.length).sort((a, b) => Number(b.offersAll) - Number(a.offersAll) || (a.distanceKm ?? 1e9) - (b.distanceKm ?? 1e9));
-  const full = labs.filter((l) => l.offersAll);
+  const docPlace = doctorPlaceFor(d, o);
+  const homePoint = geo.pointOf(p); // permanent address
+  const nowPoint = req.query.lat != null && geo.validCoord(lat, lng) ? { lat, lng } : patientPoint(p);
+  const near = ['doctor', 'home', 'current'].includes(req.query.near) ? req.query.near : (docPlace ? 'doctor' : 'home');
+  const origin = near === 'doctor' ? docPlace?.point : near === 'current' ? nowPoint : homePoint;
+  const done = new Map();
+  for (const x of d.labOrders) if (x.status === 'reported') done.set(x.labId, (done.get(x.labId) || 0) + 1);
+  // Only centres that do every test on the prescription.
+  let labs = d.facilities.filter((f) => f.type === 'lab' && f.verified && countryOf(f) === countryOf(p))
+    .map((f) => ({ ...labQuote(f, o.tests, origin), ...labStats(f, done.get(f.id)) })).filter((l) => l.offersAll);
+  const sort = ['distance', 'cost', 'rating', 'popularity'].includes(req.query.sort) ? req.query.sort : 'distance';
+  const by = {
+    distance: (x, y) => (x.distanceKm ?? 1e9) - (y.distanceKm ?? 1e9),
+    cost: (x, y) => x.total - y.total || (x.distanceKm ?? 1e9) - (y.distanceKm ?? 1e9),
+    rating: (x, y) => y.rating - x.rating || y.reviewCount - x.reviewCount,
+    popularity: (x, y) => y.testsDone - x.testsDone,
+  }[sort];
+  labs = labs.sort(by);
   res.json({
-    tests: o.tests.map(testInfo), labs, currentLabId: o.labId,
-    cheapestId: full.length ? full.reduce((m, l) => (l.total < m.total ? l : m)).id : null,
-    fastestId: full.length ? full.reduce((m, l) => (l.reportInHours < m.reportInHours ? l : m)).id : null,
+    tests: o.tests.map(testInfo), labs, currentLabId: o.labId, near, sort, advanceShare: LAB_ADVANCE_SHARE,
+    places: {
+      doctor: docPlace ? { label: docPlace.label } : null,
+      home: homePoint ? { label: [p.address, p.district].filter(Boolean).join(', ') || 'Your address' } : null,
+      current: { label: p.currentLocation?.source === 'live' ? 'Your live location' : p.currentLocation?.district ? p.currentLocation.district : 'Where you are now' },
+    },
+    cheapestId: labs.length ? labs.reduce((m, l) => (l.total < m.total ? l : m)).id : null,
+    fastestId: labs.length ? labs.reduce((m, l) => (l.reportInHours < m.reportInHours ? l : m)).id : null,
+    topRatedId: labs.length ? labs.reduce((m, l) => (l.rating > m.rating ? l : m)).id : null,
   });
 });
 
-app.post('/api/lab-orders/:id/book', auth, role('patient', 'caregiver'), (req, res) => {
+app.post('/api/lab-orders/:id/book', auth, role('patient', 'caregiver'), async (req, res) => {
   const d = db();
   const o = d.labOrders.find((x) => x.id === req.params.id);
   if (!o) return res.status(404).json({ error: 'Test order not found.' });
   if (!ownsPatient(req.user, o.patientId)) return res.status(403).json({ error: 'This test isn\'t on your account.' });
   if (o.status !== 'ordered') return res.status(409).json({ error: 'The sample has already been collected — the lab can\'t be changed now.' });
+  if (o.booking?.paidAt) return res.status(409).json({ error: 'This test is already booked and paid. Call the lab to change the time.' });
   const lab = d.facilities.find((f) => f.id === req.body?.labId && f.type === 'lab' && f.verified);
   if (!lab) return res.status(400).json({ error: 'Choose a lab from the list.' });
   const q = labQuote(lab, o.tests, null);
   if (!q.offersAll) return res.status(400).json({ error: `${lab.name} doesn't do ${q.missing.join(', ')}. Choose another lab.` });
   const home = Boolean(req.body?.homeCollection) && lab.homeCollection;
   const slot = req.body?.slot && !Number.isNaN(Date.parse(req.body.slot)) ? new Date(req.body.slot).toISOString() : null;
+  const price = catalog.round(q.total + (home ? 50 : 0));
+  const advance = Math.max(1, Math.ceil(price * LAB_ADVANCE_SHARE));
+  const p = d.patients.find((x) => x.id === o.patientId);
+  d.payments.filter((x) => x.purpose === 'lab_advance' && x.refId === o.id && x.status === 'created').forEach((x) => { x.status = 'void'; });
+  const pay = { id: store.id('pay'), purpose: 'lab_advance', refId: o.id, amount: advance, status: 'created', provider: payments.provider(), label: `20% advance · ${o.tests.map((t) => t.name).join(', ')} at ${lab.name}`, userId: req.user.id, patientId: o.patientId, createdAt: nowIso(), meta: { labId: lab.id, price } };
+  try {
+    const order = await payments.createOrder({ amount: pay.amount, receipt: pay.id, notes: { labOrder: o.id } });
+    if (order) pay.orderId = order.orderId;
+  } catch (e) { return res.status(502).json({ error: e.message }); }
+  d.payments.push(pay);
   o.labId = lab.id;
-  o.booking = { homeCollection: home, slot, price: q.total + (home ? 50 : 0), reportInHours: q.reportInHours, bookedAt: nowIso() };
+  o.booking = { homeCollection: home, slot, price, advance, balance: catalog.round(price - advance), reportInHours: q.reportInHours, bookedAt: nowIso(), paymentId: pay.id, paidAt: null, nearBy: ['doctor', 'home', 'current'].includes(req.body?.near) ? req.body.near : null };
   if (req.body?.shareRx !== false) {
     // The prescription this test came from (or the ordering doctor's latest one for this patient).
     const rx = (o.rxId && d.prescriptions.find((r) => r.id === o.rxId)) || [...d.prescriptions].reverse().find((r) => r.patientId === o.patientId && r.doctorId === o.doctorId);
     if (rx) { o.sharedRx = rx.id; o.sharedBy = 'patient'; }
   } else { o.sharedRx = null; o.sharedBy = null; }
-  d.users.filter((u) => u.role === 'lab_tech' && u.facilityId === lab.id).forEach((u) => notify(u.id, 'New test booking', `${o.tests.map((t) => t.name).join(', ')} · ${home ? 'home collection' : 'walk-in'}${slot ? ` · ${new Date(slot).toLocaleString('en-IN')}` : ''}`));
-  audit(req.user, 'booked_lab', o.patientId, 'lab', `${lab.name} · ${o.id}`);
+  audit(req.user, 'booked_lab', o.patientId, 'lab', `${lab.name} · ${o.id} · advance ₹${advance}`);
   store.save();
-  broadcast('lab', 'records');
-  res.json({ ok: true, labName: lab.name, booking: o.booking, sharedRx: !!o.sharedRx });
+  res.json({ ok: true, labName: lab.name, booking: o.booking, sharedRx: !!o.sharedRx, payment: payments.publicPayment(pay, { dataMode: DATA_MODE }), patientName: p?.name });
 });
 
 // ---------- bookings, payments, visit passes ----------
@@ -1769,6 +1819,16 @@ function finalizePayment(d, pay, user) {
     doctorInbox(d, doc).forEach((uid) => notify(uid, 'New paid booking', `${doc.userId ? '' : `For ${doc.name}: `}${p.name} · ${c.triage.symptoms.slice(0, 80)}${where}${c.scheduledAt ? ` · ${new Date(c.scheduledAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}` : ' · now'}`));
     patientOwnerUserIds(p).forEach((u) => notify(u, 'Booking confirmed', `${doc.name}${where}. ${c.mode === 'in_person' ? 'Show your visit QR at the reception.' : 'We\'ll alert you when the doctor joins.'}`));
     audit(user, 'paid_booking', p.id, 'consult', `${c.id} · ₹${pay.amount}`);
+  } else if (pay.purpose === 'lab_advance') {
+    const o = d.labOrders.find((x) => x.id === pay.refId);
+    if (!o || o.booking?.paymentId !== pay.id) return;
+    Object.assign(o.booking, { paidAt: nowIso(), advancePaid: pay.amount });
+    o.needsBooking = false;
+    const p = d.patients.find((x) => x.id === o.patientId);
+    const when = o.booking.slot ? ` · ${new Date(o.booking.slot).toLocaleString('en-IN', { timeZone: APP_TZ, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` : '';
+    d.users.filter((u) => u.role === 'lab_tech' && u.facilityId === o.labId).forEach((u) => notify(u.id, 'New paid test booking', `${p?.name} · ${o.tests.map((t) => t.name).join(', ')} · ${o.booking.homeCollection ? 'home collection' : 'walk-in'}${when} · ₹${pay.amount} advance paid, collect ₹${o.booking.balance}`));
+    patientOwnerUserIds(p).forEach((u) => notify(u, 'Test booked ✅', `${facilityName(o.labId)}${when}. ₹${pay.amount} paid — pay ₹${o.booking.balance} at the lab. Report in about ${o.booking.reportInHours} hours after the sample.`));
+    audit(user, 'paid_lab_advance', o.patientId, 'lab', `${o.id} · ₹${pay.amount}`);
   } else if (pay.purpose === 'med_order_advance') {
     const o = d.medOrders.find((x) => x.id === pay.refId);
     if (!o || o.status !== 'awaiting_payment') return;
@@ -1791,6 +1851,9 @@ function payableProblem(d, pay) {
     const c = d.consults.find((x) => x.id === pay.refId);
     if (!c || c.status !== 'awaiting_payment') return 'This booking was cancelled or has expired. Please book again.';
     if (c.scheduledAt && Date.parse(c.scheduledAt) < Date.now() - 15 * 60000) return 'This appointment time has passed. Please book a new time.';
+  } else if (pay.purpose === 'lab_advance') {
+    const o = d.labOrders.find((x) => x.id === pay.refId);
+    if (!o || o.status !== 'ordered' || o.booking?.paymentId !== pay.id) return 'This test booking changed or was cancelled. Please book again.';
   } else if (pay.purpose === 'med_order_advance') {
     const o = d.medOrders.find((x) => x.id === pay.refId);
     if (!o || o.status !== 'awaiting_payment') return 'This order was cancelled or has expired. Please order again.';
@@ -1888,10 +1951,26 @@ app.get('/api/lab-orders/:id', auth, (req, res) => {
   const lab = d.facilities.find((f) => f.id === o.labId) || {};
   const p = d.patients.find((x) => x.id === o.patientId) || {};
   res.json({
-    ...enrichLab(o), insights: o.insights || catalog.interpret(o.results || []),
+    ...enrichLab(o), insights: o.insights || catalog.interpret(o.results || []), nextSteps: o.status === 'reported' ? (o.nextSteps || catalog.nextSteps(o.results || [], { doctorName: db().doctors.find((x) => x.id === o.doctorId)?.name })) : [],
     lab: { name: lab.name, address: lab.address || '', district: lab.district, phone: lab.phone, nabl: !!lab.nabl },
     patient: { id: p.id, name: p.name, age: ageOf(p.dob), gender: p.gender },
   });
+});
+
+// The patient rates the lab once the report is in — feeds the lab's rating shown to others.
+app.post('/api/lab-orders/:id/review', auth, role('patient', 'caregiver'), (req, res) => {
+  const d = db();
+  const o = d.labOrders.find((x) => x.id === req.params.id);
+  if (!o || !ownsPatient(req.user, o.patientId)) return res.status(404).json({ error: 'Test not found.' });
+  if (o.status !== 'reported') return res.status(409).json({ error: 'You can rate the lab once your report is ready.' });
+  if (o.review) return res.status(409).json({ error: 'You\'ve already rated this lab. Thank you!' });
+  const stars = parseInt(req.body?.stars, 10);
+  if (!(stars >= 1 && stars <= 5)) return res.status(400).json({ error: 'Choose 1 to 5 stars.' });
+  o.review = { stars, text: clean(req.body?.text, 300), at: nowIso() };
+  const lab = d.facilities.find((f) => f.id === o.labId);
+  if (lab) { const r = lab.reviewStats || { count: 0, sum: 0 }; lab.reviewStats = { count: r.count + 1, sum: r.sum + stars }; }
+  store.save();
+  res.json({ ok: true });
 });
 
 // The ordering doctor adds advice on a report — the patient sees it next to the results.
@@ -2544,10 +2623,11 @@ function createLabOrders(d, { p, doc, labTests, lab, rx, shareRx }) {
     const o = {
       id: store.id('lab'), patientId: p.id, doctorId: doc.id, labId, tests, status: 'ordered', pincode: p.pincode, createdAt: nowIso(), critical: false, results: [],
       rxId: rx?.id || null, referredByDoctor: !!lab, sharedRx: shareRx && rx ? rx.id : null, sharedBy: shareRx && rx ? 'doctor' : null,
+      needsBooking: true, // the patient picks the centre and pays the 20% advance before the lab gets it
     };
     d.labOrders.unshift(o);
     orders.push({ id: o.id, labName: facilityName(labId), tests: tests.map((t) => t.name), sharedRx: !!o.sharedRx });
-    d.users.filter((u) => u.role === 'lab_tech' && u.facilityId === labId).forEach((u) => notify(u.id, 'New test order', `${p.name} · ${tests.map((t) => t.name).join(', ')} · from ${doc.name}${o.sharedRx ? ' · prescription shared' : ''}`));
+    patientOwnerUserIds(p).forEach((u) => notify(u, 'Tests advised — book a lab', `${doc.name} advised ${tests.map((t) => t.name).join(', ')}. Choose a lab near the clinic or your home in Tests & reports.`));
   }
   return orders;
 }
@@ -2972,7 +3052,7 @@ app.get('/api/lab/home', auth, role('lab_tech'), (req, res) => {
   const d = db();
   res.json({
     lab: d.facilities.find((f) => f.id === req.user.facilityId),
-    orders: d.labOrders.filter((o) => o.labId === req.user.facilityId).map(enrichLab),
+    orders: d.labOrders.filter((o) => o.labId === req.user.facilityId && (!o.needsBooking || o.booking?.paidAt)).map(enrichLab),
   });
 });
 
@@ -2982,10 +3062,19 @@ app.put('/api/lab-orders/:id/status', auth, role('lab_tech'), (req, res) => {
   const steps = ['ordered', 'collected', 'received', 'processing'];
   if (!steps.includes(req.body?.status)) return res.status(400).json({ error: 'Invalid status. Upload the report to mark it reported.' });
   if (o.status === 'reported' || steps.indexOf(req.body.status) <= steps.indexOf(o.status)) return res.status(409).json({ error: 'Lab steps only move forward.' });
+  if (o.needsBooking && !o.booking?.paidAt) return res.status(409).json({ error: 'The patient hasn\'t confirmed this booking yet.' });
+  if (!o.reportDueAt && ['collected', 'received', 'processing'].includes(req.body.status)) {
+    const lab = db().facilities.find((f) => f.id === o.labId);
+    const tat = o.booking?.reportInHours || labQuote(lab || {}, o.tests, null).reportInHours || 24;
+    o.reportDueAt = new Date(Date.now() + tat * 3600000).toISOString();
+    const p = db().patients.find((x) => x.id === o.patientId);
+    const by = new Date(o.reportDueAt).toLocaleString('en-IN', { timeZone: APP_TZ, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+    patientOwnerUserIds(p).forEach((u) => notify(u, 'Your test is done ✅', `${o.tests.map((t) => t.name).join(', ')} at ${facilityName(o.labId)}. Your report will be ready by ${by} — we'll notify you.`));
+  }
   o.status = req.body.status;
   o[`${req.body.status}At`] = nowIso();
   store.save();
-  broadcast('lab');
+  broadcast('lab', 'records');
   res.json(enrichLab(o));
 });
 
@@ -3002,11 +3091,12 @@ app.post('/api/lab-orders/:id/report', auth, role('lab_tech'), (req, res) => {
   o.insights = catalog.interpret(results);
   const p = d.patients.find((x) => x.id === o.patientId);
   const doc = d.doctors.find((x) => x.id === o.doctorId);
+  o.nextSteps = catalog.nextSteps(results, { doctorName: doc?.name });
   if (o.critical) {
     notify(doc?.userId, '🚨 Critical lab value', `${p.name}: ${results.filter((r) => r.flag === 'critical').map((r) => `${r.name} ${r.value} ${r.unit || ''}`).join(', ')}`, 'alert');
     patientOwnerUserIds(p).forEach((u) => notify(u, 'Important lab result', 'One of your results needs attention. Your doctor has been informed and will contact you shortly.', 'alert'));
   } else {
-    patientOwnerUserIds(p).forEach((u) => notify(u, 'Lab report ready', `Your ${o.tests.map((t) => t.name).join(', ')} report is in your records.`));
+    patientOwnerUserIds(p).forEach((u) => notify(u, 'Lab report ready 📄', `Your ${o.tests.map((t) => t.name).join(', ')} report is ready in Tests & reports — view it online or download the PDF, with suggestions on what to do next.`));
     notify(doc?.userId, 'Lab report ready', `${p.name}: ${o.tests.map((t) => t.name).join(', ')}`);
   }
   // Anonymised feed → outbreak engine (test, result, pin, date only).

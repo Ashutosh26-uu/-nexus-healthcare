@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Upload, ArrowRight, Stethoscope, AlertTriangle, MapPin, FileText } from 'lucide-react';
+import { Search, Upload, ArrowRight, Stethoscope, AlertTriangle, MapPin, FileText, Home, CalendarClock, IndianRupee } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Button, Tabs, Empty, StatusBadge, Avatar, timeAgo, useAction } from '../../components/ui';
 import { api } from '../../api';
@@ -61,8 +61,13 @@ export default function Orders({ orders, reload, onReport }) {
                   <span className="row" style={{ gap: 4 }}><MapPin size={12} /> Pin {o.pincode}</span>
                   <span title={new Date(o.createdAt).toLocaleString(getLocale())}>Ordered {timeAgo(o.createdAt)}</span>
                   {o.referredByDoctor && <span className="lab-chip">Referred to you by the doctor</span>}
+                  {o.booking?.homeCollection && <span className="lab-chip"><Home size={12} /> Home collection</span>}
+                  {o.booking?.slot && <span className="row" style={{ gap: 4 }}><CalendarClock size={12} /> {new Date(o.booking.slot).toLocaleString(getLocale(), { dateStyle: 'medium', timeStyle: 'short' })}</span>}
                   {o.sharedRx && <button type="button" className="lab-rx-link" onClick={() => window.open(`/rx/${o.sharedRx}`, '_blank', 'noopener')}><FileText size={12} /> Prescription shared{o.sharedBy === 'patient' ? ' by patient' : ''} · View</button>}
                 </div>
+                {o.booking?.paidAt && (
+                  <div className="lab-pay tiny mt-1"><IndianRupee size={12} /> ₹{o.booking.advancePaid || o.booking.advance} advance paid online · <strong>collect ₹{o.booking.balance}</strong> {o.status === 'ordered' ? 'at collection' : '(if not collected yet)'}</div>
+                )}
               </div>
               <div className="lab-order-status"><StatusBadge status={o.status === 'collected' ? 'collected_sample' : o.status}>{STATUS_LABEL[o.status]}</StatusBadge></div>
               <div className="lab-order-act">

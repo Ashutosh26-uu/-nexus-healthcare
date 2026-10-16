@@ -1,21 +1,26 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FlaskConical, MapPin, Clock, Home as HomeIcon, BadgeCheck, Check, Droplet, Utensils, FileText, Building2, Phone, Smartphone, CalendarClock, ArrowRight, Download, Stethoscope } from 'lucide-react';
+import { FlaskConical, MapPin, Clock, Home as HomeIcon, BadgeCheck, Check, Droplet, Utensils, FileText, Building2, Phone, Smartphone, CalendarClock, ArrowRight, ArrowLeft, Download, Stethoscope, Star, Users, LocateFixed, ShieldCheck, Ambulance, Repeat, Search, Hourglass, CreditCard } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
 import { Button, Card, Empty, Field, Modal, Switch, fmtDate, fmtDateTime, fmtMoney, useAction, cx } from '../../components/ui';
 import { usePatient, firstName, PageSkeleton } from './shared';
-import { useDeviceLocation, LocationButton } from './NearbyDoctors';
+import { useDeviceLocation } from './NearbyDoctors';
+import PaymentStep from './Payment';
+import BookingFlow from './BookingFlow';
+import { getLocale } from '../../i18n';
 
-const STEP_LABEL = { ordered: 'Test advised', collected: 'Sample collected', processing: 'Being tested', reported: 'Report ready' };
+const STEP_LABEL = { ordered: 'Booked', collected: 'Test done', received: 'At the lab', processing: 'Being tested', reported: 'Report ready' };
 const hrs = (h) => (h == null ? '—' : h < 24 ? `${h} hours` : `${Math.round(h / 24)} day${h >= 48 ? 's' : ''}`);
 
 function Timeline({ order, steps }) {
+  const booked = !['to_book', 'awaiting_payment'].includes(order.bookingState);
+  const at = booked ? order.stepIndex : -1; // not booked yet: "Book a lab" is the current step
   return (
     <ol className="pt-lab-steps">
       {steps.map((s, i) => (
-        <li key={s} className={cx(i < order.stepIndex && 'done', i === order.stepIndex && 'now')}>
-          <span>{i <= order.stepIndex ? <Check size={12} strokeWidth={3} /> : i + 1}</span>{STEP_LABEL[s]}
+        <li key={s} className={cx(i < at && 'done', (i === at || (!booked && i === 0)) && 'now')}>
+          <span>{i <= at ? <Check size={12} strokeWidth={3} /> : i + 1}</span>{i === 0 && !booked ? 'Book a lab' : STEP_LABEL[s]}
         </li>
       ))}
     </ol>
@@ -36,91 +41,139 @@ function ReportingInfo({ quote, booking }) {
   );
 }
 
+const SORTS = [{ value: 'distance', label: 'Nearest' }, { value: 'cost', label: 'Lowest cost' }, { value: 'rating', label: 'Top rated' }, { value: 'popularity', label: 'Most popular' }];
+const PLACE_ICON = { doctor: Stethoscope, home: HomeIcon, current: LocateFixed };
+const PLACE_TITLE = { doctor: 'Near the clinic where I saw the doctor', home: 'Near my home', current: 'Near where I am now' };
+
+// Book a lab in three steps: where to test → choose a lab that does every test (sort by distance, cost,
+// rating or popularity) → collection & 20% advance. The tests come straight from the doctor's prescription.
 function LabChooser({ order, onClose, onBooked }) {
   const device = useDeviceLocation();
+  const [step, setStep] = useState(0);
+  const [near, setNear] = useState(null);
+  const [sort, setSort] = useState('distance');
   const [data, setData] = useState(null);
-  const [labId, setLabId] = useState(order?.labId || null);
+  const [labId, setLabId] = useState(null);
   const [home, setHome] = useState(false);
   const [slot, setSlot] = useState('');
   const [shareRx, setShareRx] = useState(true);
+  const [pay, setPay] = useState(null);
   const [run, busy] = useAction();
 
+  useEffect(() => { if (order) { setStep(0); setNear(null); setPay(null); setLabId(null); setData(null); } }, [order]);
   useEffect(() => {
     if (!order) return undefined;
     let alive = true;
-    const qs = device.loc ? `?lat=${device.loc.lat}&lng=${device.loc.lng}` : '';
-    api.get(`/lab-orders/${order.id}/labs${qs}`).then((r) => { if (alive) { setData(r); setLabId((cur) => (r.labs.some((l) => l.id === cur && l.offersAll) ? cur : r.labs.find((l) => l.offersAll)?.id || null)); } }).catch(() => alive && setData({ labs: [], tests: [] }));
+    const qs = new URLSearchParams({ sort, ...(near ? { near } : {}), ...(device.loc ? { lat: device.loc.lat, lng: device.loc.lng } : {}) });
+    api.get(`/lab-orders/${order.id}/labs?${qs}`).then((r) => {
+      if (!alive) return;
+      setData(r);
+      if (!near) setNear(r.near);
+      setLabId((cur) => (r.labs.some((l) => l.id === cur) ? cur : r.labs[0]?.id || null));
+    }).catch(() => alive && setData({ labs: [], tests: [], places: {} }));
     return () => { alive = false; };
-  }, [order, device.loc]);
+  }, [order, near, sort, device.loc]);
 
   const lab = data?.labs.find((l) => l.id === labId);
   useEffect(() => { if (lab && !lab.homeCollection) setHome(false); }, [lab]);
+  const price = lab ? lab.total + (home ? 50 : 0) : 0;
+  const advance = lab ? Math.max(1, Math.ceil(price * (data?.advanceShare || 0.2))) : 0;
   const book = () => run('book', async () => {
-    const r = await api.post(`/lab-orders/${order.id}/book`, { labId, homeCollection: home, slot: slot || undefined, shareRx });
-    onBooked(r);
-  }, home ? 'Booked! A technician will come home to collect the sample.' : 'Booked! Show your Health Passport QR at the lab.');
+    const r = await api.post(`/lab-orders/${order.id}/book`, { labId, homeCollection: home, slot: slot || undefined, shareRx, near });
+    setPay(r.payment); setStep(3);
+  });
+
+  const title = ['Where would you like to get tested?', 'Choose a lab', 'Collection & payment', 'Pay 20% to confirm'][step];
+  const footer = step === 3 ? <Button variant="ghost" onClick={onClose}>Pay later</Button> : (
+    <>
+      {step > 0 ? <Button variant="ghost" icon={ArrowLeft} onClick={() => setStep((s) => s - 1)}>Back</Button> : <Button variant="ghost" onClick={onClose}>Cancel</Button>}
+      {step === 0 && <Button icon={ArrowRight} disabled={!near} onClick={() => setStep(1)}>Show labs</Button>}
+      {step === 1 && <Button icon={ArrowRight} disabled={!lab} onClick={() => setStep(2)}>Continue</Button>}
+      {step === 2 && <Button variant="clay" loading={busy === 'book'} disabled={!lab} onClick={book}>Pay {fmtMoney(advance)} & book</Button>}
+    </>
+  );
 
   return (
-    <Modal open={!!order} onClose={onClose} wide title="Where can I get this test?" subtitle={order ? order.tests.map((t) => t.name).join(' · ') : ''}
-      footer={<>
-        {lab && <span className="small grow"><strong>{fmtMoney(lab.total + (home ? 50 : 0))}</strong> <span className="muted">at {lab.name}{home ? ' incl. ₹50 home collection' : ''}</span></span>}
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button icon={Check} disabled={!lab || !lab.offersAll} loading={busy === 'book'} onClick={book}>Book this lab</Button>
-      </>}>
+    <Modal open={!!order} onClose={onClose} wide title={title} subtitle={order ? `From your prescription: ${order.tests.map((t) => t.name).join(' · ')}` : ''} footer={footer}>
       {!data ? <div className="stack">{[0, 1, 2].map((i) => <div key={i} className="skeleton" style={{ height: 72, borderRadius: 12 }} />)}</div> : (
         <div className="stack">
-          <div className="row between wrap" style={{ gap: 8 }}>
-            <span className="tiny muted">Sorted by labs that do all your tests, then distance.</span>
-            <LocationButton device={device} />
-          </div>
-          {data.labs.length === 0 && <Empty icon={FlaskConical} title="No lab nearby does these tests yet">Ask your doctor or call 1800-200-4455 — we&apos;ll arrange it.</Empty>}
-          <div className="pt-lab-list" role="radiogroup">
-            {data.labs.map((l) => (
-              <button key={l.id} type="button" role="radio" aria-checked={labId === l.id} disabled={!l.offersAll} className={cx('pt-lab-opt', labId === l.id && 'on', !l.offersAll && 'partial')} onClick={() => setLabId(l.id)}>
-                <span className="pt-radio" aria-hidden="true">{labId === l.id && <Check size={12} strokeWidth={3} />}</span>
-                <span className="grow" style={{ minWidth: 0 }}>
-                  <span className="strong block" translate="no">{l.name}</span>
-                  <span className="tiny muted pt-wtb-meta">
-                    {l.distanceKm !== null && <span><MapPin size={12} /> {l.distanceKm} km</span>}
-                    {l.hours && <span><Clock size={12} /> {l.hours}</span>}
-                    <span><FileText size={12} /> Report in {hrs(l.reportInHours)}</span>
-                  </span>
-                  <span className="pt-wtb-tags">
-                    {data.cheapestId === l.id && <span className="badge green">Cheapest</span>}
-                    {data.fastestId === l.id && <span className="badge sky">Fastest report</span>}
-                    {l.government && <span className="badge clay">Government</span>}
-                    {l.nabl && <span className="badge"><BadgeCheck size={11} /> NABL</span>}
-                    {l.homeCollection && <span className="badge"><HomeIcon size={11} /> Home collection</span>}
-                    {!l.offersAll && <span className="badge sun">Doesn&apos;t do {l.missing.join(', ')}</span>}
-                  </span>
-                  <span className="pt-lab-lines tiny">
-                    {l.lines.map((t) => <span key={t.code}>{t.name}: <strong>{t.price !== null ? fmtMoney(t.price) : 'ask'}</strong></span>)}
-                  </span>
-                </span>
-                <span className="pt-wtb-price"><strong>{fmtMoney(l.total)}</strong><span className="tiny muted">total</span></span>
-              </button>
-            ))}
-          </div>
-          {lab && (
-            <div className="grid two">
+          <div className="steps">{[0, 1, 2, 3].map((i) => <span key={i} className={cx(i <= step && 'done')} />)}</div>
+
+          {step === 0 && (
+            <div className="pt-bk-types">
+              {['doctor', 'home', 'current'].map((k) => {
+                const P = PLACE_ICON[k];
+                const place = data.places?.[k];
+                return (
+                  <button key={k} type="button" disabled={!place} className={cx('pt-bk-type', near === k && 'on')} onClick={() => { setNear(k); if (k === 'current' && !device.loc) device.request(); }}>
+                    <P /><span><strong>{PLACE_TITLE[k]}</strong><span className="tiny muted block" translate="no">{place ? place.label : 'Not available'}</span></span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {step === 1 && (
+            <>
+              <div className="pt-lab-sort" role="radiogroup" aria-label="Sort labs">
+                {SORTS.map((x) => <button key={x.value} type="button" role="radio" aria-checked={sort === x.value} className={cx('chip', sort === x.value && 'on')} onClick={() => setSort(x.value)}>{x.label}</button>)}
+              </div>
+              <span className="tiny muted">Only labs that do all {order.tests.length} of your tests · {PLACE_TITLE[near]?.toLowerCase()}</span>
+              {data.labs.length === 0 && <Empty icon={FlaskConical} title="No lab does all these tests yet">Try another place, ask your doctor, or call 1800-200-4455 — we&apos;ll arrange it.</Empty>}
+              <div className="pt-lab-list" role="radiogroup">
+                {data.labs.map((l) => (
+                  <button key={l.id} type="button" role="radio" aria-checked={labId === l.id} className={cx('pt-lab-opt', labId === l.id && 'on')} onClick={() => setLabId(l.id)}>
+                    <span className="pt-radio" aria-hidden="true">{labId === l.id && <Check size={12} strokeWidth={3} />}</span>
+                    <span className="grow" style={{ minWidth: 0 }}>
+                      <span className="strong block" translate="no">{l.name}</span>
+                      <span className="tiny pt-wtb-meta">
+                        <span><Star size={12} className="pt-sun" /> <strong>{l.rating ? l.rating.toFixed(1) : 'New'}</strong>{l.reviewCount ? <span className="muted"> ({l.reviewCount})</span> : null}</span>
+                        <span className="muted"><Users size={12} /> {Number(l.testsDone).toLocaleString(getLocale())} tests done</span>
+                        {l.distanceKm !== null && <span className="muted"><MapPin size={12} /> {l.distanceKm} km</span>}
+                        <span className="muted"><FileText size={12} /> Report in {hrs(l.reportInHours)}</span>
+                      </span>
+                      <span className="pt-wtb-tags">
+                        {data.cheapestId === l.id && <span className="badge green">Cheapest</span>}
+                        {data.topRatedId === l.id && <span className="badge sun">Top rated</span>}
+                        {data.fastestId === l.id && <span className="badge sky">Fastest report</span>}
+                        {l.government && <span className="badge clay">Government</span>}
+                        {l.nabl && <span className="badge"><BadgeCheck size={11} /> NABL</span>}
+                        {l.homeCollection && <span className="badge"><HomeIcon size={11} /> Home collection</span>}
+                      </span>
+                      <span className="pt-lab-lines tiny">{l.lines.map((t) => <span key={t.code}>{t.name}: <strong>{t.price !== null ? fmtMoney(t.price) : 'ask'}</strong></span>)}</span>
+                    </span>
+                    <span className="pt-wtb-price"><strong>{fmtMoney(l.total)}</strong><span className="tiny muted">total</span></span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {step === 2 && lab && (
+            <>
+              <div className="pt-lab-at small"><Building2 size={15} /><span><strong translate="no">{lab.name}</strong> · {lab.distanceKm != null ? `${lab.distanceKm} km · ` : ''}{lab.hours}</span></div>
               <div className="row between pt-lab-home">
                 <span><strong className="small">Home sample collection</strong><span className="tiny muted block">{lab.homeCollection ? '+₹50 · a trained technician visits you' : 'Not offered by this lab'}</span></span>
                 <Switch checked={home} onChange={lab.homeCollection ? setHome : () => {}} label="Home collection" />
               </div>
               <Field label="Preferred time (optional)"><input className="input" type="datetime-local" value={slot} min={new Date().toISOString().slice(0, 16)} onChange={(e) => setSlot(e.target.value)} /></Field>
-            </div>
+              <label className="check small pt-share-rx">
+                <input type="checkbox" checked={shareRx} onChange={(e) => setShareRx(e.target.checked)} />
+                <span><strong>Share my prescription with {lab.name}</strong><span className="tiny muted block">They see the doctor&apos;s order, so nothing is missed.</span></span>
+              </label>
+              <div className="pt-lab-prep">{data.tests.map((t) => <span key={t.code} className="tiny"><Droplet size={12} /> <strong>{t.name}:</strong> {t.sample} · <Utensils size={12} /> {t.prep}</span>)}</div>
+              <dl className="kv review">
+                <dt>Tests</dt><dd>{fmtMoney(lab.total)}</dd>
+                {home && <><dt>Home collection</dt><dd>{fmtMoney(50)}</dd></>}
+                <dt>Total</dt><dd><strong>{fmtMoney(price)}</strong></dd>
+                <dt>Pay now (20%)</dt><dd><strong className="pt-green">{fmtMoney(advance)}</strong></dd>
+                <dt>At the lab</dt><dd>{fmtMoney(price - advance)}</dd>
+              </dl>
+              <p className="tiny muted mb-0"><ShieldCheck size={12} style={{ verticalAlign: '-2px' }} /> The 20% advance confirms your slot and keeps fake bookings away. It counts towards your bill.</p>
+            </>
           )}
-          {lab && (
-            <label className="check small pt-share-rx">
-              <input type="checkbox" checked={shareRx} onChange={(e) => setShareRx(e.target.checked)} />
-              <span><strong>Share my prescription with {lab.name}</strong><span className="tiny muted block">They see the doctor&apos;s order and notes, so nothing is missed. You can change this later.</span></span>
-            </label>
-          )}
-          {data.tests?.length > 0 && (
-            <div className="pt-lab-prep">
-              {data.tests.map((t) => <span key={t.code} className="tiny"><Droplet size={12} /> <strong>{t.name}:</strong> {t.sample} · <Utensils size={12} /> {t.prep}</span>)}
-            </div>
-          )}
+
+          {step === 3 && pay && <PaymentStep payment={pay} onPaid={() => onBooked()} />}
         </div>
       )}
     </Modal>
@@ -132,6 +185,7 @@ export default function Tests() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [choosing, setChoosing] = useState(null);
+  const [rebook, setRebook] = useState(null);
   const isSelf = profiles.find((p) => p.id === patient?.id)?.self;
   const load = useCallback(() => api.get('/patient/tests').then(setData).catch(() => setData({ orders: [], steps: [] })), []);
   useEffect(() => { load(); }, [load, patient?.id]);
@@ -155,12 +209,21 @@ export default function Tests() {
               <strong>{o.tests.map((t) => t.name).join(' · ')}</strong>
               <div className="small muted">Advised by <span translate="no">{o.doctorName}</span> · {fmtDate(o.createdAt)}</div>
             </div>
-            {o.quote && <div className="pt-wtb-price"><strong>{fmtMoney(o.booking?.price ?? o.quote.total)}</strong><span className="tiny muted">{o.booking ? 'booked' : 'at current lab'}</span></div>}
+            {o.quote && <div className="pt-wtb-price"><strong>{fmtMoney(o.booking?.price ?? o.quote.total)}</strong><span className="tiny muted">{o.bookingState === 'paid' || o.bookingState === 'in_lab' ? 'booked' : 'estimate'}</span></div>}
           </div>
           <Timeline order={o} steps={data.steps} />
+          {o.reportDueAt && o.status !== 'reported' && (
+            <div className="callout green pt-lab-due"><Hourglass /><span><strong>Your test is done.</strong> Report expected by <strong>{fmtDateTime(o.reportDueAt)}</strong> ({timeLeft(o.reportDueAt)}). We&apos;ll notify you — it appears right here, online and as a PDF.</span></div>
+          )}
+          {o.bookingState === 'paid' && o.status === 'ordered' && (
+            <div className="callout sky"><CreditCard /><span>Booked · <strong>{fmtMoney(o.booking.advancePaid || o.booking.advance)}</strong> paid online · pay <strong>{fmtMoney(o.booking.balance)}</strong> at the lab.{o.booking.homeCollection ? ' A technician will come home to collect the sample.' : ' Show your Health Passport QR at the counter.'}</span></div>
+          )}
+          {o.bookingState === 'awaiting_payment' && (
+            <div className="callout"><CreditCard /><span>Your booking at <strong translate="no">{o.labName}</strong> isn&apos;t confirmed yet — pay the 20% advance ({fmtMoney(o.booking.advance)}) to confirm.</span></div>
+          )}
           <div className="pt-lab-at small">
             <Building2 size={15} />
-            <span>{o.booking ? 'Booked at' : 'Suggested lab'}: <strong translate="no">{o.labName || '—'}</strong>
+            <span>{o.bookingState === 'paid' || o.bookingState === 'in_lab' ? 'Booked at' : 'Nearest lab'}: <strong translate="no">{o.labName || '—'}</strong>
               {o.quote?.distanceKm != null && <> · {o.quote.distanceKm} km</>}{o.quote?.hours && <> · {o.quote.hours}</>}
               {o.booking?.homeCollection && <> · <HomeIcon size={13} style={{ verticalAlign: '-2px' }} /> home collection</>}
               {o.booking?.slot && <> · <CalendarClock size={13} style={{ verticalAlign: '-2px' }} /> {fmtDateTime(o.booking.slot)}</>}
@@ -179,7 +242,7 @@ export default function Tests() {
           <ReportingInfo quote={o.quote} booking={o.booking} />
           {o.canChangeLab && (
             <div className="row wrap mt-1" style={{ gap: 8, justifyContent: 'flex-end' }}>
-              <Button variant={o.booking ? 'secondary' : 'clay'} icon={MapPin} onClick={() => setChoosing(o)}>{o.booking ? 'Change lab' : 'Compare labs & book'}</Button>
+              <Button variant="clay" icon={MapPin} onClick={() => setChoosing(o)}>{o.bookingState === 'awaiting_payment' ? 'Finish booking' : 'Choose a lab & book'}</Button>
             </div>
           )}
         </article>
@@ -212,16 +275,51 @@ export default function Tests() {
               <span className="tiny muted">General guidance, not a diagnosis — your doctor will advise what&apos;s right for you.</span>
             </div>
           )}
+          {o.nextSteps?.length > 0 && (
+            <div className="pt-next">
+              <span className="tiny strong">What to do next</span>
+              {o.nextSteps.map((x, i) => (
+                <div key={i} className={cx('pt-next-step', x.kind)}>
+                  <span className="small">{x.text}</span>
+                  {x.action === 'call108' && <a className="btn sm danger" href="tel:108"><Ambulance size={14} /> Call 108</a>}
+                  {x.action === 'book_doctor' && o.doctorId && <Button size="sm" icon={Repeat} onClick={() => setRebook({ id: o.doctorId, name: o.doctorName })}>Book follow-up</Button>}
+                  {x.action === 'find_specialist' && <Button size="sm" variant="secondary" icon={Search} onClick={() => navigate('/patient/consult', { state: { department: x.department } })}>Find {x.department}</Button>}
+                </div>
+              ))}
+            </div>
+          )}
           {o.doctorNote ? (
             <div className="pt-docnote"><Stethoscope size={16} /><div><span className="tiny muted">Advice from <span translate="no">{o.doctorNote.by}</span> · {fmtDate(o.doctorNote.at)}</span><p className="small mb-0">{o.doctorNote.text}</p></div></div>
           ) : <p className="tiny muted mb-0">Your doctor ({o.doctorName}) has been sent this report and will add advice here.</p>}
           <div className="row wrap mt-1" style={{ justifyContent: 'flex-end', gap: 8 }}>
-            <Button variant="secondary" size="sm" icon={Download} onClick={() => window.open(`/lab-report/${o.id}`, '_blank', 'noopener')}>Download report</Button>
+            <RateLab order={o} />
+            <Button variant="secondary" size="sm" icon={Download} onClick={() => window.open(`/lab-report/${o.id}`, '_blank', 'noopener')}>Download PDF</Button>
             <Button variant="ghost" size="sm" onClick={() => navigate('/patient/records')}>Open in My records <ArrowRight size={14} /></Button>
           </div>
         </article>
       ))}
-      <LabChooser order={choosing} onClose={() => setChoosing(null)} onBooked={() => { setChoosing(null); load(); }} />
+      <LabChooser order={choosing} onClose={() => { setChoosing(null); load(); }} onBooked={() => { setChoosing(null); load(); }} />
+      <BookingFlow doctor={rebook} onClose={() => setRebook(null)} />
     </div>
+  );
+}
+
+const timeLeft = (iso) => {
+  const ms = new Date(iso) - Date.now();
+  if (ms <= 0) return 'any moment now';
+  const h = Math.floor(ms / 3600000); const m = Math.round((ms % 3600000) / 60000);
+  return h >= 24 ? `in about ${Math.round(h / 24)} day${h >= 48 ? 's' : ''}` : h ? `in about ${h} h ${m} min` : `in about ${m} min`;
+};
+
+// Rate the lab once (feeds the rating other patients sort by).
+function RateLab({ order }) {
+  const [stars, setStars] = useState(order.review?.stars || 0);
+  const [done, setDone] = useState(!!order.reviewed);
+  const rate = (n) => { if (done) return; api.post(`/lab-orders/${order.id}/review`, { stars: n }).then(() => { setStars(n); setDone(true); }).catch(() => {}); };
+  return (
+    <span className="pt-rate" title={done ? 'Thanks for rating the lab' : 'Rate this lab'}>
+      <span className="tiny muted">{done ? 'You rated' : 'Rate the lab'}</span>
+      {[1, 2, 3, 4, 5].map((n) => <button key={n} type="button" disabled={done} className={cx(stars >= n && 'on')} onClick={() => rate(n)} aria-label={`${n} stars`}>★</button>)}
+    </span>
   );
 }

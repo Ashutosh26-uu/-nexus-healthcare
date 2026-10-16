@@ -720,3 +720,20 @@ button.pt-wtb-head { cursor: pointer; }
   .pt-rate button { min-width: 34px; min-height: 34px; }
   .pt-chip-x { min-width: 28px; min-height: 28px; justify-content: center; align-items: center; }
 }
+
+/* lab booking & next steps */
+.pt-lab-sort { display: flex; flex-wrap: wrap; gap: 6px; }
+.pt-lab-due { align-items: center; }
+.pt-next { display: grid; gap: 8px; padding: 12px; border-radius: 14px; background: var(--paper); border: 1px solid var(--line-2); }
+.pt-next-step { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border-radius: 10px; background: #fff; border-left: 4px solid var(--green-2); }
+.pt-next-step.urgent { border-left-color: var(--rose); background: var(--rose-soft); }
+.pt-next-step.followup { border-left-color: var(--clay); }
+.pt-next-step.specialist { border-left-color: var(--sky); }
+.pt-next-step > span { flex: 1 1 220px; }
+.pt-rate { display: inline-flex; align-items: center; gap: 2px; margin-right: auto; }
+.pt-rate .tiny { margin-right: 4px; }
+.pt-rate button { border: 0; background: none; font-size: 22px; line-height: 1; padding: 6px 3px; color: var(--line-2); cursor: pointer; }
+.pt-rate button.on { color: #e0a100; }
+.pt-rate button:disabled { cursor: default; }
+.pt-sun { color: #e0a100; vertical-align: -2px; }
+.pt-green { color: var(--green); }

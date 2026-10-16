@@ -66,6 +66,7 @@ export default function LabReportPrint() {
         {o.insights?.length > 0 && (
           <section className="rxp-block"><h4>What this means</h4>{o.insights.map((x, i) => <p key={i}>{x.test ? <strong>{x.test}: </strong> : null}{x.text}</p>)}</section>
         )}
+        {o.nextSteps?.length > 0 && <section className="rxp-block"><h4>What to do next</h4>{o.nextSteps.map((x, i) => <p key={i}>{x.kind === 'urgent' ? '⚠ ' : '• '}{x.text}</p>)}</section>}
         {o.doctorNote && <section className="rxp-block"><h4>Doctor&apos;s advice — {o.doctorNote.by}</h4><p>{o.doctorNote.text}</p></section>}
         <footer className="rxp-foot">
           <div className="rxp-qr"><QR value={`nexus:lab:${o.id}`} size={84} label="Report QR" /><span>Scan to verify on Nexus Healthcare</span></div>

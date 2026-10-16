@@ -95,3 +95,5 @@
 
 .lab-chip { padding: 1px 8px; border-radius: 99px; background: var(--sky-soft, #e3eef7); color: #2b5c8a; font-weight: 600; }
 .lab-rx-link { display: inline-flex; align-items: center; gap: 4px; border: 0; background: var(--green-soft); color: var(--green-ink); border-radius: 99px; padding: 1px 9px; font: inherit; font-weight: 700; cursor: pointer; }
+
+.lab-pay { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 8px; background: var(--green-soft); color: var(--green-ink); }
