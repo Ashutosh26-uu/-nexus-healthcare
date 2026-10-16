@@ -374,3 +374,55 @@ body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-ins
   .app-pop .btn { min-height: 48px; }
 }
 @keyframes sheetUp { from { transform: translateY(100%); } }
+
+/* ================= Mobile responsiveness & smoothness ================= */
+/* Snappy taps everywhere: no grey flash, no 300 ms double-tap-zoom delay. */
+a, button, .btn, .chip, [role="button"], label, summary { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+/* No sideways wobble from a stray wide element. */
+html, body { overflow-x: clip; }
+img, svg, video, canvas { max-width: 100%; }
+table { max-width: 100%; }
+
+@media (max-width: 760px) {
+  /* iOS zooms into any field under 16px — keep the page still when someone taps a field. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea, .input, .select, .textarea { font-size: 16px !important; }
+  /* Comfortable thumb targets. */
+  .btn { min-height: 42px; }
+  .btn.sm { height: auto; min-height: 38px; }
+  .icon-btn { min-width: 38px; min-height: 38px; }
+  .chip { padding: 8px 14px; }
+  /* Long words / IDs / URLs never push the page wider than the screen. */
+  h1, h2, h3, h4, p, li, dd { overflow-wrap: break-word; }
+  .mono { word-break: break-all; }
+  /* Wide data tables scroll inside their card instead of stretching the page. */
+  .card table, .table-wrap table, table.table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
+  /* Popups: bottom sheet, own scrolling, sticky actions, safe-area aware. Blur is costly on phones. */
+  .modal-backdrop { padding: 0; place-items: end stretch; backdrop-filter: none; }
+  .modal, .modal.wide { max-width: none; width: 100%; max-height: 92dvh; border-radius: 22px 22px 0 0; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; animation: sheetUp 0.24s var(--ease); }
+  .modal-head { padding: 18px 18px 0; }
+  .modal-head h3 { font-size: 1.15rem; }
+  .modal-body { padding: 14px 18px 18px; }
+  .modal-foot { position: sticky; bottom: 0; background: #fff; padding: 12px 18px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line-2); flex-wrap: wrap; }
+  .modal-foot .btn { flex: 1 1 auto; }
+  /* Grids collapse to one column; rows wrap instead of overflowing. */
+  .grid.two, .grid.three, .grid.four, .grid.side { grid-template-columns: 1fr !important; }
+  .row { flex-wrap: wrap; }
+  .row.between { row-gap: 8px; }
+  .kv, dl.kv { grid-template-columns: minmax(90px, auto) 1fr; }
+}
+@media (max-width: 420px) {
+  .grid.two { grid-template-columns: 1fr !important; }
+  .card { padding: 16px; }
+}
+/* People who asked their phone for less motion get none. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+/* Grid/flex children may shrink below their content width — wide content (tables, the slot grid)
+   then scrolls inside its card instead of stretching the whole page. */
+.grid > *, .stack > *, .card { min-width: 0; }
+@media (max-width: 760px) {
+  .card-head { flex-wrap: wrap; row-gap: 6px; }
+}
+/* Popups sit above the floating chat button (z 90–95). */
+.modal-backdrop { z-index: 110; }

@@ -702,3 +702,21 @@ button.pt-wtb-head { cursor: pointer; }
 .pt-rate button.on { color: var(--sun); }
 .pt-rate.saved button { cursor: default; }
 .pt-root { padding-bottom: 76px; } /* keep the last buttons clear of the floating chat bubble */
+
+/* follow-up / visit rows wrap on phones */
+@media (max-width: 640px) {
+  .pt-fu-row { flex-wrap: wrap; row-gap: 8px; }
+  .pt-fu-row > .grow { flex: 1 1 calc(100% - 60px); }
+  .pt-rate button { font-size: 1.35rem; padding: 2px 3px; }
+  .pt-near-doc { padding: 12px; }
+  .pt-near-actions { width: 100%; }
+  .pt-near-actions .btn { flex: 1; }
+  .pt-bk-types { grid-template-columns: 1fr !important; }
+  .pt-cd-move { flex-direction: column; align-items: stretch; }
+  .pt-om-row { flex-wrap: wrap; }
+  .pt-wtb-head { flex-wrap: wrap; }
+}
+@media (max-width: 640px) {
+  .pt-rate button { min-width: 34px; min-height: 34px; }
+  .pt-chip-x { min-width: 28px; min-height: 28px; justify-content: center; align-items: center; }
+}

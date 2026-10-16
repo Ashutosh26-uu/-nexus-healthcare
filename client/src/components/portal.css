@@ -64,3 +64,4 @@
   .portal-content { padding: 20px 16px 90px; }
   .user-meta { display: none; }
 }
+@media (max-width: 640px) { .topbar-extra { overflow: hidden; } }

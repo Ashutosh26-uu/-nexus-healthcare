@@ -328,3 +328,14 @@
 .pt-cp-modal-row > span { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--green-soft); color: var(--green); flex: none; }
 .pt-readonly { display: flex; align-items: center; gap: 8px; background: var(--paper-2); color: var(--ink-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .dr-nb-flags { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Phones: swipe to scroll the week, tap a cell to toggle it. */
+@media (max-width: 760px) {
+  .dr-slots { touch-action: pan-x pan-y; }
+  .dr-slot-wrap { -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+}
+/* Phones: the status pill stays inside the header */
+@media (max-width: 640px) {
+  .dr-online { gap: 6px; padding: 4px 6px 4px 10px; max-width: 100%; }
+  .dr-free-btn, .dr-presence-select { max-width: 132px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; font-size: 16px !important; padding: 6px 10px; }
+}
+@media (max-width: 640px) { .dr-pr-recent-row { flex-wrap: wrap; } .dr-pr-recent-row > * { min-width: 0; } }
