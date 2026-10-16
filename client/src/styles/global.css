@@ -350,3 +350,27 @@ body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-ins
 @keyframes voiceWave { 0%, 100% { height: 3px; } 50% { height: 12px; } }
 .voice-err { color: var(--rose); display: inline-flex; align-items: center; gap: 4px; }
 .soon-badge { display: inline-flex; align-items: center; gap: 4px; background: var(--plum-soft); color: var(--plum); border-radius: 99px; padding: 2px 9px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em; }
+
+/* ---- "Get the app" popup ---- */
+.app-pop-wrap { position: fixed; inset: 0; z-index: 950; background: rgba(20, 30, 28, 0.42); display: grid; place-items: center; padding: 16px; animation: fadeIn 0.2s ease; }
+.app-pop { position: relative; max-height: calc(100dvh - 32px); overflow-y: auto; width: min(400px, 100%); background: #fff; border-radius: 22px; padding: 22px; box-shadow: var(--shadow-lg); display: grid; gap: 14px; animation: fadeUp 0.3s var(--ease); }
+.app-pop-x { position: absolute; top: 12px; right: 12px; border: 0; background: var(--paper-2); width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; color: var(--ink-2); }
+.app-pop-head { display: flex; align-items: center; gap: 12px; padding-right: 34px; }
+.app-pop-head > div { display: grid; gap: 2px; }
+.app-pop-title { font: 700 1.12rem var(--serif); color: var(--ink); line-height: 1.25; }
+.app-pop-perks { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; color: var(--ink-2); }
+.app-pop-perks li { display: flex; align-items: center; gap: 8px; }
+.app-pop-perks svg { color: var(--green-2); flex-shrink: 0; }
+.app-pop-steps { list-style: none; margin: 0; padding: 12px; display: grid; gap: 9px; background: var(--paper); border-radius: 14px; }
+.app-pop-steps li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.app-pop-n { width: 22px; height: 22px; border-radius: 50%; background: var(--green); color: #fff; display: grid; place-items: center; font-size: 0.75rem; font-weight: 700; flex-shrink: 0; }
+.app-pop-qr { display: flex; gap: 14px; align-items: center; padding: 12px; background: var(--paper); border-radius: 14px; }
+.app-pop-qr-ph { width: 132px; height: 132px; border-radius: 12px; background: var(--paper-2); flex-shrink: 0; }
+.app-pop-later { margin-top: -6px; }
+@keyframes fadeIn { from { opacity: 0; } }
+@media (max-width: 640px) {
+  .app-pop-wrap { place-items: end center; padding: 0; }
+  .app-pop { width: 100%; border-radius: 22px 22px 0 0; padding-bottom: calc(22px + env(safe-area-inset-bottom)); animation: sheetUp 0.25s var(--ease); }
+  .app-pop .btn { min-height: 48px; }
+}
+@keyframes sheetUp { from { transform: translateY(100%); } }
