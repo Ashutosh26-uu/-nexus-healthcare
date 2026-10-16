@@ -142,8 +142,8 @@ function Screenings({ patientId, onResults, saved }) {
   const [tests, setTests] = useState([]);
   const [results, setResults] = useState(saved || {});
   const [running, setRunning] = useState(null);
-  useEffect(() => { api.get('/kiosk/screenings').then(setTests).catch(() => {}); }, []);
-  useEffect(() => { onResults(results); /* eslint-disable-next-line */ }, [results]);
+  useEffect(() => { let alive = true; api.get('/kiosk/screenings').then((t) => alive && setTests(t)).catch(() => {}); return () => { alive = false; }; }, []);
+  useEffect(() => { onResults(results); }, [results]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!tests.length) return null;
   const run = async (key) => {
     setRunning(key);

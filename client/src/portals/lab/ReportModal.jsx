@@ -36,6 +36,8 @@ const CRITICAL = [
 ];
 
 const FLAGS = ['normal', 'high', 'low', 'positive', 'negative', 'critical'];
+const MAX_MB = 10; // mirrors the server's default MAX_UPLOAD_MB; the server still enforces its own limit
+const ATTACH_TYPES = /^(application\/pdf|image\/(jpeg|png))$/;
 
 function templateKeyFor(name = '') {
   const n = name.toLowerCase();
@@ -91,10 +93,20 @@ export default function ReportModal({ order, onClose, onDone }) {
 
 function ReportForm({ order, onSent, onCancel }) {
   const [rows, setRows] = useState(() => initialRows(order));
-  const [pdf, setPdf] = useState(null);
+  const [file, setFile] = useState(null);
+  const [fileErr, setFileErr] = useState('');
   const [checked, setChecked] = useState(false);
   const [run, busy] = useAction();
   const fileRef = useRef(null);
+
+  const pick = (f) => {
+    setFileErr('');
+    if (!f) { setFile(null); return; }
+    const bad = !ATTACH_TYPES.test(f.type) ? 'Attach a PDF, JPG or PNG.' : f.size > MAX_MB * 1024 * 1024 ? `Please keep the file under ${MAX_MB} MB.` : '';
+    if (bad) { setFileErr(bad); setFile(null); fileRef.current.value = ''; return; }
+    setFile(f);
+  };
+  const clearFile = () => { setFile(null); setFileErr(''); fileRef.current.value = ''; };
 
   const update = (id, patch) => setRows((rs) => rs.map((r) => {
     if (r.id !== id) return r;
@@ -112,8 +124,12 @@ function ReportForm({ order, onSent, onCancel }) {
   const submit = async (e) => {
     e.preventDefault();
     const results = filled.map(({ name, value, unit, range, flag }) => ({ name, value: String(value).trim(), unit, range, flag }));
-    const res = await run('send', () => api.post(`/lab-orders/${order.id}/report`, { results, attachment: pdf?.name }));
-    if (res) onSent({ ...res, critical: criticals.length > 0, pdf: pdf?.name });
+    // Upload the signed report first: if that fails the real error is shown and nothing is marked reported.
+    const res = await run('send', async () => {
+      const reportFileId = file ? (await api.upload(file)).id : null;
+      return api.post(`/lab-orders/${order.id}/report`, { results, reportFileId });
+    });
+    if (res) onSent({ ...res, critical: criticals.length > 0, attachment: file?.name });
   };
 
   return (
@@ -154,13 +170,14 @@ function ReportForm({ order, onSent, onCancel }) {
       </div>
 
       <div className="row wrap between" style={{ gap: 12 }}>
-        <div className="row" style={{ gap: 10 }}>
-          <input ref={fileRef} type="file" accept="application/pdf" hidden onChange={(e) => setPdf(e.target.files?.[0] || null)} />
-          {pdf ? (
-            <span className="badge sky lab-pdf"><FileText /> {pdf.name} <button type="button" onClick={() => { setPdf(null); fileRef.current.value = ''; }} aria-label="Remove PDF"><X size={12} /></button></span>
+        <div className="row wrap" style={{ gap: 10 }}>
+          <input ref={fileRef} type="file" accept="application/pdf,image/jpeg,image/png" hidden onChange={(e) => pick(e.target.files?.[0])} />
+          {file ? (
+            <span className="badge sky lab-pdf"><FileText /> {file.name} <button type="button" onClick={clearFile} aria-label="Remove attachment"><X size={12} /></button></span>
           ) : (
-            <Button type="button" variant="secondary" size="sm" icon={Paperclip} onClick={() => fileRef.current?.click()}>Attach signed PDF (optional)</Button>
+            <Button type="button" variant="secondary" size="sm" icon={Paperclip} onClick={() => fileRef.current?.click()}>Attach signed report (optional)</Button>
           )}
+          {fileErr && <span className="tiny" style={{ color: 'var(--rose)' }}>{fileErr}</span>}
         </div>
         <span className="tiny muted">Flags fill in automatically from the range. Change them if your pathologist disagrees.</span>
       </div>
@@ -196,7 +213,7 @@ function Success({ res, onClose }) {
         <CheckCircle2 size={40} />
         <div>
           <h3 className="mb-0">{o.patientName}'s report is in their Health Passport</h3>
-          <p className="muted small mb-0">{o.results.length} values · mapped to LOINC · {res.pdf ? `PDF "${res.pdf}" attached` : 'structured values only'}</p>
+          <p className="muted small mb-0">{o.results.length} values · mapped to LOINC · {res.attachment ? `"${res.attachment}" attached` : 'structured values only'}</p>
         </div>
       </div>
 

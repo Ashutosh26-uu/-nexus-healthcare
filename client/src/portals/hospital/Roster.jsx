@@ -1,10 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { UserPlus, Video, Stethoscope } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Avatar, Button, Field, Modal, Switch, Empty, Pills, useAction, useToast } from '../../components/ui';
 import { api } from '../../api';
 import { AvailBadge, AvailLine, availClass } from '../../components/Availability';
-import { useEffect } from 'react';
 import { ClinicDoctors } from '../doctor/Clinic';
 
 const SHIFTS = ['08:00 – 16:00', '09:00 – 17:00', '10:00 – 18:00', '16:00 – 00:00', '00:00 – 08:00'];
@@ -107,12 +106,14 @@ export default function Roster({ home, setData, reload }) {
 
 function AddStaff({ open, onClose, depts, onAdded }) {
   const [run, busy] = useAction();
-  const [form, setForm] = useState({ name: '', department: depts[0] || '', shift: SHIFTS[1] });
+  const blank = () => ({ name: '', department: depts[0] || '', shift: SHIFTS[1] });
+  const [form, setForm] = useState(blank);
+  useEffect(() => { if (open) setForm(blank()); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps -- a cancelled form starts clean next time
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const submit = async (e) => {
     e.preventDefault();
     const ok = await run('add', () => api.post('/hospital/roster', form), `${form.name} added to the roster`);
-    if (ok) { onAdded(); onClose(); setForm({ name: '', department: depts[0] || '', shift: SHIFTS[1] }); }
+    if (ok) { onAdded(); onClose(); }
   };
   return (
     <Modal open={open} onClose={onClose} title="Add a staff member" subtitle="They'll show up as on duty straight away. You can switch that off later.">
@@ -144,7 +145,11 @@ function ListedDoctors() {
   const [data, setData] = useState(null);
   const [open, setOpen] = useState(false);
   const [run, busy] = useAction();
-  useEffect(() => { api.get('/hospital/doctors').then(setData).catch(() => {}); }, []);
+  useEffect(() => {
+    let alive = true;
+    api.get('/hospital/doctors').then((r) => alive && setData(r)).catch(() => {});
+    return () => { alive = false; };
+  }, []);
   if (!data) return null;
   return (
     <div className="card mb-2">

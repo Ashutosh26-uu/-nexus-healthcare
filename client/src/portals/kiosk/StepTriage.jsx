@@ -47,7 +47,7 @@ function useSpeechInput(lang, onText) {
   const recRef = useRef(null);
   const SR = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
   const start = () => {
-    if (!SR) return;
+    if (!SR || listening) return; // a second tap while listening would spawn a parallel recogniser
     try {
       const rec = new SR();
       rec.lang = lang;

@@ -33,7 +33,7 @@ function patientContext(ctx) {
   const p = ctx.patient;
   const lines = [`\n\nThe user is signed in as ${ctx.user.name} (role: ${ctx.user.role}).`];
   if (p) {
-    lines.push(`Health Passport ${p.id}. Allergies: ${p.allergies.join(', ') || 'none recorded'}. Conditions: ${p.conditions.join(', ') || 'none recorded'}. Current medicines: ${(p.currentMeds || []).join(', ') || 'none'}. Preferred language: ${p.language}.`);
+    lines.push(`Health Passport ${p.id}. Allergies: ${(p.allergies || []).join(', ') || 'none recorded'}. Conditions: ${(p.conditions || []).join(', ') || 'none recorded'}. Current medicines: ${(p.currentMeds || []).join(', ') || 'none'}. Preferred language: ${p.language || 'not set'}.`);
   }
   if (ctx.upcoming?.length) lines.push(`Upcoming consults: ${ctx.upcoming.map((c) => `${c.doctorName} on ${new Date(c.scheduledAt).toLocaleString('en-IN')}`).join('; ')}.`);
   if (ctx.prescriptions?.length) lines.push(`Recent prescriptions: ${ctx.prescriptions.map((r) => `${r.items.map((i) => i.drug).join(', ')} (status ${r.status})`).join('; ')}.`);
@@ -74,16 +74,17 @@ function fallbackAnswer(message, ctx) {
     const hits = item.k.filter((k) => text.includes(k)).length;
     if (hits > bestHits) { best = item; bestHits = hits; }
   }
-  let answer = best ? best.a : NO_MATCH;
+  const answer = best ? best.a : NO_MATCH;
 
   const p = ctx?.patient;
-  if (p && /medicine|tablet|take|ibuprofen|amoxicillin|penicillin|painkiller/.test(text) && p.allergies.length) {
-    answer += `\n\n⚠️ Just a reminder, ${p.name.split(' ')[0]}: your passport lists an allergy to **${p.allergies.join(', ')}**. Always mention it to the doctor or pharmacist.`;
-  }
   if (p && /next|upcoming|appointment|when/.test(text) && ctx.upcoming?.length) {
     const c = ctx.upcoming[0];
-    answer = `Your next consult is with **${c.doctorName}** on **${new Date(c.scheduledAt).toLocaleString('en-IN', { weekday: 'long', hour: 'numeric', minute: '2-digit' })}**. You'll get a reminder 15 minutes before. You can join from *Home → Upcoming*.`;
+    return `Your next consult is with **${c.doctorName}** on **${new Date(c.scheduledAt).toLocaleString('en-IN', { weekday: 'long', hour: 'numeric', minute: '2-digit' })}**. You'll get a reminder 15 minutes before. You can join from *Home → Upcoming*.`;
   }
+  // The allergy reminder is returned separately so the fixed FAQ text can still be served translated and
+  // only the catalog string (never the allergy itself) goes to a translation provider.
+  const allergies = (p?.allergies || []).filter(Boolean);
+  if (p && allergies.length && /medicine|tablet|take|ibuprofen|amoxicillin|penicillin|painkiller/.test(text)) return { text: answer, allergy: allergies.join(', ') };
   return answer;
 }
 

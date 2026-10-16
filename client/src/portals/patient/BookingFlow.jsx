@@ -33,18 +33,22 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
   const [error, setError] = useState('');
   const [missing, setMissing] = useState([]);
   const [copied, setCopied] = useState(false);
+  const [expired, setExpired] = useState(false); // payment refused with 409: this booking can't be paid any more
 
   useEffect(() => {
-    if (!doctor) return;
-    setStep(0); setBooking(null); setPaid(false); setError(''); setOpts(null); setSlot(null); setCopied(false);
+    if (!doctor) return undefined;
+    let alive = true; // close-and-reopen quickly: the old doctor's options must not land on the new one
+    setStep(0); setBooking(null); setPaid(false); setError(''); setOpts(null); setSlot(null); setCopied(false); setExpired(false);
     setSymptoms(initialSymptoms || patient?.currentSymptoms?.text || '');
     setDays(patient?.currentSymptoms?.days ?? '');
     setMissing(patient?.bookingMissing || []);
     api.get(`/doctors/${doctor.id}/booking-options`).then((o) => {
+      if (!alive) return;
       setOpts(o);
       setVisitType(o.options.clinic ? 'clinic' : 'video');
       setWhen(o.doctor.online && !o.options.clinic ? 'now' : 'later');
-    }).catch((e) => setError(e.message));
+    }).catch((e) => alive && setError(e.message));
+    return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doctor]);
 
@@ -54,20 +58,20 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
   const fees = o?.fees || { bookingFee: 100, video: Math.max(100, d.fee || 0), inPerson: 100, payAtClinic: d.fee || 0 };
   const amount = visitType === 'video' ? fees.video : fees.inPerson;
   const canNow = visitType === 'video' && d.online;
+  const later = when === 'later' || !canNow; // "Right now" only counts when the doctor is actually available
   const place = visitType === 'clinic' ? o?.clinic : null;
   const completeProfile = () => { onClose(); navigate('/patient/complete-profile', { state: { returnTo: '/patient/consult' } }); };
 
   const next = () => {
     setError('');
-    if (step === 1 && when === 'later' && !slot) { setError('Pick a time that suits you.'); return; }
-    if (step === 1 && when === 'now' && !canNow) { setError('Choose a time — the doctor isn\'t available right now.'); return; }
+    if (step === 1 && later && !slot) { setError('Pick a time that suits you.'); return; }
     setStep((s) => s + 1);
   };
   const createBooking = async () => {
     if (symptoms.trim().length < 3) { setError('Please tell the doctor what is bothering you — type it or tap the mic.'); return; }
     setBusy(true); setError('');
     try {
-      const r = await api.post('/bookings', { doctorId: d.id, visitType, when: canNow && when === 'now' ? 'now' : 'later', scheduledAt: when === 'later' || !canNow ? slot : undefined, symptoms, symptomDays: days });
+      const r = await api.post('/bookings', { doctorId: d.id, visitType, when: later ? 'later' : 'now', scheduledAt: later ? slot : undefined, symptoms, symptomDays: days });
       setBooking(r); setStep(3);
     } catch (e) {
       if (e.code === 'PROFILE_INCOMPLETE') setMissing(e.data?.missing || ['profile']);
@@ -75,8 +79,11 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
     } finally { setBusy(false); }
   };
   const done = () => { reloadHome(); onClose(); navigate(`/patient/consult/${booking.consult.id}`); };
+  // Back to "When" with the slot cleared; continuing creates a fresh booking and payment.
+  const rebook = () => { setExpired(false); setBooking(null); setSlot(null); setError(''); setStep(1); };
 
-  // Profile not complete: keep reminding — booking needs age, address and an ID.
+  // Profile not complete: keep reminding — booking needs age and a permanent address (the server decides
+  // what's missing; an ID is optional, the aadhaar/id labels only cover older responses).
   if (missing.length) {
     return (
       <Modal open onClose={onClose} title="One step before you book" subtitle={`To book ${d.name}, please complete your profile.`}
@@ -84,7 +91,7 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
         <div className="stack">
           <p className="mb-0">Hospitals and clinics need to know who&apos;s coming. Please add:</p>
           <ul className="pt-missing">{missing.map((m) => <li key={m}><Check size={14} /> {MISSING_LABEL[m] || m}</li>)}</ul>
-          <p className="tiny muted mb-0"><ShieldCheck size={12} style={{ verticalAlign: '-2px' }} /> Your name, email and mobile are already filled in. Aadhaar: we keep only the last 4 digits.</p>
+          <p className="tiny muted mb-0"><ShieldCheck size={12} style={{ verticalAlign: '-2px' }} /> Your name, email and mobile are already filled in. If you add Aadhaar, we keep only the last 4 digits.</p>
         </div>
       </Modal>
     );
@@ -95,13 +102,19 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
   ) : step < 3 ? (
     <>
       {step > 0 ? <Button variant="ghost" icon={ArrowLeft} onClick={() => setStep((s) => s - 1)}>Back</Button> : <Button variant="ghost" onClick={onClose}>Cancel</Button>}
-      {step < 2 ? <Button onClick={next} icon={ArrowRight}>Continue</Button> : <Button variant="clay" loading={busy} onClick={createBooking}>Continue to pay {fmtMoney(amount)}</Button>}
+      {step < 2 ? <Button onClick={next} icon={ArrowRight} disabled={!opts}>Continue</Button> : <Button variant="clay" loading={busy} onClick={createBooking}>Continue to pay {fmtMoney(amount)}</Button>}
     </>
-  ) : <Button variant="ghost" onClick={onClose}>Pay later</Button>;
+  ) : (
+    <>
+      <Button variant="ghost" onClick={onClose}>Pay later</Button>
+      {expired && <Button icon={CalendarClock} onClick={rebook}>Choose another time</Button>}
+    </>
+  );
 
   return (
-    <Modal open={!!doctor} onClose={onClose} wide title={paid ? 'Booking confirmed' : `Book ${d.name}`} subtitle={`${d.specialty}${d.fee ? ` · doctor's fee ${fmtMoney(d.fee)}` : ''}`} footer={footer}>
+    <Modal open={!!doctor} onClose={onClose} wide title={paid ? 'Booking confirmed' : `Book ${d.name}`} subtitle={[d.specialty, d.fee ? `doctor's fee ${fmtMoney(d.fee)}` : null].filter(Boolean).join(' · ')} footer={footer}>
       {!opts && !error && <div className="skeleton" style={{ height: 160, borderRadius: 12 }} />}
+      {!opts && error && <div className="form-error">{error}</div>}
       {opts && !paid && (
         <div className="stack">
           <div className="steps">{STEPS.map((s, i) => <span key={s} className={cx(i <= step && 'done')} />)}</div>
@@ -130,11 +143,11 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
                 <button type="button" disabled={!canNow} className={cx('pt-bk-type', when === 'now' && canNow && 'on')} onClick={() => setWhen('now')}>
                   <Clock /><span><strong>Right now</strong><span className="tiny muted block">{canNow ? 'Join the doctor’s live queue' : visitType === 'video' ? 'Doctor isn’t available right now' : 'Pick a time for in-person visits'}</span></span>
                 </button>
-                <button type="button" className={cx('pt-bk-type', (when === 'later' || !canNow) && 'on')} onClick={() => setWhen('later')}>
+                <button type="button" className={cx('pt-bk-type', later && 'on')} onClick={() => setWhen('later')}>
                   <CalendarClock /><span><strong>Pick a time</strong><span className="tiny muted block">Today or later this week</span></span>
                 </button>
               </div>
-              {(when === 'later' || !canNow) && <div className="mt-2"><SlotPicker value={slot} onChange={setSlot} /></div>}
+              {later && <div className="mt-2"><SlotPicker value={slot} onChange={setSlot} /></div>}
             </Field>
           )}
 
@@ -152,7 +165,7 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
               <dl className="kv review">
                 <dt>Doctor</dt><dd translate="no">{d.name}</dd>
                 <dt>Where</dt><dd>{visitType === 'video' ? 'Video consult' : <span translate="no">{place?.name}</span>}</dd>
-                <dt>When</dt><dd>{when === 'now' && canNow ? 'Now' : slot ? fmtDateTime(slot) : '—'}</dd>
+                <dt>When</dt><dd>{!later ? 'Now' : slot ? fmtDateTime(slot) : '—'}</dd>
                 <dt>Pay now</dt><dd><strong>{fmtMoney(amount)}</strong>{visitType !== 'video' ? ' booking amount' : ''}</dd>
                 {visitType !== 'video' && fees.payAtClinic > 0 && <><dt>At the clinic</dt><dd>Doctor&apos;s fee {fmtMoney(fees.payAtClinic)}</dd></>}
               </dl>
@@ -163,7 +176,7 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
           {step === 3 && booking && (
             <>
               {booking.emergency && <div className="callout rose"><Ambulance /><div><strong>Your symptoms may be serious.</strong> {booking.emergency} <a href="tel:108" className="strong"><Phone size={13} /> Call 108</a></div></div>}
-              <PaymentStep payment={booking.payment} onPaid={() => setPaid(true)} />
+              <PaymentStep payment={booking.payment} onPaid={() => setPaid(true)} onError={(e) => setExpired(e.status === 409)} />
             </>
           )}
           {error && <div className="form-error">{error}</div>}
@@ -177,7 +190,7 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
             <span className="tiny muted">Your booking ID</span>
             <span className="row" style={{ gap: 8, justifyContent: 'center' }}>
               <strong className="mono" translate="no">{booking.consult.bookingNo}</strong>
-              <button type="button" className="icon-btn" aria-label="Copy booking ID" onClick={() => { navigator.clipboard?.writeText(booking.consult.bookingNo); setCopied(true); }}>{copied ? <Check size={15} /> : <Copy size={15} />}</button>
+              <button type="button" className="icon-btn" aria-label="Copy booking ID" onClick={() => navigator.clipboard?.writeText(booking.consult.bookingNo).then(() => setCopied(true)).catch(() => {})}>{copied ? <Check size={15} /> : <Copy size={15} />}</button>
             </span>
           </div>
           <p className="small muted mb-0">
@@ -191,7 +204,7 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
           ) : (
             <>
               <QR value={`NEXUS-BOOKING:${booking.consult.bookingNo}`} size={140} label="Booking QR" />
-              <p className="small mb-0">{when === 'now' && canNow ? 'Stay on the consult screen — you’ll be called in shortly.' : `We'll remind you before ${fmtDateTime(slot)}.`}</p>
+              <p className="small mb-0">{!later ? 'Stay on the consult screen — you’ll be called in shortly.' : `We'll remind you before ${fmtDateTime(slot)}.`}</p>
             </>
           )}
         </div>

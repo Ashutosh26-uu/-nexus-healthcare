@@ -18,6 +18,7 @@ function PatientStep({ onReady }) {
   const [q, setQ] = useState('');
   const dq = useDebounced(q.trim(), 300);
   const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
   const [picked, setPicked] = useState(null);
   const [sent, setSent] = useState(null);
   const [code, setCode] = useState('');
@@ -27,8 +28,11 @@ function PatientStep({ onReady }) {
   const [run, busy] = useAction();
 
   useEffect(() => {
-    if (dq.length < 4) { setResults([]); return; }
-    api.get(`/doctor/lookup?q=${encodeURIComponent(dq)}`).then(setResults).catch(() => setResults([]));
+    if (dq.length < 4) { setResults([]); setSearching(false); return undefined; }
+    let alive = true; // a slower, older search must not overwrite the newer one's results
+    setSearching(true);
+    api.get(`/doctor/lookup?q=${encodeURIComponent(dq)}`).then((r) => alive && setResults(r)).catch(() => alive && setResults([])).finally(() => alive && setSearching(false));
+    return () => { alive = false; };
   }, [dq]);
 
   const sendCode = (p, channel) => run('send', async () => {
@@ -72,7 +76,7 @@ function PatientStep({ onReady }) {
         <div className="input-wrap grow" style={{ minWidth: 240 }}><Search /><input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="e.g. OC-2041-7783 or 98765 00001" autoFocus /></div>
         <Button variant="secondary" icon={UserPlus} onClick={() => setNewOpen(true)}>New patient</Button>
       </div>
-      {dq.length >= 4 && results.length === 0 && <p className="small muted mt-1 mb-0">No passport found. Check the number, or register them as a new patient.</p>}
+      {dq.length >= 4 && !searching && results.length === 0 && <p className="small muted mt-1 mb-0">No passport found. Check the number, or register them as a new patient.</p>}
       <div className="dr-pr-results">
         {results.map((p) => (
           <div key={p.id} className="dr-pr-result">
@@ -119,17 +123,32 @@ function WriteStep({ patient, onDone, onCancel }) {
   const [warnings, setWarnings] = useState([]);
   const [signed, setSigned] = useState(false);
   const [newMed, setNewMed] = useState(null);
+  const [labDropped, setLabDropped] = useState(false); // we un-picked the chosen centre because it can't do every ticked test
+  const [uploading, setUploading] = useState(false);
   const [run, busy] = useAction();
   const fileRef = useRef(null);
 
   const drugKey = useMemo(() => rows.map((r) => r.drug).join('|'), [rows]);
   const dKey = useDebounced(drugKey, 400);
   useEffect(() => {
+    let alive = true;
     const qs = new URLSearchParams({ patientId: patient.id, drugs: dKey, tests: tests.join(',') });
-    api.get(`/doctor/share-targets?${qs}`).then(setTargets).catch(() => {});
-    if (!dKey) { setWarnings([]); return; }
-    api.post('/prescriptions/check', { patientId: patient.id, items: dKey.split('|').map((drug) => ({ drug })) }).then(setWarnings).catch(() => {});
+    api.get(`/doctor/share-targets?${qs}`).then((t) => alive && setTargets(t)).catch(() => {});
+    if (dKey) api.post('/prescriptions/check', { patientId: patient.id, items: dKey.split('|').map((drug) => ({ drug })) }).then((w) => alive && setWarnings(w)).catch(() => {});
+    else setWarnings([]);
+    return () => { alive = false; };
   }, [dKey, tests, patient.id]);
+
+  // `targets` is refetched for the current tests, so once it arrives a chosen centre that no longer does all of
+  // them (or dropped off the list) is cleared — otherwise the server rejects the whole prescription on submit.
+  useEffect(() => {
+    if (!labId || !targets) return;
+    const lab = targets.labs.find((l) => l.id === labId);
+    if (lab && lab.offers >= lab.of) return;
+    setLabDropped(true);
+    setLabId('');
+  }, [targets, labId]);
+  const pickLab = (id) => { setLabId(id); setLabDropped(false); };
 
   const update = (key, patch) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const addDrug = (d) => {
@@ -138,7 +157,8 @@ function WriteStep({ patient, onDone, onCancel }) {
   };
   const uploadPaper = async (file) => {
     if (!file) return;
-    try { const f = await api.upload(file); setPaper({ id: f.id, name: file.name }); } catch (e) { toast(e.message, 'error'); }
+    setUploading(true);
+    try { const f = await api.upload(file); setPaper({ id: f.id, name: file.name }); } catch (e) { toast(e.message, 'error'); } finally { setUploading(false); }
   };
   const allergyHits = warnings.filter((w) => w.type === 'allergy');
   const canSign = signed && (rows.length || tests.length || paper);
@@ -197,9 +217,9 @@ function WriteStep({ patient, onDone, onCancel }) {
           </Field>
           <Field label="Wrote it on paper too? (optional)" hint="Attach a photo — the patient sees the original next to the digital copy.">
             <div className="row" style={{ gap: 8 }}>
-              <Button variant="secondary" size="sm" icon={FileUp} onClick={() => fileRef.current?.click()}>{paper ? 'Replace photo' : 'Upload photo / PDF'}</Button>
+              <Button variant="secondary" size="sm" icon={FileUp} loading={uploading} onClick={() => fileRef.current?.click()}>{paper ? 'Replace photo' : 'Upload photo / PDF'}</Button>
               {paper && <span className="badge green tiny"><CheckCircle2 size={12} /> {paper.name}</span>}
-              <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={(e) => uploadPaper(e.target.files?.[0])} />
+              <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={(e) => { uploadPaper(e.target.files?.[0]); e.target.value = ''; }} />
             </div>
           </Field>
         </div>
@@ -233,14 +253,15 @@ function WriteStep({ patient, onDone, onCancel }) {
           </Field>
           <Field label={<span className="row" style={{ gap: 6 }}><Building2 size={14} />Lab / diagnostic centre</span>}>
             <div className="dr-share-list">
-              <button type="button" className={cx('dr-share', !labId && 'on')} onClick={() => setLabId('')}><span className="grow"><strong className="small">Nearest that does each test</strong><span className="tiny muted block">Split automatically; the patient can switch labs</span></span></button>
+              <button type="button" className={cx('dr-share', !labId && 'on')} onClick={() => pickLab('')}><span className="grow"><strong className="small">Nearest that does each test</strong><span className="tiny muted block">Split automatically; the patient can switch labs</span></span></button>
               {targets?.labs.map((l) => (
-                <button key={l.id} type="button" disabled={tests.length > 0 && l.offers < l.of} className={cx('dr-share', labId === l.id && 'on')} onClick={() => setLabId(l.id)}>
+                <button key={l.id} type="button" disabled={tests.length > 0 && l.offers < l.of} className={cx('dr-share', labId === l.id && 'on')} onClick={() => pickLab(l.id)}>
                   <span className="grow"><strong className="small" translate="no">{l.name}</strong><span className="tiny muted block">{l.kind}{l.distanceKm != null ? ` · ${l.distanceKm} km` : ''}{l.homeCollection ? ' · home collection' : ''}</span></span>
                   {l.of > 0 && <span className={cx('badge', l.offers === l.of ? 'green' : 'sun')}>{l.offers}/{l.of} tests</span>}
                 </button>
               ))}
             </div>
+            {labDropped && tests.length > 0 && <span className="hint">The centre you picked doesn&apos;t do all of these tests, so each test will go to the nearest centre that does it.</span>}
           </Field>
         </div>
         {tests.length > 0 && <label className="check small mt-1"><input type="checkbox" checked={shareRxWithLab} onChange={(e) => setShareRxWithLab(e.target.checked)} />Share the prescription with the lab / diagnostic centre too</label>}

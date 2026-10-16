@@ -34,10 +34,17 @@ export default function Signup() {
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   useEffect(() => {
-    api.get('/auth/otp/config').then((c) => { setConfig(c); if (c.channels?.includes('email') && c.emailLive && !c.live) setChannel('email'); }).catch(() => setConfig({ channels: ['sms'] }));
+    api.get('/auth/otp/config').then((c) => {
+      setConfig(c);
+      const list = c.channels?.length ? c.channels : ['sms'];
+      // Only channels the server lists deliver; prefer email while SMS isn't live (older servers still list sms).
+      setChannel((cur) => (!c.live && c.emailLive && list.includes('email') ? 'email' : list.includes(cur) ? cur : list[0]));
+    }).catch(() => setConfig({ channels: ['sms'] }));
   }, []);
   useEffect(() => { if (user && !busy) navigate(ROLE_HOME[user.role], { replace: true }); }, [user, busy, navigate]);
 
+  const channels = config?.channels?.length ? config.channels : ['sms'];
+  const emailOnly = channels.length === 1 && channels[0] === 'email';
   const digits = form.phone.replace(/\D/g, '');
   const lockedPhone = !!(preTicket && location.state?.phone);
   const lockedEmail = !!(preTicket && location.state?.email);
@@ -67,7 +74,11 @@ export default function Signup() {
       if (ticket) { await create(ticket); return; }
       const r = await api.post('/auth/otp/request', { phone: digits, dialCode: country.dial, email: form.email.trim(), channel, lang });
       setSent(r); setCode('');
-    } catch (err) { setError(err.message); } finally { setBusy(false); }
+    } catch (err) {
+      setError(err.message);
+      // 503 = no gateway behind this channel; fall back to email so the person can still get a code.
+      if (err.status === 503 && channel !== 'email' && channels.includes('email')) setChannel('email');
+    } finally { setBusy(false); }
   };
 
   const verify = async (e) => {
@@ -80,8 +91,6 @@ export default function Signup() {
       await create(r.ticket);
     } catch (err) { setError(err.message); setCode(''); } finally { setBusy(false); }
   };
-
-  const channels = config?.channels || ['sms'];
 
   return (
     <div className="auth">
@@ -113,7 +122,7 @@ export default function Signup() {
               )}
               {error && <div className="form-error">{error} {/sign in/i.test(error) && <Link to="/login">Sign in →</Link>}</div>}
               <Button type="submit" size="lg" variant="clay" block loading={busy}>{ticket ? <>Create my account <ArrowRight /></> : <>Send code <ArrowRight /></>}</Button>
-              <p className="tiny muted center mb-0"><ShieldCheck size={13} style={{ display: 'inline', verticalAlign: '-2px' }} /> We send a one-time code to make sure the number or email is really yours. No password needed.</p>
+              <p className="tiny muted center mb-0"><ShieldCheck size={13} style={{ display: 'inline', verticalAlign: '-2px' }} /> {emailOnly ? 'We send a one-time code to make sure your email is really yours. No password needed — SMS codes are coming soon.' : 'We send a one-time code to make sure the number or email is really yours. No password needed.'}</p>
             </form>
           ) : (
             <form className="stack" onSubmit={verify}>

@@ -17,9 +17,12 @@
 .cc-item.on { background: var(--green-soft); }
 .channel-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .channel-row .chip { display: inline-flex; align-items: center; gap: 6px; }
-.phone-input span { display: grid; place-items: center; padding: 0 14px; border: 1px solid var(--line); border-right: 0; border-radius: var(--radius-sm) 0 0 var(--radius-sm); background: var(--paper-2); font-weight: 600; color: var(--ink-2); }
+/* Direct child only: as a descendant rule it boxed every span in the country button and dropdown rows. */
+.phone-input > span { display: grid; place-items: center; padding: 0 14px; border: 1px solid var(--line); border-right: 0; border-radius: var(--radius-sm) 0 0 var(--radius-sm); background: var(--paper-2); font-weight: 600; color: var(--ink-2); }
 .phone-input .input { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; font-size: 1.05rem; letter-spacing: 0.04em; }
-.pw-toggle { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); border: 0; background: none; color: var(--ink-3); cursor: pointer; padding: 6px; border-radius: 6px; display: grid; }
+/* Logical sides so the eye icon and its padding swap ends in RTL (Urdu, Arabic) instead of overlapping the text. */
+.pw-toggle { position: absolute; inset-inline-end: 8px; top: 50%; transform: translateY(-50%); border: 0; background: none; color: var(--ink-3); cursor: pointer; padding: 6px; border-radius: 6px; display: grid; }
+.input-wrap .input.pw-input { padding-inline-end: 44px; }
 .pw-toggle:hover { color: var(--ink); }
 .link-btn { background: none; border: 0; color: var(--green); font-weight: 600; cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 3px; }
 .dev-otp { background: var(--sun-soft); color: #6b4708; border-radius: 10px; padding: 9px 13px; font-size: 0.86rem; display: inline-block; }
@@ -47,10 +50,6 @@
 .success-burst { width: 76px; height: 76px; border-radius: 50%; background: var(--green-soft); color: var(--green); display: grid; place-items: center; margin: 0 auto 18px; animation: pop 0.5s var(--ease); box-shadow: 0 0 0 12px rgba(19, 122, 102, 0.07); }
 .success-burst svg { width: 36px; height: 36px; }
 @keyframes pop { from { transform: scale(0.4); opacity: 0; } }
-.passport-card { background: linear-gradient(135deg, #0f5c4d 0%, #137a66 100%); color: #fff; border-radius: 20px; padding: 24px; margin: 26px 0; box-shadow: var(--shadow-lg); position: relative; overflow: hidden; }
-.passport-card::after { content: ''; position: absolute; width: 200px; height: 200px; border-radius: 50%; background: rgba(255, 255, 255, 0.06); right: -60px; bottom: -90px; }
-.pc-chip { background: rgba(255, 255, 255, 0.14); border-radius: 99px; padding: 3px 10px; font-size: 0.76rem; font-weight: 600; }
-.pc-chip.warn { background: #f8d9cb; color: #8f3a1b; }
 .kv.review { background: var(--paper-2); border-radius: 14px; padding: 18px 20px; gap: 10px 20px; }
 
 @media (max-width: 960px) {

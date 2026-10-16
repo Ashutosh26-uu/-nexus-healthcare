@@ -29,10 +29,12 @@ export default function AdminApp() {
     { to: '/admin/audit', label: 'Audit & compliance', icon: ScrollText, badge: c?.breakGlassUnreviewed || null },
     { to: '/admin/content', label: 'Content & languages', icon: Languages },
   ];
-  const headerExtra = data ? (
+  // Live mode has no synthetic uptime figure (uptime is null) — show how long the server has been up instead.
+  const m = data?.monitoring;
+  const headerExtra = m ? (
     <span className="ad-health tiny">
-      <span className={data.monitoring.uptime >= 99.9 ? 'dot green pulse' : 'dot sun'} />
-      All systems normal · {data.monitoring.uptime}% uptime
+      <span className={m.uptime == null || m.uptime >= 99.9 ? 'dot green pulse' : 'dot sun'} />
+      {m.uptime == null ? `Server up ${m.processUptimeHours ?? 0} h · ${m.activeCalls} active calls` : `All systems normal · ${m.uptime}% uptime`}
     </span>
   ) : null;
 

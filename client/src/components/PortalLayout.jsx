@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Bell, LogOut, Menu, X, ChevronDown, KeyRound, Cookie, MapPin } from 'lucide-react';
 import Logo from './Logo';
@@ -22,8 +22,21 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
   const [notes, setNotes] = useState([]);
   const location = useLocation();
   const navigate = useNavigate();
+  const bellRef = useRef(null);
+  const menuRef = useRef(null);
 
   useEffect(() => { setOpen(false); setBellOpen(false); setMenuOpen(false); }, [location.pathname]);
+
+  // Popovers close on a tap anywhere else or Escape, like every other dropdown in the app.
+  useEffect(() => {
+    if (!bellOpen && !menuOpen) return undefined;
+    const closeAll = () => { setBellOpen(false); setMenuOpen(false); };
+    const onDoc = (e) => { if (!bellRef.current?.contains(e.target) && !menuRef.current?.contains(e.target)) closeAll(); };
+    const onKey = (e) => e.key === 'Escape' && closeAll();
+    document.addEventListener('pointerdown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('pointerdown', onDoc); document.removeEventListener('keydown', onKey); };
+  }, [bellOpen, menuOpen]);
 
   useEffect(() => {
     let alive = true;
@@ -84,8 +97,8 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
           <div className="grow topbar-extra">{headerExtra}</div>
           {['patient', 'caregiver'].includes(user?.role) && <LocationChip />}
           <LanguagePicker compact />
-          <div className="pop-wrap">
-            <button className="icon-btn" onClick={openBell} aria-label="Notifications">
+          <div className="pop-wrap" ref={bellRef}>
+            <button className="icon-btn" onClick={openBell} aria-label="Notifications" aria-expanded={bellOpen}>
               <Bell />
               {unread > 0 && <span className="bell-dot">{unread}</span>}
             </button>
@@ -105,8 +118,8 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
               </div>
             )}
           </div>
-          <div className="pop-wrap">
-            <button className="user-btn" onClick={() => { setMenuOpen((v) => !v); setBellOpen(false); }}>
+          <div className="pop-wrap" ref={menuRef}>
+            <button className="user-btn" onClick={() => { setMenuOpen((v) => !v); setBellOpen(false); }} aria-haspopup="menu" aria-expanded={menuOpen}>
               <Avatar name={user?.name} size="sm" />
               <span className="user-meta">
                 <span className="small notranslate" translate="no" style={{ fontWeight: 600 }}>{user?.name}</span>
@@ -152,8 +165,8 @@ function PasswordModal({ open, onClose }) {
     <Modal open={open} onClose={onClose} title="Change password">
       <form className="stack" onSubmit={submit}>
         {err && <div className="form-error">{err}</div>}
-        <Field label="Current password"><input className="input" type="password" value={form.current} onChange={(e) => setForm({ ...form, current: e.target.value })} required /></Field>
-        <Field label="New password" hint="At least 8 characters"><input className="input" type="password" value={form.next} onChange={(e) => setForm({ ...form, next: e.target.value })} required /></Field>
+        <Field label="Current password"><input className="input" type="password" autoComplete="current-password" value={form.current} onChange={(e) => setForm({ ...form, current: e.target.value })} required /></Field>
+        <Field label="New password" hint="At least 8 characters"><input className="input" type="password" autoComplete="new-password" minLength={8} value={form.next} onChange={(e) => setForm({ ...form, next: e.target.value })} required /></Field>
         <Button loading={busy} type="submit">Update password</Button>
       </form>
     </Modal>

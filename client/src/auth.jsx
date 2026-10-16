@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api, session, disconnectLive } from './api';
 
 const AuthContext = createContext(null);
@@ -31,40 +31,62 @@ export const ROLE_LABEL = {
   super_admin: 'Platform admin',
 };
 
-export function AuthProvider({ children }) {
-  const [state, setState] = useState({ loading: Boolean(session.token), user: null, facility: null, doctor: null, profiles: [] });
+const SIGNED_OUT = { loading: false, unreachable: false, user: null, facility: null, doctor: null, profiles: [] };
+const RETRY_MS = [3000, 10000, 30000]; // then every 60 s
 
-  const refresh = useCallback(async (retried = false) => {
-    if (!session.token) { setState({ loading: false, user: null, profiles: [] }); return null; }
+export function AuthProvider({ children }) {
+  const [state, setState] = useState({ ...SIGNED_OUT, loading: Boolean(session.token) });
+  const retry = useRef({ timer: null, attempt: 0 });
+
+  const refresh = useCallback(async () => {
+    clearTimeout(retry.current.timer);
+    retry.current.timer = null;
+    const token = session.token;
+    if (!token) { retry.current.attempt = 0; setState(SIGNED_OUT); return null; }
     try {
       const me = await api.get('/auth/me');
-      setState({ loading: false, ...me, profiles: me.profiles || [] });
+      if (session.token !== token) return null; // signed out / in as someone else meanwhile
+      retry.current.attempt = 0;
+      setState({ ...SIGNED_OUT, ...me, profiles: me.profiles || [] });
       return me;
     } catch (e) {
-      // Only a real 401 means the token is bad; a network blip or server restart shouldn't sign anyone out.
-      if (e.status === 401) session.token = null;
-      else if (!retried) {
-        await new Promise((r) => setTimeout(r, 3000));
-        return refresh(true);
-      }
-      setState({ loading: false, user: null, profiles: [] });
+      if (session.token !== token) return null;
+      // Only a real 401 means the token is bad.
+      if (e.status === 401) { session.token = null; retry.current.attempt = 0; setState(SIGNED_OUT); return null; }
+      // Server restarting or a network blip: the token is probably fine, so keep whoever is signed in and
+      // keep trying. With nobody loaded yet, stay on the spinner for two retries, then say what's happening
+      // (App shows it) rather than bouncing a signed-in person to the login page.
+      const n = retry.current.attempt++;
+      retry.current.timer = setTimeout(refresh, RETRY_MS[n] ?? 60000);
+      setState((s) => (s.user ? { ...s, loading: false } : { ...s, loading: n < 2, unreachable: n >= 2 }));
       return null;
     }
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    refresh();
+    // Back online → don't wait out the back-off.
+    const onOnline = () => { if (retry.current.timer) refresh(); };
+    window.addEventListener('online', onOnline);
+    const r = retry.current;
+    return () => { window.removeEventListener('online', onOnline); clearTimeout(r.timer); };
+  }, [refresh]);
 
   const signIn = useCallback(async (token) => {
     session.token = token;
     session.profile = null;
+    retry.current.attempt = 0;
     return refresh();
   }, [refresh]);
 
   const signOut = useCallback(() => {
     session.token = null;
     session.profile = null;
+    clearTimeout(retry.current.timer);
+    retry.current.timer = null;
+    retry.current.attempt = 0;
     disconnectLive();
-    setState({ loading: false, user: null, profiles: [] });
+    setState(SIGNED_OUT);
   }, []);
 
   useEffect(() => {
@@ -73,7 +95,9 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener('oc:unauthorized', onUnauthorized);
   }, [signOut]);
 
-  return <AuthContext.Provider value={{ ...state, signIn, signOut, refresh }}>{children}</AuthContext.Provider>;
+  // Memoised: every useAuth() consumer (each portal shell, the chat, the consent provider) re-rendered on any parent render.
+  const value = useMemo(() => ({ ...state, signIn, signOut, refresh }), [state, signIn, signOut, refresh]);
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export const useAuth = () => useContext(AuthContext);

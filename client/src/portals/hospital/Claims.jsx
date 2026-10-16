@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { FileCheck2, ShieldCheck, ShieldAlert, Check, X, IndianRupee } from 'lucide-react';
-import { Card, Empty, Modal, cx, fmtMoney, fmtDate } from '../../components/ui';
+import { Card, Empty, Loading, Modal, cx, fmtMoney, fmtDate } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
 
@@ -8,9 +8,13 @@ export default function Claims() {
   const [claims, setClaims] = useState(null);
   const [error, setError] = useState('');
   const [open, setOpen] = useState(null);
-  useEffect(() => { api.get('/hospital/claims').then(setClaims).catch((e) => setError(e.message)); }, []);
+  useEffect(() => {
+    let alive = true;
+    api.get('/hospital/claims').then((r) => alive && setClaims(r)).catch((e) => alive && setError(e.message));
+    return () => { alive = false; };
+  }, []);
   if (error) return <Empty title="Couldn't load claims">{error}</Empty>;
-  if (!claims) return <Empty title="Loading…" />;
+  if (!claims) return <Loading />;
 
   const ready = claims.filter((c) => c.status === 'ready').length;
   const totalValue = claims.reduce((s, c) => s + c.total, 0);
@@ -32,7 +36,7 @@ export default function Claims() {
             <thead><tr><th>Claim ID</th><th>Patient</th><th>Diagnosis</th><th>Amount</th><th>Checks</th><th>Status</th></tr></thead>
             <tbody>
               {claims.map((c) => (
-                <tr key={c.claimId} style={{ cursor: 'pointer' }} onClick={() => setOpen(c)}>
+                <tr key={c.claimId} style={{ cursor: 'pointer' }} tabIndex={0} onClick={() => setOpen(c)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(c); } }} aria-label={`Open claim ${c.claimId}`}>
                   <td className="mono" translate="no">{c.claimId}</td>
                   <td translate="no">{c.patient.name}{c.patient.abha ? ' · ABHA' : ''}</td>
                   <td>{c.diagnosis}</td>

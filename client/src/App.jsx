@@ -1,5 +1,5 @@
-import { Component, lazy, Suspense } from 'react';
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Component, lazy, Suspense, useLayoutEffect } from 'react';
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigationType } from 'react-router-dom';
 import { AuthProvider, useAuth, ROLE_HOME } from './auth';
 import { ToastProvider, Loading } from './components/ui';
 import { I18nProvider } from './i18n';
@@ -68,9 +68,20 @@ function Lazy({ children, quiet }) {
 }
 
 function RequireRole({ roles, children }) {
-  const { user, loading } = useAuth();
+  const { user, loading, unreachable, refresh } = useAuth();
   const location = useLocation();
   if (loading) return <Loading />;
+  // Still holding a token but the server isn't answering: auth keeps retrying, so don't send them to /login.
+  if (!user && unreachable) {
+    return (
+      <div className="card" style={{ maxWidth: 420, margin: '15vh auto', padding: 28, textAlign: 'center' }} role="status">
+        <div className="spinner" style={{ margin: '0 auto 16px' }} />
+        <h3>Can&apos;t reach the server — retrying…</h3>
+        <p className="muted">Check your internet connection. You&apos;re still signed in.</p>
+        <button type="button" className="btn secondary" onClick={() => refresh()}>Try now</button>
+      </div>
+    );
+  }
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   if (!roles.includes(user.role)) return <Navigate to={ROLE_HOME[user.role] || '/'} replace />;
   return children;
@@ -84,12 +95,29 @@ function Guarded({ roles, Comp }) {
   );
 }
 
+// Client-side navigation keeps the old scroll offset, so a link tapped at the foot of the landing
+// page used to open the next screen scrolled to its bottom. Back/forward are left to the browser.
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  const navType = useNavigationType();
+  useLayoutEffect(() => {
+    if (navType === 'POP') return;
+    const html = document.documentElement;
+    const prev = html.style.scrollBehavior;
+    html.style.scrollBehavior = 'auto'; // the global smooth-scroll would animate the jump
+    window.scrollTo(0, 0);
+    html.style.scrollBehavior = prev;
+  }, [pathname, navType]);
+  return null;
+}
+
 function AppRoutes() {
   const location = useLocation();
-  // The kiosk is a full-screen touch app; the floating chat would get in the way there.
-  const hideChat = location.pathname.startsWith('/kiosk') || location.pathname.startsWith('/rx/') || location.pathname.startsWith('/lab-report/');
+  // The kiosk is a full-screen touch app and the print pages are documents; no floating chat or install nudge there.
+  const bare = ['/kiosk', '/rx/', '/lab-report/'].some((p) => location.pathname.startsWith(p));
   return (
     <>
+      <ScrollToTop />
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
@@ -109,8 +137,8 @@ function AppRoutes() {
         <Route path="/admin/*" element={<Guarded roles={['super_admin']} Comp={AdminApp} />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
-      {!hideChat && <Lazy quiet><ChatWidget /></Lazy>}
-      {!location.pathname.startsWith('/kiosk') && !location.pathname.startsWith('/rx/') && !location.pathname.startsWith('/lab-report/') && <InstallPrompt />}
+      {!bare && <Lazy quiet><ChatWidget /></Lazy>}
+      {!bare && <InstallPrompt />}
     </>
   );
 }

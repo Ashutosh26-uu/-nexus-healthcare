@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Activity, Heart, Droplet, Wind, RotateCcw, Sparkles, TrendingDown, TrendingUp, Info } from 'lucide-react';
 import { Card, Donut, Button, Empty, cx } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
@@ -49,22 +50,29 @@ export default function Twin() {
           <Donut value={overall} max={100} size={132} color={BAND_COLOR[overallBand]} label="wellness index" />
         </div>
         <div className="grow">
-          <div className="pt-twin-age">
-            <div>
-              <div className="pt-twin-age-num" style={{ color: BAND_COLOR[overallBand] }}>{data.healthAge}</div>
-              <div className="tiny muted">health age</div>
-            </div>
-            <div className="pt-twin-vs">vs</div>
-            <div>
-              <div className="pt-twin-age-num">{data.patient.age}</div>
-              <div className="tiny muted">your age</div>
-            </div>
-          </div>
-          <p className="mb-0 mt-1">
-            {data.healthAge > data.patient.age
-              ? <>Your body is behaving a little <strong>older</strong> than your age — the good news is the biggest drivers are things you can change.</>
-              : <>Your body is behaving <strong>younger</strong> than your age. Keep it up!</>}
-          </p>
+          {/* Without a date of birth the server's age is null and its health age is meaningless — skip both. */}
+          {data.patient.age != null ? (
+            <>
+              <div className="pt-twin-age">
+                <div>
+                  <div className="pt-twin-age-num" style={{ color: BAND_COLOR[overallBand] }}>{data.healthAge}</div>
+                  <div className="tiny muted">health age</div>
+                </div>
+                <div className="pt-twin-vs">vs</div>
+                <div>
+                  <div className="pt-twin-age-num">{data.patient.age}</div>
+                  <div className="tiny muted">your age</div>
+                </div>
+              </div>
+              <p className="mb-0 mt-1">
+                {data.healthAge > data.patient.age
+                  ? <>Your body is behaving a little <strong>older</strong> than your age — the good news is the biggest drivers are things you can change.</>
+                  : <>Your body is behaving <strong>younger</strong> than your age. Keep it up!</>}
+              </p>
+            </>
+          ) : (
+            <p className="mb-0 small muted">Add a date of birth in <Link to="/patient/settings">Settings</Link> to see your health age.</p>
+          )}
           <div className="pt-twin-trust"><Sparkles size={14} /> Built from {data.dataPoints} data points in your Health Passport</div>
         </div>
       </div>

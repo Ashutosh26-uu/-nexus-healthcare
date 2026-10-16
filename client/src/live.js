@@ -47,5 +47,7 @@ export function useLive(url, topics = [], deps = []) {
   }), [load]);
 
   // Explicit reloads (usually after a mutation) must not join an older in-flight GET.
-  return { data, error, loading, reload: () => load(true, true), setData };
+  // Stable identity: callers put `reload` in memo/effect deps (e.g. the patient context value).
+  const reload = useCallback(() => load(true, true), [load]);
+  return { data, error, loading, reload, setData };
 }

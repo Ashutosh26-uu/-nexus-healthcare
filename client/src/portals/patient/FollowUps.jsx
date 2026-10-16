@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { CalendarClock, Video, Building2, MonitorSmartphone, CalendarPlus, QrCode, ArrowRight, Stethoscope, FlaskConical, FileText, Repeat, CircleDot } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
-import { Avatar, Button, Card, Empty, StatusBadge, fmtDate, fmtDateTime, cx } from '../../components/ui';
-import { usePatient, firstName, PageSkeleton } from './shared';
+import { Avatar, Button, Card, Empty, StatusBadge, fmtDate, fmtDateTime, fmtTime, cx } from '../../components/ui';
+import { usePatient, usePatientLive, firstName, PageSkeleton } from './shared';
+import { getLocale } from '../../i18n';
 import BookingFlow from './BookingFlow';
 
 const PLACE = {
@@ -20,10 +21,10 @@ function relWhen(iso) {
   const t = new Date(iso); const now = new Date();
   const day = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const diff = Math.round((day(t) - day(now)) / 86400000);
-  const time = t.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const time = fmtTime(iso);
   if (diff === 0) return `Today at ${time}`;
   if (diff === 1) return `Tomorrow at ${time}`;
-  if (diff > 1 && diff < 7) return `In ${diff} days · ${t.toLocaleDateString([], { weekday: 'long' })} ${time}`;
+  if (diff > 1 && diff < 7) return `In ${diff} days · ${t.toLocaleDateString(getLocale(), { weekday: 'long' })} ${time}`;
   return fmtDateTime(iso);
 }
 
@@ -53,10 +54,11 @@ function Countdown({ iso }) {
 export default function FollowUps() {
   const { patient, profiles } = usePatient();
   const navigate = useNavigate();
-  const [data, setData] = useState(null);
+  // Live: a follow-up the doctor books, or a consult that starts, shows up without a refresh.
+  const { data, error } = usePatientLive('/patient/follow-ups', ['consults', 'queue', 'lab']);
   const [rebook, setRebook] = useState(null);
   const isSelf = profiles.find((p) => p.id === patient?.id)?.self;
-  useEffect(() => { api.get('/patient/follow-ups').then(setData).catch(() => setData({ upcoming: [], past: [], reportsReady: [] })); }, [patient?.id]);
+  if (error && !data) return <Empty title="We couldn't load your visits">{error}</Empty>;
   if (!data) return <PageSkeleton />;
   const [next, ...later] = data.upcoming;
 
@@ -73,7 +75,7 @@ export default function FollowUps() {
           <div className="pt-fu-next-when">
             <span className="eyebrow">{next.followUp ? 'Next follow-up' : 'Next appointment'}</span>
             <h2 className="mb-0">{relWhen(next.scheduledAt)}</h2>
-            {next.scheduledAt && <span className="small muted">{new Date(next.scheduledAt).toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>}
+            {next.scheduledAt && <span className="small muted">{new Date(next.scheduledAt).toLocaleDateString(getLocale(), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>}
             {next.scheduledAt && <Countdown iso={next.scheduledAt} />}
           </div>
           <div className="pt-fu-next-body">
@@ -95,7 +97,7 @@ export default function FollowUps() {
               const P = placeOf(c);
               return (
                 <div key={c.id} className="pt-fu-row">
-                  <div className="pt-fu-date"><strong>{c.scheduledAt ? new Date(c.scheduledAt).getDate() : '—'}</strong><span>{c.scheduledAt ? new Date(c.scheduledAt).toLocaleDateString([], { month: 'short' }) : ''}</span></div>
+                  <div className="pt-fu-date"><strong>{c.scheduledAt ? new Date(c.scheduledAt).getDate() : '—'}</strong><span>{c.scheduledAt ? new Date(c.scheduledAt).toLocaleDateString(getLocale(), { month: 'short' }) : ''}</span></div>
                   <div className="grow" style={{ minWidth: 0 }}>
                     <strong className="small" translate="no">{c.doctorName}</strong> {c.followUp && <span className="badge tiny">Follow-up</span>}
                     <div className="tiny muted"><P.icon size={12} style={{ verticalAlign: '-2px' }} /> {P.label(c)} · {relWhen(c.scheduledAt)}</div>

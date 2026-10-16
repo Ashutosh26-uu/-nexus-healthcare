@@ -111,6 +111,7 @@ function forecast(db, { scopeDistrict } = {}) {
   const pins = [...new Set(db.facilities.filter((f) => f.pincode && (!scopeDistrict || f.district === scopeDistrict)).map((f) => f.pincode))];
   const now = Date.now();
   const recent = (iso, days) => iso && now - new Date(iso) < days * 86400000;
+  const pinOfPatient = new Map(db.patients.map((p) => [p.id, p.pincode])); // once, not a patient scan per consult per pin per disease
   const out = [];
   for (const pin of pins) {
     const fac = db.facilities.find((f) => f.pincode === pin) || {};
@@ -118,7 +119,7 @@ function forecast(db, { scopeDistrict } = {}) {
       // Signal 1: lab positives in this pin over the last 14 days.
       const labPos = db.labOrders.filter((o) => o.pincode === pin && recent(o.reportedAt, 14) && o.results?.some((r) => dis.labRe.test(r.name) && /pos|high|\b[3-9]\d*\b/i.test(String(r.value)))).length;
       // Signal 2: kiosk/teleconsult symptom reports matching the disease.
-      const sympt = db.consults.filter((c) => recent(c.createdAt, 14) && dis.symptomRe.test(`${c.triage?.symptoms || ''} ${c.triage?.note || ''}`) && (db.patients.find((p) => p.id === c.patientId)?.pincode === pin)).length;
+      const sympt = db.consults.filter((c) => recent(c.createdAt, 14) && pinOfPatient.get(c.patientId) === pin && dis.symptomRe.test(`${c.triage?.symptoms || ''} ${c.triage?.note || ''}`)).length;
       // Signal 3: pharmacy sell-through — low stock of related drugs in this pin's pharmacies.
       const pharmas = db.facilities.filter((f) => f.type === 'pharmacy' && f.pincode === pin).map((f) => f.id);
       const lowStock = db.inventory.filter((i) => pharmas.includes(i.facilityId) && dis.drugs.some((d) => i.drug.toLowerCase().includes(d.toLowerCase())) && i.qty <= (i.safetyStock || 0) * 1.5).length;
@@ -238,7 +239,8 @@ function buildCapsule(patient) {
 }
 
 function openCapsule(patient, blobB64, key) {
-  if (key !== capsuleKey(patient.id)) return null;
+  const want = Buffer.from(capsuleKey(patient.id)); const got = Buffer.from(String(key || ''));
+  if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return null;
   try {
     const raw = Buffer.from(blobB64, 'base64');
     const iv = raw.subarray(0, 12); const tag = raw.subarray(12, 28); const enc = raw.subarray(28);

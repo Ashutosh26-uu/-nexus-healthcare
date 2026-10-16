@@ -50,6 +50,7 @@
 
 /* sections */
 .l-section { padding: 90px 0; }
+.l-section[id] { scroll-margin-top: 84px; } /* "#how" etc. land below the sticky nav, not under it */
 .l-section.tint { background: var(--paper-2); }
 .l-section-head { max-width: 680px; margin-bottom: 44px; }
 .l-section-head h2 { font-size: clamp(1.8rem, 3.4vw, 2.6rem); }

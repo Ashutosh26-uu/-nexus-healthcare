@@ -2,11 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Pill, FileText, Search, Plus, Trash2, Store, Truck, MapPin, Clock, Check, ChevronDown, ArrowLeft, ArrowRight, Megaphone, Upload, CheckCircle2, Package, ShieldCheck, Phone } from 'lucide-react';
 import { api } from '../../api';
-import { Button, Card, Empty, Field, Pills, cx, fmtDate, fmtMoney } from '../../components/ui';
+import { Button, Card, Empty, Field, Pills, cx, fmtDate, fmtMoney, useDebounced } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { ProtectedImg } from '../../components/Availability';
 import VoiceInput from '../../components/VoiceInput';
-import { useDebounced } from '../doctor/shared';
 import { usePatient, PageSkeleton } from './shared';
 import { useDeviceLocation, LocationButton } from './NearbyDoctors';
 import PaymentStep from './Payment';
@@ -19,8 +18,10 @@ function DrugField({ value, onChange }) {
   const [list, setList] = useState([]);
   const q = useDebounced(value.trim(), 250);
   useEffect(() => {
-    if (q.length < 2 || !open) { setList([]); return; }
-    api.get(`/drugs?q=${encodeURIComponent(q)}`).then((r) => setList(r.slice(0, 6))).catch(() => setList([]));
+    if (q.length < 2 || !open) { setList([]); return undefined; }
+    let alive = true; // a slow earlier query must not overwrite the newer suggestions
+    api.get(`/drugs?q=${encodeURIComponent(q)}`).then((r) => alive && setList(r.slice(0, 6))).catch(() => alive && setList([]));
+    return () => { alive = false; };
   }, [q, open]);
   return (
     <div className="pt-om-drug">
@@ -51,10 +52,13 @@ export default function OrderMedicines() {
   const device = useDeviceLocation();
   const prescriptions = useMemo(() => home?.prescriptions || [], [home]);
   const [step, setStep] = useState(0);
-  const [source, setSource] = useState(params.get('rx') ? 'rx' : 'rx');
+  const [source, setSource] = useState('rx');
   const [rxId, setRxId] = useState(params.get('rx') || '');
   const [picks, setPicks] = useState({}); // drug → { on, qty }
-  const [others, setOthers] = useState([{ drug: '', qty: 1 }]);
+  // Rows carry a stable id so removing one doesn't hand its typed text / suggestions to the next row.
+  const rowId = useRef(1);
+  const newRow = (drug = '') => ({ id: rowId.current++, drug, qty: 1 });
+  const [others, setOthers] = useState(() => [{ id: 0, drug: '', qty: 1 }]);
   const [rxFile, setRxFile] = useState(null);
   const [quote, setQuote] = useState(null);
   const [shopId, setShopId] = useState(null);
@@ -73,10 +77,12 @@ export default function OrderMedicines() {
   const rx = prescriptions.find((r) => r.id === rxId);
   // Scan the prescription: every medicine on it, ticked, with the quantity for the full course.
   useEffect(() => {
-    if (!rx) return;
-    api.post('/medicine-orders/quote', { rxId: rx.id }).then((q) => setPicks(Object.fromEntries(q.items.map((i) => [i.drug, { on: true, qty: i.qty, unit: i.unit }])))).catch(() => {
-      setPicks(Object.fromEntries(rx.items.map((i) => [i.drug, { on: true, qty: 10, unit: 'unit' }])));
+    if (!rx) return undefined;
+    let alive = true; // switching prescriptions quickly must not tick the previous one's medicines
+    api.post('/medicine-orders/quote', { rxId: rx.id }).then((q) => alive && setPicks(Object.fromEntries(q.items.map((i) => [i.drug, { on: true, qty: i.qty, unit: i.unit }])))).catch(() => {
+      if (alive) setPicks(Object.fromEntries(rx.items.map((i) => [i.drug, { on: true, qty: 10, unit: 'unit' }])));
     });
+    return () => { alive = false; };
   }, [rx?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (homeLoading) return <PageSkeleton />;
@@ -161,20 +167,20 @@ export default function OrderMedicines() {
           {source === 'other' && (
             <div className="stack">
               <div className="pt-om-list">
-                {others.map((o, i) => (
-                  <div key={i} className="pt-om-row">
-                    <DrugField value={o.drug} onChange={(v) => setOthers((l) => l.map((x, j) => (j === i ? { ...x, drug: v } : x)))} />
-                    <Qty value={o.qty} onChange={(n) => setOthers((l) => l.map((x, j) => (j === i ? { ...x, qty: n } : x)))} />
-                    <button type="button" className="icon-btn" aria-label="Remove" onClick={() => setOthers((l) => (l.length > 1 ? l.filter((_, j) => j !== i) : [{ drug: '', qty: 1 }]))}><Trash2 size={15} /></button>
+                {others.map((o) => (
+                  <div key={o.id} className="pt-om-row">
+                    <DrugField value={o.drug} onChange={(v) => setOthers((l) => l.map((x) => (x.id === o.id ? { ...x, drug: v } : x)))} />
+                    <Qty value={o.qty} onChange={(n) => setOthers((l) => l.map((x) => (x.id === o.id ? { ...x, qty: n } : x)))} />
+                    <button type="button" className="icon-btn" aria-label="Remove" onClick={() => setOthers((l) => (l.length > 1 ? l.filter((x) => x.id !== o.id) : [newRow()]))}><Trash2 size={15} /></button>
                   </div>
                 ))}
               </div>
               <div className="row wrap" style={{ gap: 8 }}>
-                <Button variant="secondary" size="sm" icon={Plus} onClick={() => setOthers((l) => [...l, { drug: '', qty: 1 }].slice(0, 25))}>Add another medicine</Button>
-                <VoiceInput label="Say the medicine names" onText={(t) => setOthers((l) => [...l.filter((x) => x.drug.trim()), ...t.split(/,| and | aur /i).map((s) => s.trim()).filter(Boolean).map((drug) => ({ drug, qty: 1 }))].slice(0, 25))} />
+                <Button variant="secondary" size="sm" icon={Plus} onClick={() => setOthers((l) => [...l, newRow()].slice(0, 25))}>Add another medicine</Button>
+                <VoiceInput label="Say the medicine names" onText={(t) => setOthers((l) => [...l.filter((x) => x.drug.trim()), ...t.split(/,| and | aur /i).map((s) => s.trim()).filter(Boolean).map((drug) => newRow(drug))].slice(0, 25))} />
               </div>
               <div className="pt-om-rxupload">
-                <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={(e) => uploadRx(e.target.files?.[0])} />
+                <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={(e) => { uploadRx(e.target.files?.[0]); e.target.value = ''; }} />
                 <Button variant="ghost" size="sm" icon={rxFile ? CheckCircle2 : Upload} onClick={() => fileRef.current?.click()}>{rxFile ? rxFile.name : 'Attach a prescription photo'}</Button>
                 <span className="tiny muted">Needed for prescription-only medicines (antibiotics, BP, sugar…). The chemist checks it before packing.</span>
               </div>

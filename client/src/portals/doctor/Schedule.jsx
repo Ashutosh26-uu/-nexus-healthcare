@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Save, Minus, Plus, Languages, IndianRupee, Gauge, RotateCcw, Sun, Moon } from 'lucide-react';
+import { Save, Minus, Plus, Languages, IndianRupee, Gauge, RotateCcw, Sun, Moon, Globe } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
-import { Button, Card, Field, Loading, Switch, useAction, fmtMoney, cx } from '../../components/ui';
+import { Button, Card, Field, Loading, useAction, fmtMoney, cx } from '../../components/ui';
 import { useDoctorHome } from './context';
 import { AvailBadge } from '../../components/Availability';
 import { INDIAN_LANGUAGES } from './shared';
@@ -10,6 +10,16 @@ import { INDIAN_LANGUAGES } from './shared';
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const HOURS = Array.from({ length: 14 }, (_, i) => i + 7); // 7 am – 8 pm
 const hourLabel = (h) => `${((h + 11) % 12) + 1}${h < 12 ? 'a' : 'p'}`;
+
+// Hours are evaluated in the doctor's own zone (server: doc.tz, else IST). Some browsers report legacy
+// aliases ("Asia/Calcutta"), so normalise them — an Indian doctor should simply see Asia/Kolkata.
+const ALIAS = { 'Asia/Calcutta': 'Asia/Kolkata', 'Asia/Katmandu': 'Asia/Kathmandu', 'Asia/Saigon': 'Asia/Ho_Chi_Minh', 'Asia/Rangoon': 'Asia/Yangon' };
+const canonTz = (z) => ALIAS[z] || z;
+const ZONES = (() => {
+  try { return [...new Set(Intl.supportedValuesOf('timeZone').map(canonTz))]; } catch { return ['Asia/Kolkata', 'Asia/Dhaka', 'Asia/Kathmandu', 'Asia/Colombo', 'Asia/Dubai', 'Asia/Singapore', 'Europe/London', 'America/New_York', 'UTC']; }
+})();
+const browserTz = () => { try { return canonTz(Intl.DateTimeFormat().resolvedOptions().timeZone) || 'Asia/Kolkata'; } catch { return 'Asia/Kolkata'; } };
+const tzLabel = (z) => z.replace(/_/g, ' ');
 
 // Sensible default for a GP who also runs an OPD: mornings + early evenings on weekdays, Saturday morning.
 function defaultSlots() {
@@ -28,20 +38,27 @@ export default function Schedule() {
   const [slots, setSlots] = useState(null);
   const [form, setForm] = useState(null);
   const [dirty, setDirty] = useState(false);
+  const [tzOpen, setTzOpen] = useState(false);
   const paint = useRef(null); // { value: true|false } while dragging
   const [run, busy] = useAction();
 
   useEffect(() => {
     if (doctor && !slots) {
       setSlots(doctor.slots && typeof doctor.slots === 'object' && !Array.isArray(doctor.slots) ? doctor.slots : defaultSlots());
-      setForm({ maxPerHour: doctor.maxPerHour || 6, fee: doctor.fee || 0, languages: doctor.languages || [], online: !!doctor.online });
+      const tz = canonTz(doctor.tz || browserTz());
+      setForm({ maxPerHour: doctor.maxPerHour || 6, fee: doctor.fee || 0, languages: doctor.languages || [], tz });
+      // No zone saved yet and this browser isn't on IST (the server default): the page already shows the browser's
+      // zone, so offer Save until it's stored — otherwise patients keep seeing these hours in IST.
+      if (!doctor.tz && tz !== 'Asia/Kolkata') setDirty(true);
     }
   }, [doctor, slots]);
 
   useEffect(() => {
     const stop = () => { paint.current = null; };
+    // pointercancel: a touch that turns into a scroll never fires pointerup, which would leave the brush "down".
     window.addEventListener('pointerup', stop);
-    return () => window.removeEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+    return () => { window.removeEventListener('pointerup', stop); window.removeEventListener('pointercancel', stop); };
   }, []);
 
   if (!slots || !form) return <Loading />;
@@ -64,7 +81,7 @@ export default function Schedule() {
   const capacity = totalHours * form.maxPerHour;
 
   const save = () => run('save', async () => {
-    const doc = await api.put('/doctor/me', { slots, maxPerHour: Number(form.maxPerHour), languages: form.languages });
+    const doc = await api.put('/doctor/me', { slots, maxPerHour: Number(form.maxPerHour), languages: form.languages, tz: form.tz });
     home.setData((d) => (d ? { ...d, doctor: doc } : d));
     setDirty(false);
   }, 'Availability saved. Patients can book these slots now.');
@@ -108,6 +125,16 @@ export default function Schedule() {
             <button type="button" className="chip" onClick={() => DAYS.forEach((d) => setRow(d, []))}>Clear all</button>
           </div>
           <p className="tiny muted mt-1 mb-0">Click or drag across cells. The shaded column is the usual lunch hour.</p>
+          <div className="row wrap mt-1" style={{ gap: 6 }}>
+            <Globe size={14} className="muted" />
+            <span className="tiny muted">Hours are in <strong translate="no">{tzLabel(form.tz)}</strong></span>
+            {/* ~400 zones: only build the list once the doctor actually wants to change it */}
+            {tzOpen ? (
+              <select className="select sm" style={{ maxWidth: '100%' }} value={form.tz} onChange={(e) => patch({ tz: e.target.value })} aria-label="Time zone" translate="no" autoFocus>
+                {(ZONES.includes(form.tz) ? ZONES : [form.tz, ...ZONES]).map((z) => <option key={z} value={z}>{tzLabel(z)}</option>)}
+              </select>
+            ) : <span className="tiny muted">— <button type="button" className="link-btn" onClick={() => setTzOpen(true)}>change</button></span>}
+          </div>
         </Card>
 
         <div className="stack">
@@ -137,10 +164,11 @@ export default function Schedule() {
               </div>
             </Field>
             <hr className="divider" />
-            <Field label={<span className="row" style={{ gap: 6 }}><IndianRupee size={15} />Consultation fee</span>} hint={`You receive ${fmtMoney(Math.round(form.fee * 0.9))} per consult after the 10% platform fee. Kiosk pilot visits are paid by the state.`}>
+            <Field label={<span className="row" style={{ gap: 6 }}><IndianRupee size={15} />Consultation fee</span>} hint={`You receive ${fmtMoney(Math.round(form.fee * 0.9))} per consult after the 10% platform fee. Kiosk pilot visits are paid by the state. The fee is set by the Nexus Healthcare team — contact us to change it.`}>
+              {/* Read-only: /doctor/me ignores `fee` on purpose (earnings integrity), so an editable box would "save" nothing. */}
               <div className="input-wrap">
                 <IndianRupee />
-                <input className="input" type="number" min="0" step="10" value={form.fee} onChange={(e) => patch({ fee: e.target.value })} />
+                <input className="input" type="number" value={form.fee} readOnly aria-readonly="true" />
               </div>
             </Field>
           </Card>

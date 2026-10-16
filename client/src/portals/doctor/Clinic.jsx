@@ -82,13 +82,22 @@ export default function Clinic() {
     );
   }
   const c = data.clinic;
+  // After verification the server locks name, registration and address (only hours/phone/fee/departments change).
+  const lock = c.verified ? { readOnly: true, 'aria-readonly': true } : {};
   const save = () => run('save', async () => {
     let coords = {};
     if (form._loc) coords = form._loc;
     const r = await api.put('/doctor/clinic', { ...form, ...coords });
     setData((d) => ({ ...d, clinic: r.clinic }));
   }, 'Clinic details saved');
-  const locate = () => navigator.geolocation?.getCurrentPosition((p) => set('_loc', { lat: Math.round(p.coords.latitude * 1000) / 1000, lng: Math.round(p.coords.longitude * 1000) / 1000 }));
+  const locate = () => run('locate', () => new Promise((resolve, reject) => {
+    if (!navigator.geolocation) { reject(new Error('Location isn\'t available on this device. Please type the address instead.')); return; }
+    navigator.geolocation.getCurrentPosition(
+      (p) => { set('_loc', { lat: Math.round(p.coords.latitude * 1000) / 1000, lng: Math.round(p.coords.longitude * 1000) / 1000 }); resolve(); },
+      () => reject(new Error('Couldn\'t get your location. Allow location access in the browser and try again.')),
+      { timeout: 15000 },
+    );
+  }), 'Location captured — remember to save');
 
   return (
     <div className="stack lg">
@@ -98,14 +107,14 @@ export default function Clinic() {
 
       <Card title={<h4 className="row mb-0" style={{ gap: 8 }}><Building2 size={17} />Clinic details</h4>}>
         <div className="grid two">
-          <Field label="Clinic name"><input className="input" value={form.name} onChange={(e) => set('name', e.target.value)} /></Field>
-          <Field label="Clinical establishment reg. no."><input className="input" dir="ltr" value={form.licenceNo} onChange={(e) => set('licenceNo', e.target.value)} placeholder="e.g. UP/CE/2024/1182" /></Field>
+          <Field label="Clinic name"><input className="input" value={form.name} onChange={(e) => set('name', e.target.value)} {...lock} /></Field>
+          <Field label="Clinical establishment reg. no." hint={c.verified ? 'Verified — contact us to change the name, registration or address.' : undefined}><input className="input" dir="ltr" value={form.licenceNo} onChange={(e) => set('licenceNo', e.target.value)} placeholder="e.g. UP/CE/2024/1182" {...lock} /></Field>
         </div>
-        <Field label={<span className="row" style={{ gap: 4 }}><MapPin size={13} />Address</span>}><input className="input" value={form.address} onChange={(e) => set('address', e.target.value)} placeholder="Building, street, area" /></Field>
+        <Field label={<span className="row" style={{ gap: 4 }}><MapPin size={13} />Address</span>}><input className="input" value={form.address} onChange={(e) => set('address', e.target.value)} placeholder="Building, street, area" {...lock} /></Field>
         <div className="grid three">
-          <Field label="City / district"><input className="input" value={form.district} onChange={(e) => set('district', e.target.value)} /></Field>
-          <Field label="State"><input className="input" value={form.state} onChange={(e) => set('state', e.target.value)} /></Field>
-          <Field label="Pin code"><input className="input" value={form.pincode} onChange={(e) => set('pincode', e.target.value.slice(0, 12))} /></Field>
+          <Field label="City / district"><input className="input" value={form.district} onChange={(e) => set('district', e.target.value)} {...lock} /></Field>
+          <Field label="State"><input className="input" value={form.state} onChange={(e) => set('state', e.target.value)} {...lock} /></Field>
+          <Field label="Pin code"><input className="input" value={form.pincode} onChange={(e) => set('pincode', e.target.value.slice(0, 12))} {...lock} /></Field>
         </div>
         <div className="grid three">
           <Field label={<span className="row" style={{ gap: 4 }}><Clock size={13} />Opening hours</span>}><input className="input" value={form.hours} onChange={(e) => set('hours', e.target.value)} placeholder="Mon–Sat 10:00 – 14:00 · 17:00 – 20:00" /></Field>
@@ -116,7 +125,7 @@ export default function Clinic() {
           <div className="chip-select">{DEPARTMENTS.map((x) => <button type="button" key={x} className={cx('chip', form.departments.includes(x) && 'on')} onClick={() => set('departments', form.departments.includes(x) ? form.departments.filter((y) => y !== x) : [...form.departments, x])}>{x}</button>)}</div>
         </Field>
         <div className="row between wrap" style={{ gap: 8 }}>
-          <Button variant="secondary" size="sm" icon={LocateFixed} onClick={locate}>{form._loc || (c.lat && c.lng) ? 'Clinic location saved ✓ — update' : 'I’m at the clinic — use this location'}</Button>
+          <Button variant="secondary" size="sm" icon={LocateFixed} loading={busy === 'locate'} onClick={locate}>{form._loc || (c.lat && c.lng) ? 'Clinic location saved ✓ — update' : 'I’m at the clinic — use this location'}</Button>
           <Button loading={busy === 'save'} onClick={save}>Save details</Button>
         </div>
       </Card>

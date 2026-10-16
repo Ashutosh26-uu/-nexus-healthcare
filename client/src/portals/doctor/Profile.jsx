@@ -20,7 +20,8 @@ const LIFETIME = [
 
 const fmtAadhaar = (v) => v.replace(/\D/g, '').slice(0, 12).replace(/(\d{4})(?=\d)/g, '$1 ');
 
-function UploadBox({ label, hint, accept, fileId, onUploaded, image, icon: Icon = Upload }) {
+function UploadBox({ label, hint, accept, fileId, onUploaded, image, icon }) {
+  const Icon = icon || Upload;
   const input = useRef(null);
   const [preview, setPreview] = useState(null);
   const [name, setName] = useState('');
@@ -34,7 +35,7 @@ function UploadBox({ label, hint, accept, fileId, onUploaded, image, icon: Icon 
     try {
       const r = await api.upload(file);
       setName(file.name);
-      if (file.type.startsWith('image/')) setPreview(URL.createObjectURL(file));
+      setPreview(file.type.startsWith('image/') ? URL.createObjectURL(file) : null); // a PDF replacing a photo must not keep the old thumbnail
       onUploaded(r.id);
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
@@ -49,7 +50,7 @@ function UploadBox({ label, hint, accept, fileId, onUploaded, image, icon: Icon 
         </span>
         {fileId && <CheckCircle2 className="dr-upload-ok" />}
       </button>
-      <input ref={input} type="file" accept={accept} hidden onChange={(e) => pick(e.target.files?.[0])} />
+      <input ref={input} type="file" accept={accept} hidden onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ''; }} />
       {error && <div className="form-error mt-1 small">{error}</div>}
     </div>
   );
@@ -86,13 +87,12 @@ export default function Profile() {
   // Keep an unsent draft on this device (never the Aadhaar number) so "Finish later" loses nothing.
   useEffect(() => {
     if (!form || !doctor || doctor.verified) return;
-    const { aadhaar, ...rest } = form;
-    try { localStorage.setItem(`oc_dr_draft_${doctor.id}`, JSON.stringify(rest)); } catch { /* ignore */ }
+    try { localStorage.setItem(`oc_dr_draft_${doctor.id}`, JSON.stringify({ ...form, aadhaar: undefined })); } catch { /* ignore */ }
   }, [form, doctor]);
   const checks = useMemo(() => (form ? [
     !!form.age, form.address.trim().length >= 5 && !!form.district.trim(), !!form.specialty, form.qualification.trim().length > 1,
     form.latestDegree.trim().length > 1, !!(form.degreeNumber.trim() || form.degreeFileId), !!form.regNo.trim(), form.experience !== '', !!form.patientsLifetime, !!form.fee, !!form.photoFileId,
-  ] : []), [form, doctor]);
+  ] : []), [form]);
   const pct = checks.length ? Math.round((checks.filter(Boolean).length / checks.length) * 100) : 0;
 
   if (!doctor || !form) return <Loading />;

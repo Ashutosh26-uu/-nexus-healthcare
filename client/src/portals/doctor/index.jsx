@@ -1,8 +1,7 @@
 import { DoctorCtx } from './context';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ListChecks, Users, CalendarDays, Wallet, Award, Pill, UserRound, Clock, FilePen, Video, Building2, GraduationCap, MapPin, Camera } from 'lucide-react';
 import { useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import PortalLayout from '../../components/PortalLayout';
 import { useLive } from '../../live';
 import { api } from '../../api';
@@ -62,8 +61,10 @@ function PresenceControl({ home }) {
     );
   }
   const clinics = home.data.eClinics || [];
-  const clinicId = doctor.presenceClinicId || '';
-  const setPresence = (online, presenceClinicId = clinicId || clinics[0]?.id || null) => run('online', async () => {
+  // The server sends null both for "checked out" and for "online, video only"; '' is the doctor's explicit
+  // "video only" pick while checked out. What the select shows must be where the switch checks them in.
+  const clinicId = doctor.presenceClinicId ?? (doctor.online ? '' : clinics[0]?.id || '');
+  const setPresence = (online, presenceClinicId = clinicId || null) => run('online', async () => {
     const doc = await api.put('/doctor/me', { online, presenceClinicId: online ? presenceClinicId : null });
     home.setData((d) => (d ? { ...d, doctor: doc } : d));
   }, online ? `You're available${presenceClinicId ? ` at ${clinics.find((c) => c.id === presenceClinicId)?.name.replace('E-Clinic · ', '') || 'the E-Clinic'}` : ''} — patients can see you now` : 'You\'re checked out. See you next time!');

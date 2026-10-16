@@ -23,9 +23,10 @@ mkdirSync(out, { recursive: true });
 
 run('npm run build --prefix client');
 
-// Server code only — never the local SQLite database, uploads or secrets.
-const skip = new Set(['node_modules', 'data', '.env', 'loadtest.js']);
-cpSync(join(root, 'server'), join(out, 'server'), { recursive: true, filter: (src) => !skip.has(src.split(/[\\/]/).pop()) || src === join(root, 'server') });
+// Server code only — never the local SQLite database, uploads or secrets (any .env variant except the example).
+const skip = new Set(['node_modules', 'data', 'loadtest.js']);
+const skipFile = (name) => skip.has(name) || (name.startsWith('.env') && name !== '.env.example') || /\.(db|db-wal|db-shm|log)$/.test(name);
+cpSync(join(root, 'server'), join(out, 'server'), { recursive: true, filter: (src) => src === join(root, 'server') || !skipFile(src.split(/[\\/]/).pop()) });
 cpSync(join(root, 'client', 'dist'), join(out, 'client', 'dist'), { recursive: true });
 // The API reads the language list and UI string catalog from the client source tree.
 for (const f of ['languages.json', 'catalog.json']) cpSync(join(root, 'client', 'src', 'i18n', f), join(out, 'client', 'src', 'i18n', f));

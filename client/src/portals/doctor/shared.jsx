@@ -75,14 +75,8 @@ export function useLiveVitals(base, active = true) {
   return { vitals: now, history };
 }
 
-export function useDebounced(value, ms = 400) {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setV(value), ms);
-    return () => clearTimeout(t);
-  }, [value, ms]);
-  return v;
-}
+// Lives in ui.jsx now; re-exported so existing './shared' imports keep working.
+export { useDebounced } from '../../components/ui';
 
 export function useNow(interval = 1000) {
   const [now, setNow] = useState(Date.now());

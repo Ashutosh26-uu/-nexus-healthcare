@@ -19,7 +19,8 @@ export default function Overview({ home }) {
   const icu = beds.find((b) => b.type === 'icu');
   const pending = referrals.filter((r) => r.status === 'pending');
   const onDuty = roster.filter((r) => r.onDuty);
-  const trend = [...analytics.occupancyTrend.slice(0, -1), Math.round((occupied / (total || 1)) * 100)];
+  // Live networks don't keep bed history yet (occupancyTrend may be null or a single point).
+  const trend = [...(analytics?.occupancyTrend || []).slice(0, -1), Math.round((occupied / (total || 1)) * 100)];
   const nowPct = trend[trend.length - 1];
 
   return (

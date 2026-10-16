@@ -169,18 +169,20 @@ export default function ChatWidget() {
 
   return (
     <>
+      {/* Two sibling buttons: an icon with its own click handler inside a button is unreachable by keyboard and screen reader. */}
       {!open && nudge && (
-        <button className="chat-nudge" onClick={() => { setOpen(true); setNudge(false); }}>
-          <span>Hi! Need help finding a doctor?</span>
-          <X size={14} onClick={(e) => { e.stopPropagation(); setNudge(false); }} aria-label="Dismiss" />
-        </button>
+        <div className="chat-nudge">
+          <button type="button" className="chat-nudge-open" onClick={() => { setOpen(true); setNudge(false); }}>Hi! Need help finding a doctor?</button>
+          <button type="button" className="chat-nudge-x" onClick={() => setNudge(false)} aria-label="Dismiss"><X size={14} /></button>
+        </div>
       )}
       <button className={cx('chat-fab', open && 'hidden')} onClick={() => setOpen(true)} aria-label="Open help chat">
         <MessageCircleHeart />
         <span className="chat-fab-label">Ask Saathi</span>
       </button>
 
-      <div className={cx('chat-panel', open && 'open')} role="dialog" aria-label="Saathi help chat" aria-hidden={!open}>
+      {/* `inert` keeps the hidden panel's buttons out of the Tab order (it is only faded out, not unmounted). */}
+      <div className={cx('chat-panel', open && 'open')} role="dialog" aria-label="Saathi help chat" aria-hidden={!open} inert={!open}>
         <div className="chat-head">
           <div className="chat-ava" aria-hidden="true">स</div>
           <div className="grow">

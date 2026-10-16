@@ -37,15 +37,23 @@ module.exports = function postgresAdapter(url) {
   }
   const q = async (...a) => { await (ready ||= init()); return pool.query(...a); };
 
-  async function ensureTable(client, name) {
+  // `created` collects tables made inside the current transaction: DDL is transactional in Postgres, so a
+  // ROLLBACK undoes the CREATE and the name must be forgotten too (or every later INSERT fails).
+  async function ensureTable(client, name, created) {
     if (!SAFE.test(name)) throw new Error(`bad collection name ${name}`);
     const t = `c_${name.toLowerCase()}`;
     if (!tables.has(t)) {
       await client.query(`CREATE TABLE IF NOT EXISTS ${t} (id TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
       tables.add(t);
+      created?.push(t);
     }
     return t;
   }
+
+  // JSONB cannot hold "\u0000" or lone surrogates; one such character in any user-typed field would make
+  // every write (one transaction) fail for ever. Cheap test first; the rare offender is re-serialised clean.
+  const BAD = /\\u(?:0000|d[89ab])/i;
+  const safeJson = (json) => (BAD.test(json) ? JSON.stringify(JSON.parse(json), (_k, v) => (typeof v === 'string' ? v.replace(/\u0000/g, '').toWellFormed() : v)) : json);
 
   // Collection names are camelCase in code; Postgres folds them, so keep a name map in kv.
   return {
@@ -55,37 +63,37 @@ module.exports = function postgresAdapter(url) {
       const out = { collections: {}, kv: {} };
       const kvRows = (await pool.query('SELECT k, v FROM kv')).rows;
       for (const r of kvRows) out.kv[r.k] = r.v;
-      const names = out.kv.__collections || [];
-      for (const name of names) {
-        const t = `c_${name.toLowerCase()}`;
-        if (!tables.has(t)) continue;
-        out.collections[name] = (await pool.query(`SELECT id, data FROM ${t}`)).rows.map((r) => ({ id: r.id, data: r.data }));
-      }
+      const names = (out.kv.__collections || []).filter((name) => SAFE.test(name) && tables.has(`c_${name.toLowerCase()}`));
+      // All collections in parallel (pool-bounded) — sequential round trips to a remote region made start-up slow.
+      const loaded = await Promise.all(names.map((name) => pool.query(`SELECT id, data FROM c_${name.toLowerCase()}`)));
+      names.forEach((name, i) => { out.collections[name] = loaded[i].rows.map((r) => ({ id: r.id, data: r.data })); });
       return out;
     },
     async write({ upserts, deletes, kv }) {
       await (ready ||= init());
       const client = await pool.connect();
+      const created = [];
       try {
         await client.query('BEGIN');
         // One round trip per collection (not per row) — matters with a database in another region.
         for (const [col, rows] of Object.entries(upserts)) {
-          const t = await ensureTable(client, col);
+          const t = await ensureTable(client, col, created);
           for (let i = 0; i < rows.length; i += 2000) {
             const chunk = rows.slice(i, i + 2000);
             await client.query(`INSERT INTO ${t} (id, data, updated_at) SELECT x.id, x.data::jsonb, now() FROM unnest($1::text[], $2::text[]) AS x(id, data)
-              ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`, [chunk.map((r) => r[0]), chunk.map((r) => r[1])]);
+              ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`, [chunk.map((r) => r[0]), chunk.map((r) => safeJson(r[1]))]);
           }
         }
         for (const [col, ids] of Object.entries(deletes)) {
-          const t = await ensureTable(client, col);
+          const t = await ensureTable(client, col, created);
           if (ids.length) await client.query(`DELETE FROM ${t} WHERE id = ANY($1)`, [ids]);
         }
         if (kv.length) await client.query(`INSERT INTO kv (k, v, updated_at) SELECT x.k, x.v::jsonb, now() FROM unnest($1::text[], $2::text[]) AS x(k, v)
-          ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v, updated_at = now()`, [kv.map((r) => r[0]), kv.map((r) => r[1])]);
+          ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v, updated_at = now()`, [kv.map((r) => r[0]), kv.map((r) => safeJson(r[1]))]);
         await client.query('COMMIT');
       } catch (e) {
-        await client.query('ROLLBACK');
+        for (const t of created) tables.delete(t);
+        await client.query('ROLLBACK').catch(() => {}); // the connection itself may be gone
         throw e;
       } finally {
         client.release();
@@ -104,7 +112,8 @@ module.exports = function postgresAdapter(url) {
         sends_in_window=EXCLUDED.sends_in_window, provider_ref=EXCLUDED.provider_ref`,
       [r.target, r.code_hash, r.channel, r.provider, r.attempts, r.expires_at, r.last_sent_at, r.sends_window_start, r.sends_in_window, r.provider_ref || null]);
     },
-    async otpAttempt(target) { await q('UPDATE otp_codes SET attempts = attempts + 1 WHERE target = $1', [target]); },
+    // Returns the new count (atomic), or null when the code is gone.
+    async otpAttempt(target) { const r = await q('UPDATE otp_codes SET attempts = attempts + 1 WHERE target = $1 RETURNING attempts', [target]); return r.rows[0] ? Number(r.rows[0].attempts) : null; },
     async otpDelete(target) { await q('DELETE FROM otp_codes WHERE target = $1', [target]); },
     async trGetLang(lang) { return (await q('SELECT source, text FROM translations WHERE lang = $1', [lang])).rows; },
     async trPut(lang, pairs, origin) {

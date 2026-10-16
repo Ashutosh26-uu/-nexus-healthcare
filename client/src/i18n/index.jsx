@@ -42,34 +42,54 @@ function writeCache(lang, data) {
   try { localStorage.setItem(`oc_i18n_${lang}`, JSON.stringify(data)); } catch { /* storage full — fine */ }
 }
 
+// Applying a dictionary re-scans the whole page, so identical data (cache → same server copy, or a
+// poll that brought nothing new) is skipped.
+let appliedJson = '';
+function apply(dict) {
+  const json = JSON.stringify(dict || {});
+  if (json === appliedJson) return;
+  appliedJson = json;
+  setDictionary(dict);
+}
+
+// Returning visitors: install the cached dictionary before React commits anything, so the first
+// paint is already in their language instead of flashing English until the effect runs.
+function initialLang() {
+  const lang = detect();
+  if (lang !== 'en') { const cached = readCache(lang); if (cached?.dict) apply(cached.dict); }
+  return lang;
+}
+
+const EN_STATUS = { coverage: 100, pending: false, loading: false, autoTranslate: false };
+const sameStatus = (a, b) => a.coverage === b.coverage && a.pending === b.pending && a.loading === b.loading && a.autoTranslate === b.autoTranslate;
+
 export function I18nProvider({ children }) {
-  const [lang, setLangState] = useState(detect);
-  const [status, setStatus] = useState({ coverage: 100, pending: false, loading: false, autoTranslate: false });
+  const [lang, setLangState] = useState(initialLang);
+  const [status, setStatus] = useState(EN_STATUS);
   const pollRef = useRef(null);
-  const sizeRef = useRef(0); // entries in the dictionary currently applied
   const info = langInfo(lang);
 
   const load = useCallback(async (code, silent) => {
     clearTimeout(pollRef.current);
-    if (code === 'en') { setDictionary(null); setStatus({ coverage: 100, pending: false, loading: false }); return; }
+    if (code === 'en') { appliedJson = ''; setDictionary(null); setStatus((s) => (sameStatus(s, EN_STATUS) ? s : EN_STATUS)); return; }
     const cached = readCache(code);
-    if (cached?.dict) setDictionary(cached.dict);
-    if (!silent) setStatus((s) => ({ ...s, loading: !cached }));
+    if (cached?.dict) apply(cached.dict);
+    if (!silent) setStatus((s) => (s.loading === !cached ? s : { ...s, loading: !cached }));
     try {
       const res = await fetch(`/api/i18n/dict/${encodeURIComponent(code)}`);
       if (!res.ok) throw new Error();
       const data = await res.json();
       if (currentLang !== code) return;
-      // Re-applying re-scans the whole page, so while polling only do it when new strings arrived.
-      const size = Object.keys(data.dict || {}).length;
-      if (!silent || size !== sizeRef.current) setDictionary(data.dict);
-      sizeRef.current = size;
+      apply(data.dict);
       writeCache(code, { dict: data.dict, at: Date.now() });
-      setStatus({ coverage: data.coverage, pending: data.pending, loading: false, autoTranslate: data.autoTranslate });
+      // Polls every 4 s while pending — only publish a new status object when something changed,
+      // or every useI18n consumer re-renders each tick.
+      const next = { coverage: data.coverage, pending: data.pending, loading: false, autoTranslate: data.autoTranslate };
+      setStatus((s) => (sameStatus(s, next) ? s : next));
       // Keep pulling while the server is still translating this language.
       if (data.pending) pollRef.current = setTimeout(() => load(code, true), 4000);
     } catch {
-      setStatus((s) => ({ ...s, loading: false }));
+      setStatus((s) => (s.loading ? { ...s, loading: false } : s));
     }
   }, []);
 

@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CalendarPlus, CalendarClock, Smartphone } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Button, Field, Modal, Progress, Empty, Stat, useAction, useToast } from '../../components/ui';
 import { api } from '../../api';
 import { getLocale } from '../../i18n';
 
+// Local calendar date as YYYY-MM-DD — toISOString() is UTC and is off by a day for IST in the early morning.
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const dayLabel = (iso) => {
   const d = new Date(`${iso}T00:00:00`);
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -85,14 +87,14 @@ export default function Opd({ home, setData, reload }) {
 
 function AddSlot({ open, onClose, depts, onAdded }) {
   const [run, busy] = useAction();
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-  const blank = { department: depts[0] || '', date: tomorrow, time: '10:00', capacity: 20 };
+  const blank = () => ({ department: depts[0] || '', date: ymd(new Date(Date.now() + 86400000)), time: '10:00', capacity: 20 });
   const [form, setForm] = useState(blank);
+  useEffect(() => { if (open) setForm(blank()); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps -- fresh defaults (and a fresh "tomorrow") each time it opens
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const submit = async (e) => {
     e.preventDefault();
     const ok = await run('add', () => api.post('/hospital/opd', form), 'Slot opened — patients can book it now');
-    if (ok) { onAdded(); onClose(); setForm(blank); }
+    if (ok) { onAdded(); onClose(); }
   };
   return (
     <Modal open={open} onClose={onClose} title="Open an OPD slot">
@@ -103,7 +105,7 @@ function AddSlot({ open, onClose, depts, onAdded }) {
           </select>
         </Field>
         <div className="grid three" style={{ gap: 12 }}>
-          <Field label="Date"><input className="input" type="date" min={new Date().toISOString().slice(0, 10)} value={form.date} onChange={set('date')} required /></Field>
+          <Field label="Date"><input className="input" type="date" min={ymd(new Date())} value={form.date} onChange={set('date')} required /></Field>
           <Field label="Start time"><input className="input" type="time" value={form.time} onChange={set('time')} required /></Field>
           <Field label="Patients" hint="How many can be seen"><input className="input" type="number" min="1" value={form.capacity} onChange={set('capacity')} required /></Field>
         </div>

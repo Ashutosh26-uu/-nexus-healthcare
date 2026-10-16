@@ -10,7 +10,8 @@ const STATUS_TONE = { sent: 'green', retrying: 'sun', failed: 'rose' };
 export default function Automations() {
   const [s, setS] = useState(null);
   const [run, busy] = useAction();
-  const load = useCallback(() => api.get('/admin/automation').then(setS).catch(() => setS({ error: true })), []);
+  // A failed 15 s poll keeps the last good status on screen instead of flipping the page to the error state.
+  const load = useCallback(() => api.get('/admin/automation').then(setS).catch(() => setS((prev) => (prev && !prev.error ? prev : { error: true }))), []);
   useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, [load]);
   const test = () => run('test', () => api.post('/admin/automation/test', {}).finally(load), 'Test event delivered to n8n ✅');
 

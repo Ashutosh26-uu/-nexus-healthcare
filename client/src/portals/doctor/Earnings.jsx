@@ -5,32 +5,35 @@ import { PageHeader } from '../../components/PortalLayout';
 import { Card, Stat, Loading, BarChart, TriageBadge, Empty, Avatar, fmtMoney, fmtNum, fmtDateTime } from '../../components/ui';
 import { useDoctorHome } from './context';
 import { getLocale } from '../../i18n';
+import { usePublicConfig } from '../../config';
 
-// Typical recent volume for this doctor; today's bar uses real completions.
+// Demo network only: typical recent volume so the chart isn't empty. A live network shows real counts only.
 const DEMO_WEEK = [11, 14, 9, 16, 13, 7];
 
 export default function Earnings() {
   const home = useDoctorHome();
   const data = home.data;
+  const config = usePublicConfig();
+  const demo = !!config?.demo;
 
+  // The server counts every completed consult per day (`completed` is only the latest 20) and sums what
+  // patients actually paid, so free follow-ups don't inflate the earnings.
   const week = useMemo(() => {
-    if (!data) return { values: [], labels: [] };
-    const values = [];
-    const labels = [];
-    for (let i = 6; i >= 0; i--) {
-      const day = new Date(Date.now() - i * 86400000);
-      const key = day.toISOString().slice(0, 10);
-      const real = data.completed.filter((c) => (c.completedAt || '').startsWith(key)).length;
-      values.push(i === 0 ? real : DEMO_WEEK[6 - i] + real);
-      labels.push(i === 0 ? 'Today' : day.toLocaleDateString(getLocale(), { weekday: 'short' }));
-    }
-    return { values, labels };
-  }, [data]);
+    if (!data) return { values: [], labels: [], earned: 0 };
+    const days = data.week || [];
+    const extra = (i) => (demo && i < days.length - 1 ? DEMO_WEEK[i] || 0 : 0);
+    return {
+      values: days.map((d, i) => d.consults + extra(i)),
+      labels: days.map((d, i) => (i === days.length - 1 ? 'Today' : new Date(`${d.date}T12:00:00`).toLocaleDateString(getLocale(), { weekday: 'short' }))),
+      earned: days.reduce((s, d, i) => s + d.earnings + extra(i) * (data.doctor?.fee || 0), 0),
+    };
+  }, [data, demo]);
 
-  if (!data) return <Loading />;
+  // Wait for the config too, so totals and payout don't jump from real to demo numbers once it arrives.
+  if (!data || !config) return <Loading />;
   const { doctor, completed } = data;
   const weekTotal = week.values.reduce((a, b) => a + b, 0);
-  const weekEarn = weekTotal * doctor.fee;
+  const weekEarn = week.earned;
   const nextMonday = new Date();
   nextMonday.setDate(nextMonday.getDate() + ((8 - nextMonday.getDay()) % 7 || 7));
 

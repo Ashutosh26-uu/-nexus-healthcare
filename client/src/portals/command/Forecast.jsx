@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CloudRain, FlaskConical, MessageSquareWarning, Pill, CloudSun, Megaphone, RefreshCw, Info } from 'lucide-react';
-import { Card, Button, Empty, Pills, useToast, cx, fmtDateTime } from '../../components/ui';
+import { Card, Button, Empty, Loading, Pills, useToast, cx, fmtDateTime } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
 
@@ -29,8 +29,9 @@ export default function Forecast() {
   const [error, setError] = useState('');
   const [level, setLevel] = useState('all');
 
-  const load = () => { setError(''); api.get('/gov/forecast').then(setData).catch((e) => setError(e.message)); };
-  useEffect(() => { load(); }, []);
+  const alive = useRef(true);
+  const load = () => { setError(''); api.get('/gov/forecast').then((d) => alive.current && setData(d)).catch((e) => alive.current && setError(e.message)); };
+  useEffect(() => { alive.current = true; load(); return () => { alive.current = false; }; }, []);
 
   const list = useMemo(() => (data?.forecasts || []).filter((f) => level === 'all' || f.level === level), [data, level]);
   if (error) return <Empty title="Couldn't load the forecast">{error}</Empty>;
@@ -59,7 +60,7 @@ export default function Forecast() {
         {data && <span className="tiny muted">Scope: <span translate="no">{data.scope}</span> · generated {fmtDateTime(data.generatedAt)}</span>}
       </div>
 
-      {!data ? <Empty title="Loading forecast…" /> : list.length === 0 ? <Empty icon={CloudSun} title="Clear skies">No active disease signals at this risk level.</Empty> : (
+      {!data ? <Loading /> : list.length === 0 ? <Empty icon={CloudSun} title="Clear skies">No active disease signals at this risk level.</Empty> : (
         <div className="grid two">
           {list.map((f) => {
             const lv = LEVEL[f.level];

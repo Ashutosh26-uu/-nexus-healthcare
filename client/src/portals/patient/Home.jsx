@@ -48,9 +48,9 @@ export default function Home() {
         if (!next) return null;
         return (
           <Link to="/patient/follow-ups" className="pt-next-visit fade-in">
-            <span className="pt-next-ic">{new Date(next.scheduledAt).getDate()}<small>{new Date(next.scheduledAt).toLocaleDateString([], { month: 'short' })}</small></span>
+            <span className="pt-next-ic">{new Date(next.scheduledAt).getDate()}<small>{new Date(next.scheduledAt).toLocaleDateString(getLocale(), { month: 'short' })}</small></span>
             <span className="grow">
-              <strong>{next.followUp ? 'Next follow-up' : 'Next appointment'}: {new Date(next.scheduledAt).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</strong>
+              <strong>{next.followUp ? 'Next follow-up' : 'Next appointment'}: {new Date(next.scheduledAt).toLocaleString(getLocale(), { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</strong>
               <span className="small muted block">with <span translate="no">{next.doctorName}</span>{next.mode === 'in_person' ? ` at ${next.location?.name || 'the clinic'}` : ' · video'}</span>
             </span>
             <ChevronRight size={18} />

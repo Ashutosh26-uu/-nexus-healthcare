@@ -231,6 +231,7 @@ p { margin: 0 0 0.9em; }
 .modal-backdrop { position: fixed; inset: 0; background: rgba(22, 33, 31, 0.42); backdrop-filter: blur(3px); z-index: 80; display: grid; place-items: center; padding: 20px; animation: fade 0.2s ease; }
 .modal { background: #fff; border-radius: var(--radius-lg); width: 100%; max-width: 560px; max-height: calc(100vh - 40px); overflow: auto; box-shadow: var(--shadow-lg); animation: rise 0.28s var(--ease); }
 .modal.wide { max-width: 820px; }
+.modal:focus { outline: none; } /* focus is moved onto the dialog on open; its content is the indicator */
 .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 22px 24px 0; }
 .modal-head h3 { margin: 0; font-size: 1.3rem; }
 .modal-body { padding: 18px 24px 24px; }
@@ -284,10 +285,6 @@ p { margin: 0 0 0.9em; }
 .steps span { flex: 1; height: 4px; border-radius: 99px; background: var(--line); transition: background 0.3s; }
 .steps span.done { background: var(--green-2); }
 
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
-}
-
 /* ---------- right-to-left languages (Urdu, Arabic, Sindhi, Kashmiri, Persian…) ---------- */
 [dir='rtl'] body { font-family: var(--sans), 'Noto Nastaliq Urdu', 'Noto Naskh Arabic', Tahoma, sans-serif; }
 [dir='rtl'] .lucide-arrow-right, [dir='rtl'] .lucide-arrow-left, [dir='rtl'] .lucide-chevron-right, [dir='rtl'] .lucide-chevron-left,
@@ -329,12 +326,6 @@ p { margin: 0 0 0.9em; }
 .avail-toast button { margin-left: auto; background: rgba(255,255,255,.18); border: 0; color: #fff; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; display: grid; place-items: center; flex: none; }
 @keyframes availIn { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }
 
-/* ---------- install app (PWA) ---------- */
-.install-bar { position: fixed; z-index: 95; left: 16px; bottom: 16px; display: flex; align-items: center; gap: 12px; max-width: 440px; width: calc(100% - 140px); padding: 12px 14px; border-radius: 16px; background: #fff; border: 1px solid var(--line); box-shadow: 0 16px 40px rgba(29, 43, 42, .16); animation: availIn .35s ease both; }
-.install-bar strong { display: block; font-size: .92rem; }
-.install-bar span { font-size: .78rem; color: var(--ink-3); }
-.install-x { border: 0; background: none; color: var(--ink-3); cursor: pointer; padding: 4px; border-radius: 8px; }
-@media (max-width: 560px) { .install-bar { width: calc(100% - 32px); bottom: 84px; } }
 /* Respect the iPhone notch / home bar when installed */
 body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
 

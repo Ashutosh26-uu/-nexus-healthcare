@@ -42,8 +42,8 @@ export default function InstallPrompt() {
   const install = async () => {
     const p = window.__installPrompt;
     if (!p) return;
-    p.prompt();
-    const { outcome } = await p.userChoice;
+    let outcome;
+    try { p.prompt(); ({ outcome } = await p.userChoice); } catch { /* a prompt can only be shown once per event */ }
     window.__installPrompt = null;
     setCan(false);
     if (outcome === 'accepted') close();

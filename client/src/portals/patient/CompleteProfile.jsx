@@ -115,11 +115,12 @@ export default function CompleteProfile() {
   }, [device.loc, formReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const india = form?.country === 'IN';
+  // An ID is optional: it only counts towards the completeness %, never towards "ready to book".
   const hasId = !!form && (form.aadhaar.replace(/\D/g, '').length === 12 || !!patient?.aadhaarLast4 || !!(form.govIdType && form.govIdNumber.trim().length >= 4));
   const checks = useMemo(() => (form ? [form.age !== '', form.address.trim().length >= 5, !!(form.district && form.state), hasId, !!form.symptoms.trim(), !!form.bloodGroup, reports.length > 0 || form.currentMeds.length > 0] : []), [form, hasId, reports.length]);
   if (!patient || !form) return <PageSkeleton />;
   const pct = Math.round((checks.filter(Boolean).length / checks.length) * 100);
-  const required = [form.age !== '', form.address.trim().length >= 5, !!(form.district && form.state), hasId];
+  const required = [form.age !== '', form.address.trim().length >= 5, !!(form.district && form.state)];
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const toggleSymptom = (s) => {
     const parts = form.symptoms.split(',').map((x) => x.trim()).filter(Boolean);
@@ -192,19 +193,19 @@ export default function CompleteProfile() {
         <p className="tiny muted mb-0"><ShieldCheck size={12} style={{ verticalAlign: '-2px' }} /> Your location is used only to find doctors within 20 km and chemists within 50 km. It stays on Nexus Healthcare&apos;s servers, rounded to about 100 m.</p>
       </Card>
 
-      <Card title={<h4 className="row mb-0" style={{ gap: 8 }}><Fingerprint size={17} />Identity *</h4>} action={<span className="tiny muted">{india ? 'Aadhaar — or any one government ID' : 'Passport or national ID'}</span>}>
+      <Card title={<h4 className="row mb-0" style={{ gap: 8 }}><Fingerprint size={17} />Identity <span className="badge">Optional</span></h4>} action={<span className="tiny muted">{india ? 'Helps hospitals match your records — Aadhaar or any one ID' : 'Helps the clinic match your records — passport or national ID'}</span>}>
         {india && (
           <div className="grid two">
             <Field label="Aadhaar number" hint={patient.aadhaarLast4 ? `On file: XXXX XXXX ${patient.aadhaarLast4}. We keep only the last 4 digits.` : 'We check it and keep only the last 4 digits.'}>
               <input className="input mono" inputMode="numeric" dir="ltr" autoComplete="off" value={form.aadhaar} onChange={(e) => set('aadhaar', fmtAadhaar(e.target.value))} placeholder="1234 5678 9012" />
             </Field>
-            <div className="pt-or-id tiny muted">No Aadhaar with you? Add any one ID below instead.</div>
+            <div className="pt-or-id tiny muted">Any one ID is enough — or skip this for now.</div>
           </div>
         )}
         <div className="grid two">
           <Field label={<span className="row" style={{ gap: 6 }}><IdCard size={14} />{india ? 'Government ID / health scheme card' : 'ID document'}</span>} hint={india ? 'An Ayushman card helps hospitals process cashless treatment.' : 'Used by the clinic to confirm who you are.'}>
             <select className="select" value={form.govIdType} onChange={(e) => set('govIdType', e.target.value)}>
-              <option value="">Choose{india ? ' (optional if Aadhaar given)' : ''}</option>
+              <option value="">Choose</option>
               {ids.map((g) => <option key={g}>{g}</option>)}
             </select>
           </Field>

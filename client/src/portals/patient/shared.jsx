@@ -22,6 +22,9 @@ export const SPEECH_LANG = { Hindi: 'hi-IN', English: 'en-IN', Bengali: 'bn-IN',
 
 export const firstName = (name = '') => name.split(/\s+/)[0] || '';
 export const splitList = (v) => String(v || '').split(',').map((s) => s.trim()).filter(Boolean);
+// ISO string in the device's local time — for <input type="date|datetime-local"> values/limits, where
+// toISOString() (UTC) is yesterday until 05:30 IST.
+export const localISO = (d = new Date()) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString();
 
 export function greeting(d = new Date()) {
   const h = d.getHours();

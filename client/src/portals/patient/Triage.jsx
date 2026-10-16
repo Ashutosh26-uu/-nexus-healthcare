@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Mic, MicOff, Phone, Ambulance, IdCard, BellRing, Video, CalendarClock, HeartPulse, RefreshCw, Info, Check } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Mic, MicOff, Phone, Ambulance, IdCard, Video, CalendarClock, HeartPulse, RefreshCw, Info, Check, Search } from 'lucide-react';
 import { api } from '../../api';
 import NearbyDoctors from './NearbyDoctors';
-import { Avatar, Button, Field, TriageBadge, cx, fmtDateTime, useAction, useToast } from '../../components/ui';
+import { Avatar, Button, Field, TriageBadge, cx, useToast } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, firstName, relationOf, SPEECH_LANG } from './shared';
-import { ModePicker, SlotPicker } from './Consult';
 
 const QUICK_SYMPTOMS = ['Fever', 'Cough', 'Headache', 'Body ache', 'Sore throat', 'Cold / runny nose', 'Vomiting', 'Loose motions', 'Stomach pain', 'Dizziness', 'Rash or itching', 'Burning urine', 'Tiredness', 'Acidity'];
 const DANGER_SIGNS = [
@@ -46,7 +45,8 @@ export default function Triage() {
   const topRef = useRef(null);
 
   useEffect(() => { if (patient?.age != null) setAge(String(patient.age)); }, [patient?.id, patient?.age]);
-  useEffect(() => { topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [step]);
+  // scrollIntoView ignores the CSS reduced-motion override, so honour it here.
+  useEffect(() => { topRef.current?.scrollIntoView({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); }, [step]);
 
   const who = patient ? firstName(patient.name) : '';
   const isSelf = profiles.find((p) => p.id === patient?.id)?.self;
@@ -220,27 +220,10 @@ function SymptomInput({ value, onChange, language }) {
 /* ---------- result ---------- */
 function TriageResult({ result, symptoms, who, isSelf, onRestart }) {
   const navigate = useNavigate();
-  const toast = useToast();
-  const [run, busy] = useAction();
-  const [mode, setMode] = useState('video');
-  const [slot, setSlot] = useState(null);
-  const [reminded, setReminded] = useState(false);
-  const { reloadHome } = usePatient();
-  const triage = { level: result.level, score: result.score, symptoms, note: result.note, specialty: result.specialty, redFlags: result.redFlags };
-
-  // Every consult is booked (and paid) through the doctor finder — it opens with these symptoms.
-  const joinQueue = () => navigate('/patient/consult', { state: { symptoms } });
-  const book = joinQueue;
-
-  const remind = () => {
-    try {
-      const list = JSON.parse(localStorage.getItem('oc_reminders') || '[]');
-      list.push({ at: new Date(Date.now() + 86400000).toISOString(), text: `Check in on ${symptoms.slice(0, 60)}` });
-      localStorage.setItem('oc_reminders', JSON.stringify(list));
-    } catch { /* storage may be blocked */ }
-    setReminded(true);
-    toast('We’ll check in tomorrow morning. Feel better soon.');
-  };
+  // Every consult is booked (mode, time and payment) in the doctor finder's BookingFlow — open it with
+  // these symptoms, and the suggested department when triage points at a specialist.
+  const specialist = !['General Medicine', 'Emergency'].includes(result.specialty);
+  const findDoctors = () => navigate('/patient/consult', { state: { symptoms, ...(specialist ? { department: result.specialty } : {}) } });
 
   if (result.level === 'emergency') {
     return (
@@ -285,23 +268,16 @@ function TriageResult({ result, symptoms, who, isSelf, onRestart }) {
       </div>
 
       {result.level === 'doctor_now' && (
-        <div className="stack mt-2">
-          <Field label="How would you like to talk?"><ModePicker value={mode} onChange={setMode} /></Field>
-          <div className="row wrap">
-            <Button size="lg" variant="clay" loading={busy === 'queue'} onClick={joinQueue}>Join live queue</Button>
-            <span className="small muted">We&apos;ll find a free {result.specialty.toLowerCase()} doctor who speaks your language.</span>
-          </div>
+        <div className="row wrap mt-2">
+          <Button size="lg" variant="clay" icon={Search} onClick={findDoctors}>Find doctors</Button>
+          <span className="small muted">Doctors who are free right now are marked “Available” — book one for a video call straight away.</span>
         </div>
       )}
 
       {result.level === 'routine' && (
-        <div className="stack lg mt-2">
-          <Field label="Pick a time that suits you"><SlotPicker value={slot} onChange={setSlot} /></Field>
-          <Field label="How would you like to talk?"><ModePicker value={mode} onChange={setMode} /></Field>
-          <div className="row wrap">
-            <Button size="lg" disabled={!slot} loading={busy === 'book'} onClick={book}>{slot ? `Book ${fmtDateTime(slot)}` : 'Choose a time first'}</Button>
-            <Button variant="ghost" onClick={joinQueue} loading={busy === 'queue'}>Rather talk now? Join the queue</Button>
-          </div>
+        <div className="row wrap mt-2">
+          <Button size="lg" icon={Search} onClick={findDoctors}>Find doctors</Button>
+          <span className="small muted">Pick a doctor, then a time that suits you.</span>
         </div>
       )}
 
@@ -313,8 +289,7 @@ function TriageResult({ result, symptoms, who, isSelf, onRestart }) {
             <div><strong>Watch for</strong><span className="small muted">Fever above 102°F, breathing trouble, or feeling worse after 2–3 days.</span></div>
           </div>
           <div className="row wrap">
-            <Button icon={reminded ? Check : BellRing} variant={reminded ? 'soft' : 'primary'} onClick={remind} disabled={reminded}>{reminded ? 'Reminder set for tomorrow' : 'Remind me to check in tomorrow'}</Button>
-            <Button variant="secondary" onClick={() => navigate('/patient/consult')}>Talk to a doctor anyway</Button>
+            <Button variant="secondary" onClick={findDoctors}>Talk to a doctor anyway</Button>
           </div>
         </div>
       )}

@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { availabilityOf } = require('./availability');
 // Core AI engines — MVP versions are transparent rules (spec §6).
 // None of these make a final medical decision; a doctor always reviews.
@@ -68,7 +69,9 @@ function triage({ symptoms = '', age, duration, severity, vitals = {} }, config)
 
   let specialty = 'General Medicine';
   for (const h of SPECIALTY_HINTS) if (h.words.some((w) => text.includes(w))) specialty = h.specialty;
-  if (age !== undefined && age !== '' && Number(age) < 14) specialty = 'Pediatrics';
+  // Age is optional: null/'' must mean "unknown", not 0 (Number(null) is 0, which read as a child).
+  const a = age === undefined || age === null || age === '' ? NaN : Number(age);
+  if (a < 14) specialty = 'Pediatrics';
 
   if (flags.length) {
     return {
@@ -100,8 +103,7 @@ function triage({ symptoms = '', age, duration, severity, vitals = {} }, config)
   if (sys >= 160 || dia >= 100) { score += 15; reasons.push(`BP ${vitals.bp}`); }
   if (Number(vitals.sugar) >= 300) { score += 18; reasons.push(`blood sugar ${vitals.sugar}`); }
 
-  const a = Number(age);
-  if (a && (a >= 65 || a < 5)) { score += 10; reasons.push(a >= 65 ? 'older adult' : 'young child'); }
+  if (Number.isFinite(a) && (a >= 65 || a < 5)) { score += 10; reasons.push(a >= 65 ? 'older adult' : 'young child'); } // includes infants (age 0)
 
   score = Math.min(score, 89);
   let level = 'self_care';
@@ -138,7 +140,7 @@ function routeDoctor(db, { specialty, language, district, state, urgency }) {
     if (d.specialty === specialty || (specialty === 'Emergency' && d.specialty === 'General Medicine')) score += w.specialty;
     // Narrow specialists shouldn't pick up cases outside their field (e.g. a pediatrician seeing adults).
     else if (['Pediatrics', 'Dermatology'].includes(d.specialty)) score -= w.specialty * 2;
-    if (language && d.languages.includes(language)) score += w.language;
+    if (language && (d.languages || []).includes(language)) score += w.language;
     score -= queue * w.waitPenalty;
     score -= tier * w.distancePenalty;
     return { doctor: d, score: Math.round(score), queue, tier, waitMin: queue * 8 + 2 };
@@ -149,9 +151,9 @@ function routeDoctor(db, { specialty, language, district, state, urgency }) {
 
 // 6.3 Supply grid — widen the search step by step; prefer near-expiry; respect safety stock.
 function findStock(db, drug, { district, state }, qtyNeeded = 1) {
-  const name = drug.toLowerCase();
+  const name = String(drug || '').toLowerCase(); // query input may be anything (array, number) — never crash
   const rows = db.inventory
-    .filter((i) => i.drug.toLowerCase().includes(name))
+    .filter((i) => String(i.drug || '').toLowerCase().includes(name))
     .map((i) => ({ ...i, facility: db.facilities.find((f) => f.id === i.facilityId) }))
     .filter((i) => i.facility && i.qty - (i.safetyStock || 0) >= qtyNeeded);
 
@@ -178,12 +180,13 @@ const ALLERGY_CLASSES = {
 
 function checkPrescription(patient, items) {
   const warnings = [];
-  const drugs = items.map((i) => i.drug.toLowerCase());
-  for (const allergy of patient.allergies || []) {
+  // Items/allergies come straight from request bodies and profiles — tolerate a missing or non-string name.
+  const drugs = (Array.isArray(items) ? items : []).map((i) => String(i?.drug || '').toLowerCase());
+  for (const allergy of (patient.allergies || []).map((x) => String(x || '')).filter(Boolean)) {
     const cls = ALLERGY_CLASSES[allergy.toLowerCase()] || [allergy.toLowerCase()];
-    for (const d of drugs) if (cls.some((c) => d.includes(c))) warnings.push({ type: 'allergy', severity: 'high', msg: `${patient.name} is allergic to ${allergy}. "${items[drugs.indexOf(d)].drug}" may cause a reaction.` });
+    drugs.forEach((d, idx) => { if (d && cls.some((c) => d.includes(c))) warnings.push({ type: 'allergy', severity: 'high', msg: `${patient.name} is allergic to ${allergy}. "${items[idx].drug}" may cause a reaction.` }); });
   }
-  const all = [...drugs, ...(patient.currentMeds || []).map((m) => m.toLowerCase())];
+  const all = [...drugs, ...(patient.currentMeds || []).map((m) => String(m || '').toLowerCase())];
   for (const it of INTERACTIONS) {
     if (all.some((d) => d.includes(it.a)) && all.some((d) => d.includes(it.b)) && drugs.some((d) => d.includes(it.a) || d.includes(it.b))) {
       warnings.push({ type: 'interaction', severity: 'medium', msg: it.msg });
@@ -198,7 +201,7 @@ function outbreakCheck(db, labOrder) {
   const positives = (labOrder.results || []).filter((r) => r.flag === 'positive');
   const created = [];
   for (const r of positives) {
-    const key = Object.keys(NOTIFIABLE).find((k) => r.name.toLowerCase().includes(k));
+    const key = Object.keys(NOTIFIABLE).find((k) => String(r.name || '').toLowerCase().includes(k));
     if (!key) continue;
     const disease = NOTIFIABLE[key];
     const existing = db.alerts.find((a) => a.type === 'outbreak' && a.disease === disease && a.pincode === labOrder.pincode && a.status !== 'dismissed' && a.status !== 'resolved');
@@ -211,7 +214,7 @@ function outbreakCheck(db, labOrder) {
     // In the POC each pin code has a synthetic baseline; a fresh spike creates a low-confidence watch alert.
     const fac = db.facilities.find((f) => f.id === labOrder.labId) || {};
     const alert = {
-      id: `al_${Date.now().toString(36)}${require('crypto').randomBytes(3).toString('hex')}`, type: 'outbreak', disease, district: fac.district, state: fac.state, pincode: labOrder.pincode,
+      id: `al_${Date.now().toString(36)}${crypto.randomBytes(3).toString('hex')}`, type: 'outbreak', disease, district: fac.district, state: fac.state, pincode: labOrder.pincode,
       confidence: 0.52, multiplier: 1.4, cases: 1, baseline: 5, status: 'open',
       message: `New ${disease} positive reported in pin ${labOrder.pincode}. Watching for a cluster.`, createdAt: new Date().toISOString(), actions: [],
     };

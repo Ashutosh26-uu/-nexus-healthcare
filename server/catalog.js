@@ -64,11 +64,18 @@ function unitsFor(item) {
 }
 
 // Loose match so "Cetirizine 10 mg" (doctor's own list) still finds "Cetirizine 10mg".
+// Normalised keys are computed once and lookups memoised: this runs several times per line item on every
+// order/quote request, and used to re-normalise all 24 names on each call.
+const PRICE_INDEX = Object.keys(DRUG_PRICES).map((k) => { const n = k.toLowerCase().replace(/\s+/g, ''); return { k, n, letters: n.replace(/\d.*$/, ''), strength: n.replace(/^\D+/, '') }; });
+const priceCache = new Map();
 function priceOf(drug = '') {
   const key = String(drug).toLowerCase().replace(/\s+/g, '');
-  const hit = Object.keys(DRUG_PRICES).find((k) => k.toLowerCase().replace(/\s+/g, '') === key)
-    || Object.keys(DRUG_PRICES).find((k) => key.startsWith(k.toLowerCase().replace(/\s+/g, '').replace(/\d.*$/, '')) && k.toLowerCase().replace(/\s+/g, '').replace(/^\D+/, '') === key.replace(/^\D+/, ''));
-  return hit ? { name: hit, ...DRUG_PRICES[hit] } : null;
+  if (priceCache.has(key)) return priceCache.get(key);
+  const e = PRICE_INDEX.find((x) => x.n === key) || PRICE_INDEX.find((x) => key.startsWith(x.letters) && x.strength === key.replace(/^\D+/, ''));
+  const hit = e ? Object.freeze({ name: e.k, ...DRUG_PRICES[e.k] }) : null; // shared between callers — read-only
+  if (priceCache.size > 2000) priceCache.clear(); // bounded: keys come from user-typed drug names
+  priceCache.set(key, hit);
+  return hit;
 }
 
 // Plain-language suggestions for a report, so the patient understands it before the doctor calls.
@@ -94,7 +101,9 @@ function interpret(results = []) {
     if (!flag || flag === 'normal' || flag === 'negative') continue;
     if (flag === 'critical') { out.push({ level: 'urgent', test: r.name, text: `${r.name} (${r.value} ${r.unit || ''}) needs urgent attention. Your doctor has been alerted — if you feel unwell, go to the nearest emergency or call 108.` }); continue; }
     const rule = ADVICE.find((a) => a.re.test(r.name));
-    const text = rule?.[flag] || `${r.name} is ${flag === 'positive' ? 'positive' : `${flag}er than the normal range`} (${r.value} ${r.unit || ''}). Your doctor will review it and tell you if anything needs to change.`;
+    // Lab techs type the flag themselves ("abnormal", "borderline"…) — only high/low take the "-er" form.
+    const how = flag === 'positive' ? 'positive' : flag === 'high' || flag === 'low' ? `${flag}er than the normal range` : 'outside the normal range';
+    const text = rule?.[flag] || `${r.name} is ${how} (${r.value} ${r.unit || ''}). Your doctor will review it and tell you if anything needs to change.`;
     out.push({ level: flag === 'positive' ? 'attention' : 'watch', test: r.name, text });
   }
   if (!out.length && results.length) out.push({ level: 'ok', test: null, text: 'All your results are within the normal range. Keep up your current routine and follow your doctor’s advice.' });

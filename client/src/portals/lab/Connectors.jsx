@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PlugZap, RefreshCw, ShieldCheck, Check, X, Radar, Server } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Card, Button, Empty, fmtDate, timeAgo, useToast } from '../../components/ui';
@@ -11,9 +11,12 @@ export default function Connectors({ orders }) {
   const toast = useToast();
   const [last, setLast] = useState(() => new Date(Date.now() - 4 * 60000).toISOString());
   const [pulling, setPulling] = useState(false);
+  const timer = useRef(null);
+  useEffect(() => () => clearTimeout(timer.current), []); // leaving the page mid-pull must not toast later
   const pull = () => {
     setPulling(true);
-    setTimeout(() => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
       setPulling(false);
       setLast(new Date().toISOString());
       toast('LIS checked — no new analyser results waiting');

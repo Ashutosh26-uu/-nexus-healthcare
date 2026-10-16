@@ -14,11 +14,13 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const store = require('../db');
 
 const LANGUAGES = require('../../client/src/i18n/languages.json');
 const CATALOG_FILE = process.env.I18N_CATALOG || path.join(__dirname, '..', '..', 'client', 'src', 'i18n', 'catalog.json');
 const SEED_DIR = path.join(__dirname, 'seed');
+const SEED_MARK = '__seed'; // translations rows (lang='__seed', source=<lang>, text=<seed file hash>); never a real language code
 
 const SERVER_STRINGS = new Set(); // fixed server-side texts (chat help answers etc.)
 let catalog = new Set();
@@ -47,20 +49,32 @@ function registerServerStrings(list) {
 async function init(opts = {}) {
   if (opts.broadcast) broadcast = opts.broadcast;
   loadCatalog();
-  // Seed bundled translations without overwriting human edits.
+  // Seed bundled translations without overwriting human edits. Diffing a seed file means downloading that
+  // language's whole dictionary (~3 MB for the bundled six) — on every boot that delayed start-up by minutes on
+  // a slow link. So each imported file's hash is remembered (pseudo-language SEED_MARK in the same table) and an
+  // unchanged, fully imported file is skipped; dictionaries then load lazily on first use.
   if (fs.existsSync(SEED_DIR)) {
-    for (const f of fs.readdirSync(SEED_DIR).filter((x) => x.endsWith('.json'))) {
+    const a = store.adapter();
+    const [marks, counts] = await Promise.all([a.trGetLang(SEED_MARK), a.trStats()]);
+    const seen = new Map(marks.map((r) => [r.source, r.text]));
+    const have = new Map(counts.map((r) => [r.lang, Number(r.n)]));
+    await Promise.all(fs.readdirSync(SEED_DIR).filter((x) => x.endsWith('.json')).map(async (f) => {
       const lang = f.replace(/\.json$/, '');
       try {
-        const data = JSON.parse(fs.readFileSync(path.join(SEED_DIR, f), 'utf8'));
+        const text = fs.readFileSync(path.join(SEED_DIR, f), 'utf8');
+        const sum = crypto.createHash('sha256').update(text).digest('hex').slice(0, 16);
+        const data = JSON.parse(text);
+        const filled = Object.values(data).filter(Boolean).length;
+        if (seen.get(lang) === sum && (have.get(lang) || 0) >= filled) return;
         const existing = await getDict(lang);
         const pairs = Object.entries(data).filter(([s, t]) => t && !existing.has(s));
         if (pairs.length) {
-          await store.adapter().trPut(lang, pairs, 'seed');
+          await a.trPut(lang, pairs, 'seed');
           pairs.forEach(([s, t]) => existing.set(s, t));
         }
+        await a.trPut(SEED_MARK, [[lang, sum]], 'seed');
       } catch (e) { console.warn(`[i18n] bad seed file ${f}: ${e.message}`); }
-    }
+    }));
   }
   const p = providers();
   console.log(`[i18n] ${catalog.size} UI strings · ${LANGUAGES.length} languages · auto-translate: ${p.length ? p.map((x) => x.name).join(' → ') : 'off (seed languages only)'}`);
@@ -159,17 +173,22 @@ const mymemoryProvider = {
     const out = new Array(texts.length);
     const CONC = Number(process.env.MYMEMORY_CONCURRENCY || 4);
     let next = 0;
+    let stop = false; // once the quota is gone, the other workers stop too instead of burning more requests
     async function worker() {
-      while (next < texts.length) {
+      while (!stop && next < texts.length) {
         const i = next; next += 1;
         const q = texts[i];
         try {
           const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(q)}&langpair=en|${encodeURIComponent(target)}${email}`, { headers: { 'User-Agent': 'NexusHealthcare/1.0' } });
           const data = await res.json();
-          if (data.responseStatus === 429 || (typeof data.responseDetails === 'string' && /quota/i.test(data.responseDetails))) throw new Error('quota');
-          out[i] = data?.responseData?.translatedText || null;
+          const t = data?.responseData?.translatedText;
+          // Out of quota shows up as status 429 or as a "MYMEMORY WARNING…" put where the translation should be.
+          if (Number(data.responseStatus) === 429 || (typeof data.responseDetails === 'string' && /quota|free translations/i.test(data.responseDetails)) || /^MYMEMORY WARNING/i.test(t || '')) throw new Error('quota');
+          // On any other failure (403 "QUERY LENGTH LIMIT EXCEEDED", invalid pair…) translatedText holds the
+          // error text — never store that as the translation.
+          out[i] = Number(data.responseStatus) === 200 && typeof t === 'string' && t.trim() ? t : null;
         } catch (e) {
-          if (e.message === 'quota') throw e;
+          if (e.message === 'quota') { stop = true; throw e; }
           out[i] = null;
         }
       }
@@ -199,6 +218,13 @@ async function translateBatch(lang, texts) {
 }
 
 /* ---------- public API ---------- */
+// When a pass leaves strings untranslated (every provider failed, quota gone, or the provider keeps returning
+// unusable output for some strings), pause auto-translation for that language: the app polls the dictionary
+// every 4 s while coverage is incomplete, and each poll used to start a fresh round of the same failing calls.
+const BACKOFF_MS = Number(process.env.I18N_RETRY_MS || 10 * 60 * 1000);
+const pausedUntil = new Map(); // lang -> timestamp
+const paused = (lang) => (pausedUntil.get(lang) || 0) > Date.now();
+
 async function fillMissing(lang, sources) {
   const dict = await getDict(lang);
   const missing = [...new Set(sources)].filter((s) => catalog.has(s) && !dict.has(s));
@@ -216,12 +242,16 @@ async function fillMissing(lang, sources) {
       broadcast(`i18n:${lang}`);
     }
   }
+  if (done < missing.length) {
+    pausedUntil.set(lang, Date.now() + BACKOFF_MS);
+    console.warn(`[i18n] ${missing.length - done} string(s) still untranslated in ${lang} — retrying in ${Math.round(BACKOFF_MS / 60000)} min`);
+  } else pausedUntil.delete(lang);
   return done;
 }
 
 /** Make sure every catalog string exists in `lang`; runs once in the background. */
 function ensureLanguage(lang) {
-  if (lang === 'en' || !langInfo(lang) || !providers().length) return null;
+  if (lang === 'en' || !langInfo(lang) || !providers().length || paused(lang)) return null;
   if (jobs.has(lang)) return jobs.get(lang);
   const job = fillMissing(lang, [...catalog])
     .then((n) => { if (n) console.log(`[i18n] translated ${n} strings into ${lang}`); return n; })
@@ -246,7 +276,7 @@ async function translateServerText(lang, text) {
   if (!lang || lang === 'en') return text;
   const dict = await getDict(lang);
   if (dict.has(text)) return dict.get(text);
-  if (!SERVER_STRINGS.has(text) || !providers().length) return text;
+  if (!SERVER_STRINGS.has(text) || !providers().length || paused(lang)) return text;
   await fillMissing(lang, [text]);
   return dict.get(text) || text;
 }

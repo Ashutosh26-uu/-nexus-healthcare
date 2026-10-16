@@ -39,7 +39,9 @@ function upiUri({ amount, ref, note }) {
   const vpa = process.env.UPI_VPA;
   if (!vpa) return null;
   const name = process.env.UPI_PAYEE_NAME || 'Nexus Healthcare';
-  const q = new URLSearchParams({ pa: vpa, pn: name, am: Number(amount).toFixed(2), cu: 'INR', tn: note.slice(0, 60), tr: ref });
+  const am = Number(amount);
+  if (!Number.isFinite(am) || am <= 0) return null; // never a QR for "₹NaN"
+  const q = new URLSearchParams({ pa: vpa, pn: name, am: am.toFixed(2), cu: 'INR', tn: String(note || 'Nexus Healthcare').slice(0, 60), tr: String(ref || '') });
   return `upi://pay?${q.toString()}`;
 }
 

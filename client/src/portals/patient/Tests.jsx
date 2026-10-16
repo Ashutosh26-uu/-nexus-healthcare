@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FlaskConical, MapPin, Clock, Home as HomeIcon, BadgeCheck, Check, Droplet, Utensils, FileText, Building2, Phone, Smartphone, CalendarClock, ArrowRight, ArrowLeft, Download, Stethoscope, Star, Users, LocateFixed, ShieldCheck, Ambulance, Repeat, Search, Hourglass, CreditCard } from 'lucide-react';
+import { FlaskConical, MapPin, Home as HomeIcon, BadgeCheck, Check, Droplet, Utensils, FileText, Building2, Phone, Smartphone, CalendarClock, ArrowRight, ArrowLeft, Download, Stethoscope, Star, Users, LocateFixed, ShieldCheck, Ambulance, Repeat, Search, Hourglass, CreditCard } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
 import { Button, Card, Empty, Field, Modal, Switch, fmtDate, fmtDateTime, fmtMoney, useAction, cx } from '../../components/ui';
-import { usePatient, firstName, PageSkeleton } from './shared';
+import { usePatient, usePatientLive, firstName, localISO, PageSkeleton } from './shared';
 import { useDeviceLocation } from './NearbyDoctors';
 import PaymentStep from './Payment';
 import BookingFlow from './BookingFlow';
@@ -58,15 +58,21 @@ function LabChooser({ order, onClose, onBooked }) {
   const [slot, setSlot] = useState('');
   const [shareRx, setShareRx] = useState(true);
   const [pay, setPay] = useState(null);
+  const [expired, setExpired] = useState(false); // advance refused with 409: the booking changed, choose again
   const [run, busy] = useAction();
 
-  useEffect(() => { if (order) { setStep(0); setNear(null); setPay(null); setLabId(null); setData(null); } }, [order]);
+  // Mounted fresh per order (keyed in <Tests>), so every field starts clean. The first response also
+  // decides `near`, which would re-run this effect for the very same query — the key check skips that.
+  const fetched = useRef('');
   useEffect(() => {
     if (!order) return undefined;
+    const key = (n) => `${n || ''}|${sort}|${device.loc?.lat ?? ''}|${device.loc?.lng ?? ''}`;
+    if (fetched.current === key(near)) return undefined;
     let alive = true;
     const qs = new URLSearchParams({ sort, ...(near ? { near } : {}), ...(device.loc ? { lat: device.loc.lat, lng: device.loc.lng } : {}) });
     api.get(`/lab-orders/${order.id}/labs?${qs}`).then((r) => {
       if (!alive) return;
+      fetched.current = key(r.near);
       setData(r);
       if (!near) setNear(r.near);
       setLabId((cur) => (r.labs.some((l) => l.id === cur) ? cur : r.labs[0]?.id || null));
@@ -84,7 +90,12 @@ function LabChooser({ order, onClose, onBooked }) {
   });
 
   const title = ['Where would you like to get tested?', 'Choose a lab', 'Collection & payment', 'Pay 20% to confirm'][step];
-  const footer = step === 3 ? <Button variant="ghost" onClick={onClose}>Pay later</Button> : (
+  const footer = step === 3 ? (
+    <>
+      <Button variant="ghost" onClick={onClose}>Pay later</Button>
+      {expired && <Button icon={ArrowLeft} onClick={() => { setExpired(false); setPay(null); setStep(1); }}>Choose again</Button>}
+    </>
+  ) : (
     <>
       {step > 0 ? <Button variant="ghost" icon={ArrowLeft} onClick={() => setStep((s) => s - 1)}>Back</Button> : <Button variant="ghost" onClick={onClose}>Cancel</Button>}
       {step === 0 && <Button icon={ArrowRight} disabled={!near} onClick={() => setStep(1)}>Show labs</Button>}
@@ -156,7 +167,7 @@ function LabChooser({ order, onClose, onBooked }) {
                 <span><strong className="small">Home sample collection</strong><span className="tiny muted block">{lab.homeCollection ? '+₹50 · a trained technician visits you' : 'Not offered by this lab'}</span></span>
                 <Switch checked={home} onChange={lab.homeCollection ? setHome : () => {}} label="Home collection" />
               </div>
-              <Field label="Preferred time (optional)"><input className="input" type="datetime-local" value={slot} min={new Date().toISOString().slice(0, 16)} onChange={(e) => setSlot(e.target.value)} /></Field>
+              <Field label="Preferred time (optional)"><input className="input" type="datetime-local" value={slot} min={localISO().slice(0, 16)} onChange={(e) => setSlot(e.target.value)} /></Field>
               <label className="check small pt-share-rx">
                 <input type="checkbox" checked={shareRx} onChange={(e) => setShareRx(e.target.checked)} />
                 <span><strong>Share my prescription with {lab.name}</strong><span className="tiny muted block">They see the doctor&apos;s order, so nothing is missed.</span></span>
@@ -173,7 +184,7 @@ function LabChooser({ order, onClose, onBooked }) {
             </>
           )}
 
-          {step === 3 && pay && <PaymentStep payment={pay} onPaid={() => onBooked()} />}
+          {step === 3 && pay && <PaymentStep payment={pay} onPaid={() => onBooked()} onError={(e) => setExpired(e.status === 409)} />}
         </div>
       )}
     </Modal>
@@ -183,13 +194,13 @@ function LabChooser({ order, onClose, onBooked }) {
 export default function Tests() {
   const { patient, profiles } = usePatient();
   const navigate = useNavigate();
-  const [data, setData] = useState(null);
+  // Live: the lab's "sample collected" / "report ready" updates land here without a refresh.
+  const { data, error, reload } = usePatientLive('/patient/tests', ['lab']);
   const [choosing, setChoosing] = useState(null);
   const [rebook, setRebook] = useState(null);
   const isSelf = profiles.find((p) => p.id === patient?.id)?.self;
-  const load = useCallback(() => api.get('/patient/tests').then(setData).catch(() => setData({ orders: [], steps: [] })), []);
-  useEffect(() => { load(); }, [load, patient?.id]);
 
+  if (error && !data) return <Empty title="We couldn't load your tests">{error}</Empty>;
   if (!data) return <PageSkeleton />;
   const open = data.orders.filter((o) => o.status !== 'reported');
   const done = data.orders.filter((o) => o.status === 'reported');
@@ -298,7 +309,7 @@ export default function Tests() {
           </div>
         </article>
       ))}
-      <LabChooser order={choosing} onClose={() => { setChoosing(null); load(); }} onBooked={() => { setChoosing(null); load(); }} />
+      <LabChooser key={choosing?.id || 'none'} order={choosing} onClose={() => { setChoosing(null); reload(); }} onBooked={() => { setChoosing(null); reload(); }} />
       <BookingFlow doctor={rebook} onClose={() => setRebook(null)} />
     </div>
   );

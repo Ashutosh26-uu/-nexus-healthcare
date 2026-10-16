@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Pill, Truck, Store, ScanLine, BadgeCheck, AlertTriangle, PenLine, Package, Download, BadgeIndianRupee, FileText, ShoppingBag, Info } from 'lucide-react';
 import WhereToBuy from './WhereToBuy';
@@ -7,7 +7,6 @@ import { Button, Card, Empty, StatusBadge, cx, fmtDate, fmtMoney, useAction } fr
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, usePatientLive, firstName, RxTracker, PageSkeleton } from './shared';
 import { rxStatusLabel } from './Home';
-import { getLocale } from '../../i18n';
 
 export default function Medicines() {
   const { home, homeLoading, patient, profiles } = usePatient();
@@ -141,7 +140,7 @@ function MyOrders() {
     <Card title={<h4 className="row mb-0" style={{ gap: 8 }}><Package size={17} />My medicine orders</h4>}>
       <div className="stack">
         {list.map((o) => {
-          const steps = ORDER_STEPS[o.fulfilment];
+          const steps = ORDER_STEPS[o.fulfilment] || [];
           const idx = steps.indexOf(o.status);
           const closed = ['delivered', 'collected', 'declined'].includes(o.status);
           return (
@@ -173,21 +172,23 @@ function MyOrders() {
 /* ---------- authenticity scan teaser ---------- */
 function AuthenticityCard() {
   const [code, setCode] = useState('');
-  const [state, setState] = useState(null); // null | 'checking' | {ok, ...}
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null); // the server's verdict: { status, drug, batch, expiry, message }
+  const seq = useRef(0); // editing the code while a check is in flight discards that answer
 
-  const check = (e) => {
+  // Same check as the "Check a medicine" page — a verdict is only ever shown from the server's answer.
+  const check = async (e) => {
     e.preventDefault();
-    const c = code.trim().toUpperCase();
-    if (!c) return;
-    setState('checking');
-    setTimeout(() => {
-      if (c.replace(/[^A-Z0-9]/g, '').length < 6) { setState({ ok: false }); return; }
-      const n = [...c].reduce((s, ch) => s + ch.charCodeAt(0), 0);
-      const makers = ['Sun Pharma', 'Cipla', 'Dr. Reddy’s', 'Lupin', 'Zydus', 'Mankind'];
-      const exp = new Date();
-      exp.setMonth(exp.getMonth() + 8 + (n % 16));
-      setState({ ok: true, maker: makers[n % makers.length], batch: `B${(n * 37) % 9000 + 1000}`, expiry: exp.toLocaleDateString(getLocale(), { month: 'short', year: 'numeric' }) });
-    }, 900);
+    const c = code.trim();
+    if (!c || busy) return;
+    const id = ++seq.current;
+    setBusy(true); setResult(null);
+    try {
+      const r = await api.post('/medicine/scan', { code: c });
+      if (id === seq.current) setResult(r);
+    } catch (err) {
+      if (id === seq.current) setResult({ status: 'error', message: err.message });
+    } finally { setBusy(false); }
   };
 
   return (
@@ -201,19 +202,21 @@ function AuthenticityCard() {
       </div>
       <form className="row" onSubmit={check}>
         <label htmlFor="pack-code" className="sr-only">Pack code</label>
-        <input id="pack-code" className="input sm mono" placeholder="e.g. 8XK29PL4" value={code} onChange={(e) => { setCode(e.target.value); setState(null); }} />
-        <Button size="sm" type="submit" loading={state === 'checking'} disabled={!code.trim()}>Check</Button>
+        <input id="pack-code" className="input sm mono" placeholder="e.g. 8XK29PL4" value={code} onChange={(e) => { setCode(e.target.value); setResult(null); seq.current++; }} />
+        <Button size="sm" type="submit" loading={busy} disabled={!code.trim()}>Check</Button>
       </form>
-      {state && state !== 'checking' && (state.ok ? (
-        <div className="pt-genuine fade-in">
+      {result && (result.status === 'genuine' ? (
+        <div className="pt-genuine fade-in" role="status">
           <BadgeCheck size={22} />
           <div>
             <strong>Genuine</strong>
-            <div className="tiny">{state.maker} · Batch {state.batch} · Expires {state.expiry}</div>
+            <div className="tiny"><span translate="no">{result.drug}</span>{result.batch ? <> · Batch <span translate="no">{result.batch}</span></> : null}{result.expiry ? <> · Expires {fmtDate(result.expiry)}</> : null}</div>
           </div>
         </div>
       ) : (
-        <div className="callout mt-1 fade-in"><AlertTriangle /><span className="small">We couldn&apos;t read that code. Check it&apos;s typed exactly as printed, or ask your chemist.</span></div>
+        <div className={cx('callout mt-1 fade-in', ['fake', 'recall', 'expired'].includes(result.status) && 'rose')} role="status">
+          <AlertTriangle /><span className="small">{result.message || 'We couldn’t check that code right now. Please try again.'}</span>
+        </div>
       ))}
       <p className="tiny muted mb-0 mt-1">Preview · live checks against the national drug registry are coming soon.</p>
     </Card>

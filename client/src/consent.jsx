@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Cookie, MapPin, LocateFixed, ShieldCheck, Loader2, Check, PencilLine } from 'lucide-react';
 import { api } from './api';
@@ -52,7 +52,8 @@ export function ConsentProvider({ children }) {
         const v = { lat: round3(pos.coords.latitude), lng: round3(pos.coords.longitude), accuracy: Math.round(pos.coords.accuracy), at: Date.now(), source: 'live' };
         setLoc(v); write(LOC_KEY, v); setStatus('live');
       },
-      (err) => setStatus(err.code === 1 ? 'denied' : 'error'),
+      // A watch keeps running; a later timeout (weak GPS indoors) must not undo a fix we already have.
+      (err) => setStatus((s) => (err.code === 1 ? 'denied' : s === 'live' && err.code === 3 ? s : 'error')),
       { enableHighAccuracy: true, maximumAge: 60000, timeout: 20000 },
     );
     return () => { if (watchId.current != null) navigator.geolocation.clearWatch(watchId.current); watchId.current = null; };
@@ -96,7 +97,8 @@ export function ConsentProvider({ children }) {
     return () => { window.removeEventListener('nx:cookie-settings', s); window.removeEventListener('nx:location-settings', l); };
   }, []);
 
-  const value = { consent, setConsent, loc, status, requestLive, setManual, openLocation: () => setLocOpen(true) };
+  const openLocation = useCallback(() => setLocOpen(true), []);
+  const value = useMemo(() => ({ consent, setConsent, loc, status, requestLive, setManual, openLocation }), [consent, setConsent, loc, status, requestLive, setManual, openLocation]);
   return (
     <Ctx.Provider value={value}>
       {children}

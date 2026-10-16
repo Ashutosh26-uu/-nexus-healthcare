@@ -1,10 +1,15 @@
 **/node_modules
 client/dist
 server/data
-server/.env
-.env*
+# Secrets in any folder (server/.env.production, client/.env.local…) — a later `rm` can't remove them from an image layer
+**/.env*
+!**/.env.example
 !.env.production.example
+**/*.db
+**/*.db-*
 .git
 .claude
 *.log
 .secrets
+.neon
+catalyst-build

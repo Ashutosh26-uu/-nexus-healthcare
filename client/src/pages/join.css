@@ -18,26 +18,9 @@
 .j-track.clay .j-track-cta { color: var(--clay); }
 .j-track-status { margin-top: 22px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 18px; align-items: center; }
 
-.j-estimate { display: flex; gap: 14px; align-items: center; padding: 14px 16px; border-radius: 14px; background: var(--clay-soft); color: var(--ink); }
-.j-estimate > svg { width: 30px; height: 30px; color: var(--clay); flex: none; }
-.j-estimate-amt { font-family: var(--serif); font-size: 1.7rem; font-weight: 600; line-height: 1.15; }
-.j-estimate-amt small { font-family: inherit; font-size: .85rem; font-weight: 500; color: var(--ink-3); margin-left: 3px; }
-
 .j-kinds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .j-kind { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 12px; background: #fff; font: inherit; font-weight: 600; cursor: pointer; text-align: left; color: var(--ink); }
 .j-kind.on { border-color: var(--green-2); background: var(--green-soft); }
-.j-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.j-mode { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 12px; border: 1.5px solid var(--line); border-radius: 12px; background: #fff; font: inherit; cursor: pointer; text-align: left; color: var(--ink); }
-.j-mode svg { color: var(--green-2); margin-bottom: 4px; }
-.j-mode.on { border-color: var(--green-2); background: var(--green-soft); }
-.j-clinics { display: grid; gap: 6px; }
-.j-clinic { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 12px; background: #fff; font: inherit; cursor: pointer; text-align: left; color: var(--ink); }
-.j-clinic .grow { display: flex; flex-direction: column; }
-.j-clinic .tiny { display: inline-flex; align-items: center; gap: 4px; }
-.j-clinic.on { border-color: var(--green-2); background: var(--green-soft); }
-.j-check { width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid var(--line); display: grid; place-items: center; background: #fff; color: var(--green); flex: none; }
-.j-clinic.on .j-check { border-color: var(--green-2); background: var(--green-2); color: #fff; }
-.j-range { width: 100%; accent-color: var(--clay); }
 
 .j-ref { display: flex; flex-direction: column; gap: 4px; align-items: center; padding: 16px; border-radius: 16px; border: 1.5px dashed var(--line); background: var(--paper-2); margin: 18px 0; }
 .j-ref-code { font-size: 1.5rem; font-weight: 700; letter-spacing: .08em; color: var(--green); }
@@ -50,6 +33,5 @@
 
 @media (max-width: 820px) {
   .j-tracks, .j-track-status { grid-template-columns: 1fr; }
-  .j-modes { grid-template-columns: 1fr; }
   .j-track { padding: 22px; }
 }

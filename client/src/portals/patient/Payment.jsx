@@ -23,7 +23,9 @@ const isMobile = () => /android|iphone|ipad|ipod/i.test(navigator.userAgent);
 
 // Pay for a consult or a delivery. Razorpay (real money, signature-verified on our server) when the
 // keys are configured; otherwise a real UPI QR plus a clearly-labelled demo confirmation.
-export default function PaymentStep({ payment, onPaid, breakdown }) {
+// `onError(err)` lets the parent offer a way forward — a 409 means the booking can no longer be paid for
+// (time passed, cancelled, changed), so paying again can't work.
+export default function PaymentStep({ payment, onPaid, onError, breakdown }) {
   const { user } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -33,11 +35,12 @@ export default function PaymentStep({ payment, onPaid, breakdown }) {
     try {
       const r = await api.post(`/payments/${payment.id}/confirm`, body);
       if (r.status === 'paid') onPaid(r);
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
+    } catch (e) { setError(e.message); onError?.(e); } finally { setBusy(false); }
   };
 
   const payRazorpay = async () => {
-    setError('');
+    if (busy) return; // a second tap while checkout.js loads would open two checkout windows
+    setError(''); setBusy(true);
     try {
       await loadRazorpay();
       const rzp = new window.Razorpay({
@@ -49,7 +52,7 @@ export default function PaymentStep({ payment, onPaid, breakdown }) {
       });
       rzp.on('payment.failed', (r) => setError(r?.error?.description || 'Payment failed. No money was taken — please try again.'));
       rzp.open();
-    } catch (e) { setError(e.message); }
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
 
   return (

@@ -25,7 +25,7 @@ export default function ChangeDoctor() {
   const [book, setBook] = useState(null);
 
   const load = () => api.get('/patient/transfers').then((r) => { setData(r); setFrom((f) => f || r.currentDoctors[0]?.id || ''); }).catch(() => setData({ currentDoctors: [], transfers: [], counts: {} }));
-  useEffect(() => { load(); }, [patient?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [patient?.id]);
   if (!data) return <PageSkeleton />;
   const fromDoc = data.currentDoctors.find((x) => x.id === from);
 

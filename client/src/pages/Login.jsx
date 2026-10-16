@@ -24,14 +24,21 @@ const DEMO = [
   { role: 'super_admin', email: 'admin@omnicare.in', who: 'Ops team', note: 'Verification, AI rules, audit' },
 ];
 
-export { OtpInput } from '../components/OtpFlow';
+const TAB_KEY = 'oc_login_tab';
+// Most people signing in are patients, so the one-time-code tab comes first; the last tab used wins after
+// that, and someone bounced here from a staff portal link gets the password form.
+function initialTab(from) {
+  try { const t = localStorage.getItem(TAB_KEY); if (t === 'patient' || t === 'staff') return t; } catch { /* ignore */ }
+  return from && !/^\/(patient|rx|lab-report)\b/.test(from) ? 'staff' : 'patient';
+}
 
 export default function Login() {
   const config = usePublicConfig();
   const { user, signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [mode, setMode] = useState('staff');
+  const [mode, setModeState] = useState(() => initialTab(location.state?.from));
+  const setMode = (m) => { setModeState(m); try { localStorage.setItem(TAB_KEY, m); } catch { /* ignore */ } };
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -71,9 +78,9 @@ export default function Login() {
           <h1 className="auth-title">Welcome back</h1>
           <p className="muted">Sign in to your Nexus Healthcare account.</p>
 
-          <div className="pills auth-pills">
-            <button className={cx('pill', mode === 'patient' && 'active')} onClick={() => { setMode('patient'); setError(''); }}><Smartphone size={15} /> Patient · One-time code</button>
-            <button className={cx('pill', mode === 'staff' && 'active')} onClick={() => { setMode('staff'); setError(''); }}><Mail size={15} /> Email & password</button>
+          <div className="pills auth-pills" role="tablist">
+            <button type="button" role="tab" aria-selected={mode === 'patient'} className={cx('pill', mode === 'patient' && 'active')} onClick={() => { setMode('patient'); setError(''); }}><Smartphone size={15} /> Patient · One-time code</button>
+            <button type="button" role="tab" aria-selected={mode === 'staff'} className={cx('pill', mode === 'staff' && 'active')} onClick={() => { setMode('staff'); setError(''); }}><Mail size={15} /> Email & password</button>
           </div>
 
           {error && <div className="form-error mb-2">{error}</div>}
@@ -81,12 +88,12 @@ export default function Login() {
           {mode === 'staff' && (
             <form className="stack" onSubmit={loginPassword}>
               <Field label="Email or mobile number">
-                <div className="input-wrap"><Mail /><input className="input" value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="you@hospital.in" autoComplete="username" required /></div>
+                <div className="input-wrap"><Mail /><input className="input" value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="you@hospital.in" autoComplete="username" aria-label="Email or mobile number" required /></div>
               </Field>
               <Field label="Password">
                 <div className="input-wrap">
                   <Lock />
-                  <input className="input" type={showPw ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Your password" autoComplete="current-password" required style={{ paddingRight: 44 }} />
+                  <input className="input pw-input" type={showPw ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Your password" autoComplete="current-password" aria-label="Password" required />
                   <button type="button" className="pw-toggle" onClick={() => setShowPw((v) => !v)} aria-label={showPw ? 'Hide password' : 'Show password'}>{showPw ? <EyeOff size={17} /> : <Eye size={17} />}</button>
                 </div>
               </Field>

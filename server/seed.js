@@ -5,11 +5,12 @@ const bcrypt = require('bcryptjs');
 const DEMO_PASSWORD = 'Demo@123';
 
 const day = 24 * 60 * 60 * 1000;
-const now = Date.now();
+let now = Date.now();
 const ago = (d, h = 0) => new Date(now - d * day - h * 3600000).toISOString();
 const ahead = (d, h = 0) => new Date(now + d * day + h * 3600000).toISOString();
 
 function demoSeed() {
+  now = Date.now(); // relative to this seeding — a reset after days of uptime must not put "upcoming" visits in the past
   const hash = bcrypt.hashSync(DEMO_PASSWORD, 8);
 
   const facilities = [
@@ -265,8 +266,11 @@ function liveSeed({ withAdmin = true } = {}) {
   let password = process.env.ADMIN_PASSWORD || '';
   if (!email) throw new Error('DATA_MODE=live needs ADMIN_EMAIL (and ideally ADMIN_PASSWORD) in the environment to create the first admin.');
   if (password.length < 10) {
+    // Never print a super-admin password into production logs (hosted log viewers keep them, and more people
+    // can read them than should hold that account) — require it to be set instead.
+    if (process.env.NODE_ENV === 'production') throw new Error('DATA_MODE=live needs ADMIN_PASSWORD (10+ characters) in the environment to create the first admin.');
     password = crypto.randomBytes(12).toString('base64url');
-    console.warn(`[seed] ADMIN_PASSWORD missing or short — generated one for ${email}: ${password}  (change it after first sign-in)`);
+    console.warn(`[seed] ADMIN_PASSWORD missing or short — generated one for ${email}: ${password}  (development only; change it after first sign-in)`);
   }
   const now = new Date().toISOString();
   const admin = { id: 'u_admin', name: process.env.ADMIN_NAME || 'Nexus Healthcare Admin', email, phone: process.env.ADMIN_PHONE || '', role: 'super_admin', status: 'active', region: { state: '', district: '' }, passwordHash: bcrypt.hashSync(password, 10), createdAt: now };

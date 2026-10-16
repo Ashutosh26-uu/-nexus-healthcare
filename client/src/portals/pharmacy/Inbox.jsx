@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { PackageCheck, Bike, HandHeart, ShieldCheck, Phone, Stethoscope, Store, Truck, Check, AlertTriangle, FileSignature } from 'lucide-react';
+import { PackageCheck, Bike, HandHeart, ShieldCheck, Phone, Stethoscope, Store, Truck, AlertTriangle, FileSignature } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Button, Tabs, Empty, StatusBadge, timeAgo, fmtDateTime, useAction, useToast } from '../../components/ui';
 import { api } from '../../api';
@@ -52,7 +52,6 @@ function RxCard({ rx, inventory, transfers = [], reload }) {
   };
   const requestMissing = async () => {
     for (const m of unrequested) {
-      // eslint-disable-next-line no-await-in-loop
       const t = await run('transfer', () => api.post('/transfers/request', { drug: m.drug, qty: 20 }));
       if (t) toast(`Asked ${t.fromName} for 20 × ${t.drug} (${t.tierName})`);
     }
@@ -120,27 +119,19 @@ function RxCard({ rx, inventory, transfers = [], reload }) {
         </div>
       )}
 
+      {/* The server only allows dispensed → out_for_delivery (delivery) or → collected (pickup); "delivered" is set by the rider's OTP. */}
       {rx.status === 'dispensed' && (
         <div className="rx-actions row wrap rx-btns">
           <span className="small muted grow">{delivery ? 'Patient asked for home delivery.' : 'Waiting for the patient to come in.'}</span>
-          {delivery ? (
-            <>
-              <Button variant="secondary" icon={HandHeart} loading={busy === 'collected'} onClick={() => act('collected', {}, 'Marked as collected')}>Patient came in</Button>
-              <Button variant="clay" icon={Bike} loading={busy === 'out_for_delivery'} onClick={() => act('out_for_delivery', {}, 'Handed to rider — the patient can track it live')}>Hand to rider</Button>
-            </>
-          ) : (
-            <>
-              <Button variant="secondary" icon={Bike} loading={busy === 'out_for_delivery'} onClick={() => act('out_for_delivery', {}, 'Handed to rider')}>Send by rider instead</Button>
-              <Button icon={HandHeart} loading={busy === 'collected'} onClick={() => act('collected', {}, `${rx.patientName} collected their medicines`)}>Mark collected</Button>
-            </>
-          )}
+          {delivery
+            ? <Button variant="clay" icon={Bike} loading={busy === 'out_for_delivery'} onClick={() => act('out_for_delivery', {}, 'Handed to rider — the patient can track it live')}>Hand to rider</Button>
+            : <Button icon={HandHeart} loading={busy === 'collected'} onClick={() => act('collected', {}, `${rx.patientName} collected their medicines`)}>Mark collected</Button>}
         </div>
       )}
 
       {rx.status === 'out_for_delivery' && (
         <div className="rx-actions row wrap rx-btns">
           <span className="small muted grow row" style={{ gap: 6 }}><Bike size={16} /> With the rider since {fmtDateTime(rx.out_for_deliveryAt)}. Closes automatically when the patient shares their OTP.</span>
-          <Button variant="ghost" size="sm" icon={Check} loading={busy === 'delivered'} onClick={() => act('delivered', {}, 'Marked delivered')}>Mark delivered manually</Button>
         </div>
       )}
 

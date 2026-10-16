@@ -54,8 +54,10 @@ app.use(express.json({ limit: '2mb' }));
 app.use((req, _res, next) => requestCtx.run({ affected: new Set(), userId: null }, next));
 
 // Throttle credential and code endpoints against brute force (OTP has its own per-target limits too).
-const loginLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 10, key: (r) => (r.body?.identifier || '').toLowerCase(), message: 'Too many sign-in attempts. Please wait a few minutes and try again.' });
+const loginLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 10, key: (r) => String(r.body?.identifier ?? '').slice(0, 160).toLowerCase(), message: 'Too many sign-in attempts. Please wait a few minutes and try again.' });
 const otpLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 20, message: 'Too many code requests. Please wait a while and try again.' });
+// Defence in depth on code checks (otp.js also caps wrong attempts per code): per ip + target / patient.
+const otpVerifyLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 20, key: (r) => String(r.body?.target ?? r.body?.patientId ?? '').slice(0, 160).toLowerCase(), message: 'Too many attempts. Please wait a few minutes and request a new code.' });
 
 // ---------- helpers ----------
 const db = () => store.get();
@@ -85,9 +87,9 @@ function userById(id) {
 
 function auth(req, res, next) {
   const header = req.headers.authorization || '';
-  // Bearer header everywhere; the ?token= fallback exists only for EventSource (SSE), which
-  // can't set headers. Confining it there keeps tokens out of logs/referrers on normal routes.
-  const token = header.startsWith('Bearer ') ? header.slice(7) : (req.path === '/api/events' ? req.query.token : null);
+  // Bearer header only. EventSource (SSE) can't set headers, so it uses a single-use ticket instead
+  // (see /api/events/ticket) — a JWT never travels in a URL, where proxies and access logs keep it.
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Please sign in to continue.' });
   try {
     const payload = jwt.verify(token, JWT_SECRET);
@@ -144,29 +146,36 @@ const role = (...roles) => (req, res, next) =>
 // them, while small ops audiences (admins, officials, kiosks, distributors) still get every topic.
 // Bursts are coalesced into one message per client every 250 ms.
 const sseClients = new Set(); // { res, userId, role, pending: Set }
+const sseByUser = new Map(); // userId → that person's connections (personal portals are addressed by whom a request touched)
+const sseOps = new Set(); // admins, officials, kiosks, distributors… hear every topic
+const sseDirty = new Set(); // connections with something to send at the next flush
 const PERSONAL_ROLES = new Set(['patient', 'caregiver', 'doctor', 'pharmacist', 'lab_tech', 'hospital_admin', 'delivery']);
 const PUBLIC_TOPICS = new Set(['all', 'advisories']);
 const requestCtx = new AsyncLocalStorage();
 let sseTimer = null;
 function touch(...userIds) { const s = requestCtx.getStore(); if (s) userIds.flat().forEach((u) => u && s.affected.add(u)); }
+function queueTopics(c, list) { if (!list.length) return; list.forEach((t) => c.pending.add(t)); sseDirty.add(c); }
 function broadcast(...topics) {
   const ctx = requestCtx.getStore();
   const audience = ctx ? new Set([...ctx.affected, ctx.userId].filter(Boolean)) : null; // null → everyone (timers, resets)
-  for (const c of sseClients) {
-    const personal = PERSONAL_ROLES.has(c.role);
-    const wanted = !personal || !audience || audience.has(c.userId) ? topics : topics.filter((t) => PUBLIC_TOPICS.has(t));
-    wanted.forEach((t) => c.pending.add(t));
+  const pub = topics.filter((t) => PUBLIC_TOPICS.has(t));
+  if (!audience || pub.length) {
+    for (const c of sseClients) queueTopics(c, !audience || !PERSONAL_ROLES.has(c.role) || audience.has(c.userId) ? topics : pub);
+  } else {
+    // The usual case: only the people this request touched plus the ops audiences — not a walk over every connection.
+    for (const c of sseOps) queueTopics(c, topics);
+    for (const uid of audience) for (const c of sseByUser.get(uid) || []) queueTopics(c, topics);
   }
-  if (!sseTimer) sseTimer = setTimeout(flushSse, 250);
+  if (sseDirty.size && !sseTimer) sseTimer = setTimeout(flushSse, 250);
 }
 function flushSse() {
   sseTimer = null;
   const at = Date.now();
-  for (const c of sseClients) {
-    if (!c.pending.size) continue;
-    c.res.write(`data: ${JSON.stringify({ topics: [...c.pending], at })}\n\n`);
+  for (const c of sseDirty) {
+    if (c.pending.size && !c.res.destroyed) c.res.write(`data: ${JSON.stringify({ topics: [...c.pending], at })}\n\n`);
     c.pending.clear();
   }
+  sseDirty.clear();
 }
 
 function audit(user, action, patientId, recordType, reason) {
@@ -180,10 +189,26 @@ function notificationsFor(userId, limit) {
   return out;
 }
 
+// Each person keeps their newest 200 notifications (screens show 30). Per-user counts are built lazily once
+// (and again after a reset/prune); a user's list is only scanned when it passes 220, then trimmed to 200.
+const NOTIF_PER_USER = 200;
+const NOTIF_TRIM_AT = 220;
+const notifCounts = { list: null, map: new Map() };
 function notify(userId, title, body, kind) {
   if (!userId) return;
   touch(userId);
-  db().notifications.unshift({ id: store.id('n'), userId, title, body, kind, at: nowIso(), read: false });
+  const list = db().notifications;
+  list.unshift({ id: store.id('n'), userId, title, body, kind, at: nowIso(), read: false });
+  if (notifCounts.list !== list) {
+    notifCounts.list = list; notifCounts.map = new Map();
+    for (const n of list) notifCounts.map.set(n.userId, (notifCounts.map.get(n.userId) || 0) + 1);
+  } else notifCounts.map.set(userId, (notifCounts.map.get(userId) || 0) + 1);
+  if (notifCounts.map.get(userId) <= NOTIF_TRIM_AT) return;
+  const drop = [];
+  let seen = 0;
+  for (let i = 0; i < list.length; i++) if (list[i].userId === userId && ++seen > NOTIF_PER_USER) drop.push(i);
+  for (let j = drop.length - 1; j >= 0; j--) list.splice(drop[j], 1); // newest-first list → these are that user's oldest
+  notifCounts.map.set(userId, Math.min(seen, NOTIF_PER_USER));
 }
 
 function patientOwnerUserIds(patient) {
@@ -199,6 +224,13 @@ function canAccessConsult(user, c) {
   if (user.role === 'kiosk_operator') return user.facilityId && c.kioskId === user.facilityId;
   const p = db().patients.find((x) => x.id === c.patientId);
   return Boolean(p && patientOwnerUserIds(p).includes(user.id));
+}
+
+// Everyone whose screen shows this consult — the doctor and the patient (or guardian). Personal portals
+// only hear about people a request touched, so a message or cancellation from one side must touch the other.
+function touchConsultParties(c) {
+  const p = db().patients.find((x) => x.id === c.patientId);
+  touch(db().doctors.find((x) => x.id === c.doctorId)?.userId, p ? patientOwnerUserIds(p) : []);
 }
 
 // Patient-side: does this user own the patient record behind a prescription / consult / lab order?
@@ -251,7 +283,8 @@ function publicDoctor(doc) {
 }
 const facilityName = (id) => db().facilities.find((f) => f.id === id)?.name;
 
-function enrichConsult(c) {
+// `visitSecret` seeds the rotating visit-pass code — it never leaves the server.
+function enrichConsult({ visitSecret: _secret, ...c }) {
   const p = db().patients.find((x) => x.id === c.patientId) || {};
   const d = db().doctors.find((x) => x.id === c.doctorId) || {};
   return {
@@ -271,17 +304,23 @@ function enrichRx(r) {
 function enrichLab(o) {
   const p = db().patients.find((x) => x.id === o.patientId) || {};
   const d = db().doctors.find((x) => x.id === o.doctorId) || {};
-  return { ...o, patientName: p.name, patientAge: ageOf(p.dob), patientGender: p.gender, doctorName: d.name, labName: facilityName(o.labId) };
+  return { ...o, patientName: p.name, patientAge: ageOf(p.dob), patientGender: p.gender, doctorName: d.name, labName: facilityName(o.labId), reportFileId: o.reportFileId || null, reportFileUrl: o.reportFileId ? `/api/files/${o.reportFileId}` : null };
 }
 
+const CONSENT_SCOPES = ['history', 'prescriptions', 'labs', 'allergies', 'uploads'];
 function hasConsent(patientId, granteeIds) {
   const t = Date.now();
   return db().consents.some((c) => c.patientId === patientId && granteeIds.includes(c.granteeId) && c.status === 'active' && (!c.expiry || new Date(c.expiry) > t));
 }
 
+// Runs from the 5-minute sweeper, not per request. Access checks never rely on this flag (hasConsent checks
+// the expiry itself) — it only keeps the status shown on screens tidy.
 function expireConsents() {
   const t = Date.now();
-  for (const c of db().consents) if (c.status === 'active' && c.expiry && new Date(c.expiry) < t) c.status = 'expired';
+  let n = 0;
+  for (const c of db().consents) if (c.status === 'active' && c.expiry && Date.parse(c.expiry) < t) { c.status = 'expired'; n += 1; }
+  if (n) store.save();
+  return n;
 }
 
 function makePassportId() {
@@ -293,7 +332,41 @@ function makePassportId() {
 // ---------- system ----------
 app.get('/api/health', (_req, res) => res.json({ ok: true, ai: aiEnabled(), time: nowIso() }));
 
-app.get('/api/events', auth, (req, res) => {
+// SSE tickets: random, single use, valid 60 s, bound to the user and their token version at issue time.
+const SSE_TICKET_TTL_MS = 60000;
+const SSE_TICKET_MAX = 5000;
+const sseTickets = new Map(); // ticket → { userId, role, tv, profile, expiresAt }
+function pruneSseTickets() {
+  const now = Date.now();
+  for (const [k, t] of sseTickets) if (t.expiresAt <= now) sseTickets.delete(k);
+  // Still full (a burst of sign-ins, or someone hammering): drop the oldest — insertion order.
+  for (const k of sseTickets.keys()) { if (sseTickets.size < SSE_TICKET_MAX) break; sseTickets.delete(k); }
+}
+const ticketLimiter = security.rateLimit({ windowMs: 60000, max: 60, key: (r) => r.headers.authorization || '', message: 'Reconnecting too often. Please wait a moment.' });
+app.post('/api/events/ticket', auth, ticketLimiter, (req, res) => {
+  pruneSseTickets();
+  const ticket = crypto.randomBytes(24).toString('hex');
+  sseTickets.set(ticket, { userId: req.user.id, role: req.user.role, tv: req.user.tokenVersion || 0, profile: clean(req.headers['x-profile'], 40) || null, expiresAt: Date.now() + SSE_TICKET_TTL_MS });
+  res.json({ ticket, expiresIn: SSE_TICKET_TTL_MS / 1000 });
+});
+// The stream accepts a Bearer header (non-browser clients) or a ticket — never ?token=.
+function sseAuth(req, res, next) {
+  if ((req.headers.authorization || '').startsWith('Bearer ')) return auth(req, res, next);
+  const key = typeof req.query.ticket === 'string' ? req.query.ticket : '';
+  const t = key && sseTickets.get(key);
+  if (t) sseTickets.delete(key); // single use, even if it turns out to be expired
+  if (!t || t.expiresAt <= Date.now()) return res.status(401).json({ error: 'Please sign in to continue.' });
+  const user = userById(t.userId);
+  if (!user) return res.status(401).json({ error: 'Account not found.' });
+  if (user.status === 'suspended') return res.status(403).json({ error: 'This account is suspended. Contact support.' });
+  if (t.tv !== (user.tokenVersion || 0)) return res.status(401).json({ error: 'Your session has expired. Please sign in again.' });
+  req.user = user;
+  const ctx = requestCtx.getStore();
+  if (ctx) ctx.userId = user.id;
+  next();
+}
+
+app.get('/api/events', sseAuth, (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -301,8 +374,12 @@ app.get('/api/events', auth, (req, res) => {
   res.write(`data: ${JSON.stringify({ topics: ['hello'] })}\n\n`);
   const client = { res, userId: req.user.id, role: req.user.role, pending: new Set() };
   sseClients.add(client);
-  const ping = setInterval(() => res.write(': ping\n\n'), 25000);
-  req.on('close', () => { clearInterval(ping); sseClients.delete(client); });
+  if (PERSONAL_ROLES.has(client.role)) { if (!sseByUser.has(client.userId)) sseByUser.set(client.userId, new Set()); sseByUser.get(client.userId).add(client); } else sseOps.add(client);
+  const ping = setInterval(() => { if (!res.destroyed) res.write(': ping\n\n'); }, 25000);
+  req.on('close', () => {
+    clearInterval(ping); sseClients.delete(client); sseDirty.delete(client); sseOps.delete(client);
+    const mine = sseByUser.get(client.userId); if (mine) { mine.delete(client); if (!mine.size) sseByUser.delete(client.userId); }
+  });
 });
 
 const DATA_MODE = require('./seed').dataMode();
@@ -342,7 +419,7 @@ app.get('/api/i18n/dict/:lang', async (req, res) => {
 });
 app.put('/api/admin/i18n/:lang', auth, role('super_admin'), async (req, res) => {
   const { source, text } = req.body || {};
-  if (!source || !text) return res.status(400).json({ error: 'Source and translation are required.' });
+  if (typeof source !== 'string' || typeof text !== 'string' || !source.trim() || !text.trim()) return res.status(400).json({ error: 'Source and translation are required.' });
   await i18n.setHuman(req.params.lang, source, text);
   audit(req.user, 'translation_edited', null, 'i18n', `${req.params.lang}: ${source.slice(0, 60)}`);
   store.save();
@@ -380,6 +457,9 @@ function canSeeFile(user, f) {
   if (rx && (ownsPatient(user, rx.patientId) || (user.role === 'pharmacist' && rx.pharmacyId === user.facilityId))) return true;
   // A prescription photo attached to a medicine order: the chemist handling (or offered) it may see it.
   if (user.role === 'pharmacist' && db().medOrders.some((o) => o.rxFileId === f.id && o.pharmacyId === user.facilityId)) return true;
+  // The signed report PDF of a lab order: the patient, the ordering doctor and the lab that did it (same rule as GET /api/lab-orders/:id).
+  const lo = db().labOrders.find((o) => o.reportFileId === f.id);
+  if (lo && (ownsPatient(user, lo.patientId) || (user.role === 'doctor' && doctorFor(user)?.id === lo.doctorId) || (user.role === 'lab_tech' && lo.labId === user.facilityId))) return true;
   // A verified store's / clinic's / doctor's public photo is visible to anyone signed in.
   if (db().facilities.some((x) => x.verified && x.storePhotoFileId === f.id) || db().doctors.some((x) => x.verified && x.photoFileId === f.id)) return true;
   // A file with no patient owner (e.g. a doctor's scratch upload) is private to its uploader.
@@ -449,10 +529,10 @@ const findUserByPhone = (phone) => db().users.find((u) => u.phone && samePhone(u
 const findUserByEmail = (email) => db().users.find((u) => u.email && u.email.toLowerCase() === String(email).toLowerCase());
 
 app.post('/api/auth/login', loginLimiter, async (req, res) => {
-  const { identifier = '', password = '', dialCode } = req.body || {};
-  const id = identifier.trim();
+  const { identifier, password, dialCode } = req.body || {};
+  const id = clean(identifier, 160);
   const user = id.includes('@') ? findUserByEmail(id) : findUserByPhone(normalizePhone(id, dialCode));
-  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+  if (!user || typeof password !== 'string' || !(await bcrypt.compare(password, user.passwordHash))) {
     return res.status(401).json({ error: 'That email/phone and password don\'t match. Please try again.' });
   }
   if (user.status === 'suspended') return res.status(403).json({ error: 'This account is suspended. Contact support.' });
@@ -476,7 +556,7 @@ app.post('/api/auth/otp/request', otpLimiter, async (req, res) => {
   }
 });
 
-app.post('/api/auth/otp/verify', async (req, res) => {
+app.post('/api/auth/otp/verify', otpVerifyLimiter, async (req, res) => {
   const { target, code } = req.body || {};
   try {
     const ok = await otp.verifyCode({ target, code });
@@ -510,8 +590,10 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
   } catch {
     return res.status(400).json({ error: 'Your verification expired. Please verify your mobile number again.' });
   }
-  if (!name || !dob) return res.status(400).json({ error: 'Name and date of birth are required.' });
-  if (password && password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+  const cleanName = clean(name, 80);
+  const dobT = Date.parse(dob);
+  if (cleanName.length < 2 || !Number.isFinite(dobT) || dobT > Date.now() || dobT < Date.parse('1900-01-01')) return res.status(400).json({ error: 'Name and date of birth are required.' });
+  if (password && (typeof password !== 'string' || password.length < 8)) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
   const d = db();
   const phone = verified.phone || null;
   const loginEmail = verified.email || (email ? String(email).trim().toLowerCase() : null);
@@ -522,24 +604,25 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
   // kiosk-registered passport to an account must go through a verified claim flow (OTP to the
   // number on record), so self-service signup always creates a fresh profile.
   const dup = null;
+  const ctry = /^[A-Z]{2}$/.test(String(country || '').toUpperCase()) ? String(country).toUpperCase() : 'IN';
   const user = {
-    id: store.id('u'), name, email: loginEmail || `${(phone || '').replace('+', '')}@patient.omnicare.in`, phone: phone || '', role: 'patient', status: 'active',
+    id: store.id('u'), name: cleanName, email: loginEmail || `${(phone || '').replace('+', '')}@patient.omnicare.in`, phone: phone || '', role: 'patient', status: 'active',
     passwordHash: await bcrypt.hash(password || crypto.randomBytes(24).toString('hex'), 10),
     phoneVerifiedAt: phone ? nowIso() : null, emailVerifiedAt: verified.email ? nowIso() : null,
-    region: { state: state || '', district: district || '', country: country || 'IN' }, createdAt: nowIso(),
+    region: { state: clean(state, 80), district: clean(district, 80), country: ctry }, createdAt: nowIso(),
   };
   d.users.push(user);
-  const split = (v) => (Array.isArray(v) ? v : String(v || '').split(',')).map((s) => s.trim()).filter(Boolean);
   let patient;
   if (dup) {
     dup.userId = user.id;
     patient = dup;
   } else {
     patient = {
-      id: makePassportId(), userId: user.id, name, dob, gender: gender || 'Prefer not to say', language: language || 'English', bloodGroup: bloodGroup || 'Unknown',
-      allergies: split(allergies), conditions: split(conditions), currentMeds: [],
-      emergencyContacts: emergencyName ? [{ name: emergencyName, relation: emergencyRelation || 'Family', phone: emergencyPhone || '' }] : [],
-      abha: abha || '', pincode: pincode || '', district: district || '', state: state || '', country: country || 'IN', vaccinations: [], createdAt: nowIso(),
+      id: makePassportId(), userId: user.id, name: cleanName, dob: new Date(dobT).toISOString().slice(0, 10), gender: ['Female', 'Male', 'Other'].includes(gender) ? gender : 'Prefer not to say',
+      language: clean(language, 40) || 'English', bloodGroup: BLOOD_GROUPS.includes(bloodGroup) ? bloodGroup : 'Unknown',
+      allergies: cleanList(allergies, 30), conditions: cleanList(conditions, 30), currentMeds: [],
+      emergencyContacts: clean(emergencyName, 80) ? [{ name: clean(emergencyName, 80), relation: clean(emergencyRelation, 30) || 'Family', phone: clean(emergencyPhone, 20) }] : [],
+      abha: clean(abha, 30), pincode: clean(pincode, 12), district: clean(district, 80), state: clean(state, 80), country: ctry, vaccinations: [], createdAt: nowIso(),
     };
     d.patients.push(patient);
   }
@@ -602,8 +685,8 @@ app.get('/api/auth/me', auth, (req, res) => {
 
 app.post('/api/auth/password', auth, async (req, res) => {
   const { current, next: nextPw } = req.body || {};
-  if (!(await bcrypt.compare(current || '', req.user.passwordHash))) return res.status(400).json({ error: 'Current password is incorrect.' });
-  if (!nextPw || nextPw.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+  if (typeof current !== 'string' || !(await bcrypt.compare(current, req.user.passwordHash))) return res.status(400).json({ error: 'Current password is incorrect.' });
+  if (typeof nextPw !== 'string' || nextPw.length < 8 || nextPw.length > 200) return res.status(400).json({ error: 'New password must be at least 8 characters.' });
   req.user.passwordHash = await bcrypt.hash(nextPw, 10);
   req.user.tokenVersion = (req.user.tokenVersion || 0) + 1; // sign out every other device
   store.save();
@@ -625,6 +708,12 @@ const FACILITY_KINDS = {
 // Only strings and numbers count as text — objects/arrays become '' (never "[object Object]").
 const clean = (v, max = 120) => (typeof v === 'string' || typeof v === 'number' ? String(v) : '').trim().slice(0, max);
 const cleanList = (v, max = 20) => (Array.isArray(v) ? v : typeof v === 'string' ? v.split(',') : []).map((s) => clean(s, 60)).filter(Boolean).slice(0, max);
+// Medicines on a prescription, as typed by the doctor — only the known fields, each bounded.
+const cleanRxItems = (list) => (Array.isArray(list) ? list : []).slice(0, 25).filter((it) => it && typeof it === 'object')
+  .map((it) => ({ drug: clean(it.drug, 80), dose: clean(it.dose, 40), freq: clean(it.freq, 80), days: Math.max(0, Math.min(365, parseInt(it.days, 10) || 0)), ...(it.food ? { food: clean(it.food, 30) } : {}), ...(it.note ? { note: clean(it.note, 120) } : {}) }))
+  .filter((it) => it.drug);
+// Prototype keys ('__proto__', 'constructor'…) must never resolve against our lookup tables.
+const own = (obj, key) => (typeof key === 'string' && Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : undefined);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const appRef = () => `OC-${crypto.randomBytes(5).toString('hex').toUpperCase()}`;
 
@@ -650,7 +739,7 @@ app.get('/api/public/join/options', (_req, res) => {
 
 app.post('/api/public/join/facility', joinLimiter, async (req, res) => {
   const b = req.body || {};
-  const kind = FACILITY_KINDS[b.kind];
+  const kind = own(FACILITY_KINDS, b.kind);
   if (!kind) return res.status(400).json({ error: 'Choose what kind of facility you run.' });
   if (clean(b.facilityName).length < 3) return res.status(400).json({ error: 'Please enter the facility name.' });
   if (clean(b.licenceNo, 60).length < 4) return res.status(400).json({ error: 'Please enter the registration / licence number.' });
@@ -836,17 +925,21 @@ app.get('/api/advisories', auth, (_req, res) => res.json(db().advisories.filter(
 
 // ---------- patient app ----------
 app.get('/api/patient/home', auth, role('patient', 'caregiver'), (req, res) => {
-  expireConsents();
   const d = db();
   const p = activePatient(req, { optional: true });
   if (!p) return res.json({ patient: null, profiles: [] });
   const consults = d.consults.filter((c) => c.patientId === p.id).map(enrichConsult);
+  const myRx = d.prescriptions.filter((r) => r.patientId === p.id);
+  // One pass over deliveries for this patient's open prescription deliveries (first match wins, as before).
+  const rxIds = new Set(myRx.map((r) => r.id));
+  const openDeliveryOtp = new Map();
+  for (const x of d.deliveries) if (x.kind === 'prescription' && rxIds.has(x.refId) && x.status !== 'delivered' && !openDeliveryOtp.has(x.refId)) openDeliveryOtp.set(x.refId, x.otp);
   res.json({
     patient: { ...p, age: ageOf(p.dob), bookingMissing: bookingMissing(p) },
     profiles: profilesFor(req.user).map((x) => ({ id: x.id, name: x.name, age: ageOf(x.dob), gender: x.gender, relation: x.relation, self: x.userId === req.user.id })),
     medicineOrders: (d.medOrders || []).filter((o) => o.patientId === p.id && !['delivered', 'collected', 'declined', 'cancelled'].includes(o.status) && o.status !== 'awaiting_payment').length,
     upcoming: consults.filter((c) => ['scheduled', 'queued', 'in_progress'].includes(c.status)),
-    prescriptions: d.prescriptions.filter((r) => r.patientId === p.id).map((r) => ({ ...enrichRx(r), deliveryOtp: d.deliveries.find((x) => x.kind === 'prescription' && x.refId === r.id && x.status !== 'delivered')?.otp })).reverse(),
+    prescriptions: myRx.map((r) => ({ ...enrichRx(r), deliveryOtp: openDeliveryOtp.get(r.id) })).reverse(),
     alerts: d.alerts.filter((a) => a.type === 'outbreak' && a.district === p.district && a.status !== 'dismissed').slice(0, 2),
     pendingConsents: d.consents.filter((c) => c.patientId === p.id && c.status === 'pending').length,
     notifications: notificationsFor(req.user.id, 8),
@@ -893,14 +986,13 @@ function patientPoint(p) {
 }
 
 // What a patient must have on file before booking a consultation. Sign-up needs only name, email and
-// mobile; booking needs age, permanent address and an identity document (Aadhaar or another
-// government ID in India, a passport / national ID elsewhere).
+// mobile; booking needs age and a permanent address. An identity document (Aadhaar / government ID /
+// passport) is optional everywhere — it can be added to the profile but never blocks care.
 function bookingMissing(p) {
   if (!p) return ['profile'];
   const miss = [];
   if (!p.dob) miss.push('age');
   if (!p.address || !p.district) miss.push('address');
-  if (!p.aadhaarLast4 && !(p.govIds || []).length && !p.abha) miss.push(countryOf(p) === 'IN' ? 'aadhaar' : 'id');
   return miss;
 }
 
@@ -926,9 +1018,7 @@ app.put('/api/patient/profile/complete', auth, role('patient', 'caregiver'), (re
     if (!/^[A-Z0-9 /-]{4,30}$/.test(num)) return res.status(400).json({ error: 'Please check the ID number.' });
     govId = { type: b.govIdType, number: num, addedAt: nowIso() };
   }
-  if (!aadhaar && !govId && !p.aadhaarLast4 && !(p.govIds || []).length) {
-    return res.status(400).json({ error: india ? 'Please add your Aadhaar number — or another government ID such as an Ayushman card, voter ID or passport.' : 'Please add a passport or national ID number.' });
-  }
+  // No ID is required — Aadhaar / government IDs are optional and only checked when given.
   const symptomDays = b.symptomDays === '' || b.symptomDays == null ? null : Math.max(0, Math.min(3650, parseInt(b.symptomDays, 10) || 0));
   const lat = Number(b.lat); const lng = Number(b.lng);
   Object.assign(p, {
@@ -1108,7 +1198,7 @@ app.post('/api/patient/records/upload', auth, role('patient', 'caregiver'), asyn
   const text = clean(req.body?.text, 20000);
   let fileId = null;
   if (req.body?.fileId) {
-    const f = await store.adapter().fileGet(req.body.fileId);
+    const f = await store.adapter().fileGet(clean(req.body.fileId, 80));
     if (!f || f.uploadedBy !== req.user.id) return res.status(400).json({ error: 'Please upload the file again.' });
     fileId = f.id;
   }
@@ -1189,6 +1279,7 @@ app.post('/api/consults/:id/messages', auth, (req, res) => {
   const text = String(req.body?.text || '').slice(0, 2000).trim();
   if (!text) return res.status(400).json({ error: 'Message is empty.' });
   c.messages.push({ id: store.id('m'), from: req.user.role === 'doctor' ? 'doctor' : 'patient', name: req.user.name, text, at: nowIso() });
+  touchConsultParties(c);
   store.save();
   broadcast(`consult:${c.id}`);
   res.json(c.messages);
@@ -1203,6 +1294,7 @@ app.post('/api/consults/:id/cancel', auth, (req, res) => {
   const pay = c.paymentId && db().payments.find((x) => x.id === c.paymentId);
   if (pay?.status === 'created') pay.status = 'void';
   else if (pay?.status === 'paid' && !c.startedAt) { pay.status = 'refund_pending'; pay.refundReason = 'Booking cancelled before the visit'; }
+  touchConsultParties(c);
   store.save();
   broadcast('consults', 'queue', `consult:${c.id}`);
   res.json(enrichConsult(c));
@@ -1214,7 +1306,8 @@ app.post('/api/prescriptions/:id/order', auth, role('patient', 'caregiver'), (re
   if (!ownsPatient(req.user, r.patientId)) return res.status(403).json({ error: 'This prescription isn\'t on your account.' });
   if (r.status !== 'issued') return res.status(409).json({ error: 'This prescription has already been ordered.' });
   const { pharmacyId, fulfilment = 'pickup' } = req.body || {};
-  if (!db().facilities.some((f) => f.id === pharmacyId && f.type === 'pharmacy')) return res.status(400).json({ error: 'Please choose a valid pharmacy.' });
+  // Verified stores only — an unverified store's portal shows no inbox, so the order would sit there unseen.
+  if (!db().facilities.some((f) => f.id === pharmacyId && f.type === 'pharmacy' && f.verified)) return res.status(400).json({ error: 'Please choose a valid pharmacy.' });
   if (fulfilment === 'delivery') return res.status(400).json({ error: 'Home delivery is paid online first — use “Home delivery” in the app.' });
   if (fulfilment !== 'pickup') return res.status(400).json({ error: 'Choose pickup or delivery.' });
   r.pharmacyId = pharmacyId;
@@ -1389,7 +1482,7 @@ app.post('/api/medicine-orders', auth, role('patient', 'caregiver'), async (req,
   if (fulfilment === 'delivery' && address.length < 8) return res.status(400).json({ error: 'Please add the full delivery address.' });
   let rxFileId = null;
   if (b.rxFileId) {
-    const f = await store.adapter().fileGet(b.rxFileId);
+    const f = await store.adapter().fileGet(clean(b.rxFileId, 80));
     if (!f || f.uploadedBy !== req.user.id) return res.status(400).json({ error: 'Please upload the prescription photo again.' });
     rxFileId = f.id;
   }
@@ -1418,17 +1511,19 @@ app.post('/api/medicine-orders', auth, role('patient', 'caregiver'), async (req,
     ...totals, advancePaid: 0, status: fulfilment === 'delivery' ? 'awaiting_payment' : 'requested', otp: String(crypto.randomInt(1000, 9999)), createdAt: nowIso(),
     note: clean(b.note, 200),
   };
-  d.medOrders.unshift(o);
   let pay = null;
   if (fulfilment === 'delivery') {
     pay = { id: store.id('pay'), purpose: 'med_order_advance', refId: o.id, amount: totals.advance, status: 'created', provider: payments.provider(), label: `35% advance · medicines ${o.orderNo}`, userId: req.user.id, patientId: p.id, createdAt: nowIso(), meta: { ...totals } };
     try {
       const order = await payments.createOrder({ amount: pay.amount, receipt: pay.id, notes: { medOrder: o.id } });
       if (order) pay.orderId = order.orderId;
-    } catch (e) { d.medOrders.shift(); return res.status(502).json({ error: e.message }); }
+    } catch (e) { return res.status(502).json({ error: e.message }); }
     o.paymentId = pay.id;
     d.payments.push(pay);
-  } else announceMedOrder(d, o);
+  }
+  // Stored only once the gateway order exists — nothing to roll back if it doesn't (another request may have inserted meanwhile).
+  d.medOrders.unshift(o);
+  if (fulfilment !== 'delivery') announceMedOrder(d, o);
   audit(req.user, 'medicine_order', p.id, 'medicine', `${o.orderNo} · ${o.source} · ${fulfilment}`);
   store.save();
   broadcast('pharmacy', 'medorders');
@@ -1482,7 +1577,8 @@ app.post('/api/medicine-orders/:id/respond', auth, role('pharmacist'), (req, res
     patientOwnerUserIds(p).forEach((u) => notify(u, 'Order not accepted', `${o.pharmacyId ? f.name : 'Nearby chemists'} couldn't take order ${o.orderNo}: ${o.declineReason}.${o.advancePaid ? ` Your advance of ₹${o.advancePaid} will be refunded.` : ''} Try another chemist.`));
   } else {
     if (!o.pharmacyId) {
-      // First to accept an open request: re-price at this chemist's rates.
+      // First to accept an open request: re-price at this chemist's rates; the other chemists' screens drop it.
+      o.candidates.forEach((cid) => { if (cid !== fid) pharmacistsOf(d, cid).forEach((u) => touch(u.id)); });
       o.pharmacyId = fid;
       const q = quoteItems(d, o.items, f, geo.pointOf(p));
       const lines = q.lines.filter((l) => l.inStock).map(({ drug, qty, unit, unitPrice, lineTotal }) => ({ drug, qty, unit, unitPrice, lineTotal }));
@@ -1665,6 +1761,7 @@ app.post('/api/lab-orders/:id/book', auth, role('patient', 'caregiver'), async (
   } else { o.sharedRx = null; o.sharedBy = null; }
   audit(req.user, 'booked_lab', o.patientId, 'lab', `${lab.name} · ${o.id} · advance ₹${advance}`);
   store.save();
+  broadcast('lab', 'records'); // the patient's other tabs/devices; the lab hears about it once the advance is paid
   res.json({ ok: true, labName: lab.name, booking: o.booking, sharedRx: !!o.sharedRx, payment: payments.publicPayment(pay, { dataMode: DATA_MODE }), patientName: p?.name });
 });
 
@@ -1714,7 +1811,7 @@ app.post('/api/bookings', auth, role('patient', 'caregiver'), async (req, res) =
   const p = activePatient(req);
   if (!p) return res.status(404).json({ error: 'Profile not found.' });
   const missing = bookingMissing(p);
-  if (missing.length) return res.status(428).json({ error: 'Please complete your profile to book — we need your age, permanent address and an ID.', code: 'PROFILE_INCOMPLETE', missing });
+  if (missing.length) return res.status(428).json({ error: 'Please complete your profile to book — we need your age and permanent address.', code: 'PROFILE_INCOMPLETE', missing });
   const doc = d.doctors.find((x) => x.id === b.doctorId && x.verified);
   if (!doc) return res.status(404).json({ error: 'Doctor not found.' });
   const opts = bookingOptions(d, doc);
@@ -1816,16 +1913,16 @@ function pickRider(d, district) {
 function finalizePayment(d, pay, user) {
   if (pay.purpose === 'consult') {
     const c = d.consults.find((x) => x.id === pay.refId);
-    if (!c) return;
-    const doc = d.doctors.find((x) => x.id === c.doctorId);
-    const p = d.patients.find((x) => x.id === c.patientId);
+    const doc = c && d.doctors.find((x) => x.id === c.doctorId);
+    const p = c && d.patients.find((x) => x.id === c.patientId);
+    if (!c || !doc || !p) return;
     c.status = c.type === 'instant' ? 'queued' : 'scheduled';
     c.paidAt = nowIso();
     if (c.mode === 'in_person') c.visitSecret = crypto.randomBytes(16).toString('hex');
     // Booking a doctor implies a time-limited consent for that doctor to see the history.
     d.consents.push({ id: store.id('cst'), patientId: p.id, granteeType: 'doctor', granteeId: doc.id, granteeName: doc.name, scope: ['history', 'prescriptions', 'labs', 'allergies'], purpose: 'Booked consultation', start: nowIso(), expiry: new Date(Math.max(Date.now(), Date.parse(c.scheduledAt || 0)) + 3 * 86400000).toISOString(), status: 'active' });
     const where = c.mode === 'in_person' ? ` · in person at ${c.location?.name}` : ` · ${c.mode} consult`;
-    doctorInbox(d, doc).forEach((uid) => notify(uid, 'New paid booking', `${doc.userId ? '' : `For ${doc.name}: `}${p.name} · ${c.triage.symptoms.slice(0, 80)}${where}${c.scheduledAt ? ` · ${new Date(c.scheduledAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}` : ' · now'}`));
+    doctorInbox(d, doc).forEach((uid) => notify(uid, 'New paid booking', `${doc.userId ? '' : `For ${doc.name}: `}${p.name} · ${c.triage.symptoms.slice(0, 80)}${where}${c.scheduledAt ? ` · ${new Date(c.scheduledAt).toLocaleString('en-IN', { timeZone: APP_TZ })}` : ' · now'}`));
     patientOwnerUserIds(p).forEach((u) => notify(u, 'Booking confirmed', `${doc.name}${where}. ${c.mode === 'in_person' ? 'Show your visit QR at the reception.' : 'We\'ll alert you when the doctor joins.'}`));
     audit(user, 'paid_booking', p.id, 'consult', `${c.id} · ₹${pay.amount}`);
     automation.emit('booking.confirmed', { consultId: c.id, patientId: p.id, doctorId: doc.id, doctorName: doc.name, mode: c.mode, location: c.location?.name || null, scheduledAt: c.scheduledAt || null, amount: pay.amount }, { contact: autoContact(p) });
@@ -1903,7 +2000,7 @@ app.post('/api/payments/:id/confirm', auth, (req, res) => {
   pay.status = 'paid'; pay.paidAt = nowIso();
   finalizePayment(d, pay, req.user);
   store.save();
-  broadcast('consults', 'queue', 'prescriptions', 'pharmacy', 'payments');
+  broadcast('consults', 'queue', 'prescriptions', 'pharmacy', 'payments', 'lab', 'medorders');
   res.json(payments.publicPayment(pay, { dataMode: DATA_MODE }));
 });
 
@@ -2095,14 +2192,50 @@ app.post('/api/patient/location', auth, role('patient', 'caregiver'), locationLi
   res.json({ ok: true, saved: true, source: self.currentLocation.source });
 });
 
+// ---- patient privacy: research sharing, kiosk OTP, and account deletion requests (reviewed by an admin) ----
+app.put('/api/patient/privacy', auth, role('patient', 'caregiver'), (req, res) => {
+  const p = activePatient(req);
+  const b = req.body || {};
+  const cur = p.privacy || { research: false, kioskOtp: true };
+  p.privacy = { research: b.research === undefined ? Boolean(cur.research) : Boolean(b.research), kioskOtp: b.kioskOtp === undefined ? cur.kioskOtp !== false : Boolean(b.kioskOtp), updatedAt: nowIso() };
+  audit(req.user, 'privacy_updated', p.id, 'patient', `research=${p.privacy.research},kioskOtp=${p.privacy.kioskOtp}`);
+  store.save();
+  broadcast('patients');
+  res.json(p.privacy);
+});
+
+app.post('/api/patient/deletion-request', auth, role('patient', 'caregiver'), (req, res) => {
+  const p = activePatient(req);
+  if (p.deletionRequest?.status === 'requested') return res.status(409).json({ error: 'A deletion request is already pending. Our team will contact you.' });
+  const reason = clean(req.body?.reason, 200);
+  p.deletionRequest = { at: nowIso(), reason, status: 'requested', by: req.user.id };
+  db().users.filter((u) => u.role === 'super_admin').forEach((a) => notify(a.id, 'Account deletion requested', `${p.name} (${p.id})${reason ? ` — ${reason}` : ''}. Review it in Users.`));
+  audit(req.user, 'deletion_requested', p.id, 'patient', reason);
+  store.save();
+  broadcast('patients', 'admin');
+  res.json(p.deletionRequest);
+});
+
+app.delete('/api/patient/deletion-request', auth, role('patient', 'caregiver'), (req, res) => {
+  const p = activePatient(req);
+  if (p.deletionRequest?.status !== 'requested') return res.status(404).json({ error: 'There is no pending deletion request.' });
+  p.deletionRequest = { ...p.deletionRequest, status: 'cancelled', cancelledAt: nowIso() };
+  audit(req.user, 'deletion_cancelled', p.id, 'patient', p.deletionRequest.reason || '');
+  store.save();
+  broadcast('patients', 'admin');
+  res.json({ ok: true });
+});
+
 app.get('/api/geo/districts', (_req, res) => res.json(geo.DISTRICTS.map(({ district, state }) => ({ district, state }))));
 
 app.get('/api/consents', auth, role('patient', 'caregiver'), (req, res) => {
-  expireConsents();
   const p = activePatient(req);
+  // Newest-first log, latest 100 entries — no scan of the whole audit trail per page load.
+  const log = [];
+  for (const a of db().audit) { if (a.patientId === p.id) { log.push(a); if (log.length >= 100) break; } }
   res.json({
     consents: db().consents.filter((c) => c.patientId === p.id).sort((a, b) => ((a.requestedAt || a.start || '') < (b.requestedAt || b.start || '') ? 1 : -1)),
-    log: db().audit.filter((a) => a.patientId === p.id),
+    log,
   });
 });
 
@@ -2115,7 +2248,8 @@ app.post('/api/consents/:id/:action', auth, role('patient', 'caregiver'), (req, 
     const days = Number(req.body?.days) || 30;
     if (!Number.isFinite(days) || days < 1 || days > 365) return res.status(400).json({ error: 'Choose between 1 and 365 days.' });
     c.status = 'active'; c.start = nowIso(); c.expiry = new Date(Date.now() + days * 86400000).toISOString();
-    if (Array.isArray(req.body?.scope) && req.body.scope.length) c.scope = req.body.scope;
+    const scope = cleanList(req.body?.scope, 10).filter((x) => CONSENT_SCOPES.includes(x));
+    if (scope.length) c.scope = scope;
   } else if (action === 'deny') c.status = 'denied';
   else if (action === 'revoke') { c.status = 'revoked'; c.revokedAt = nowIso(); }
   else return res.status(400).json({ error: 'Unknown action.' });
@@ -2128,13 +2262,16 @@ app.post('/api/consents/:id/:action', auth, role('patient', 'caregiver'), (req, 
 });
 
 app.post('/api/family', auth, role('patient', 'caregiver'), (req, res) => {
-  const { name, dob, gender, relation, bloodGroup, allergies = '', conditions = '' } = req.body || {};
-  if (!name || !dob) return res.status(400).json({ error: 'Name and date of birth are required.' });
+  const b = req.body || {};
+  const name = clean(b.name, 80);
+  const dobT = Date.parse(b.dob);
+  if (name.length < 2 || !Number.isFinite(dobT) || dobT > Date.now() || dobT < Date.parse('1900-01-01')) return res.status(400).json({ error: 'Name and date of birth are required.' });
+  if (profilesFor(req.user).length >= 20) return res.status(400).json({ error: 'You can keep up to 20 family profiles on one account.' });
   const self = profilesFor(req.user).find((p) => p.userId === req.user.id);
-  const split = (v) => String(v).split(',').map((s) => s.trim()).filter(Boolean);
+  const relation = clean(b.relation, 30);
   const p = {
-    id: makePassportId(), userId: null, guardianUserId: req.user.id, relation, name, dob, gender: gender || 'Prefer not to say', language: self?.language || 'Hindi',
-    bloodGroup: bloodGroup || 'Unknown', allergies: split(allergies), conditions: split(conditions), currentMeds: [],
+    id: makePassportId(), userId: null, guardianUserId: req.user.id, relation, name, dob: new Date(dobT).toISOString().slice(0, 10), gender: ['Female', 'Male', 'Other'].includes(b.gender) ? b.gender : 'Prefer not to say', language: self?.language || 'Hindi',
+    bloodGroup: BLOOD_GROUPS.includes(b.bloodGroup) ? b.bloodGroup : 'Unknown', allergies: cleanList(b.allergies, 30), conditions: cleanList(b.conditions, 30), currentMeds: [],
     emergencyContacts: [{ name: req.user.name, relation: 'Guardian', phone: req.user.phone }], abha: '', pincode: self?.pincode || '', district: self?.district || '', state: self?.state || '', country: self?.country || 'IN', vaccinations: [], createdAt: nowIso(),
   };
   db().patients.push(p);
@@ -2145,6 +2282,23 @@ app.post('/api/family', auth, role('patient', 'caregiver'), (req, res) => {
 });
 
 // ---------- doctor portal ----------
+// The doctor's last 7 local days (APP_TZ), oldest first: consults completed and what patients actually paid —
+// the same rule the completion handler adds to earnings (kiosk visits count the doctor's fee, others c.fee).
+function doctorWeek(consults, doc) {
+  const today = istDay(nowIso());
+  // Calendar arithmetic on the date string (not "now − 24 h"), so a DST zone can't skip or repeat a day.
+  const days = Array.from({ length: 7 }, (_, i) => new Date(Date.parse(`${today}T12:00:00Z`) - (6 - i) * 86400000).toISOString().slice(0, 10));
+  const byDay = new Map(days.map((date) => [date, { date, consults: 0, earnings: 0 }]));
+  for (const c of consults) {
+    if (c.status !== 'completed' || !c.completedAt) continue;
+    const row = byDay.get(istDay(c.completedAt));
+    if (!row) continue;
+    row.consults += 1;
+    row.earnings += c.kioskId ? (Number(doc.fee) || 0) : Math.max(0, Number(c.fee) || 0);
+  }
+  return days.map((date) => { const r = byDay.get(date); return { ...r, earnings: catalog.round(r.earnings) }; });
+}
+
 app.get('/api/doctor/home', auth, role('doctor'), (req, res) => {
   const d = db();
   const doc = doctorFor(req.user);
@@ -2152,7 +2306,7 @@ app.get('/api/doctor/home', auth, role('doctor'), (req, res) => {
   // Not verified yet: onboarding only — no patients, bookings or records of any kind.
   if (!doc.verified) {
     return res.json({ doctor: withAvail(doc), eClinics: [], queue: [], scheduled: [], reportsToReview: [], newBookings: [], transfersIn: [], clinicVisits: [], completed: [],
-      clinic: null, stats: { today: 0, waiting: 0, overflow: 0, rating: 0 }, stats2: doctorStats(doc), notifications: notificationsFor(req.user.id, 10), onboarding: true });
+      clinic: null, stats: { today: 0, waiting: 0, overflow: 0, rating: 0 }, stats2: doctorStats(doc), week: doctorWeek([], doc), notifications: notificationsFor(req.user.id, 10), onboarding: true });
   }
   const mine = d.consults.filter((c) => c.doctorId === doc.id);
   const handled = handledDoctorIds(req.user);
@@ -2190,6 +2344,7 @@ app.get('/api/doctor/home', auth, role('doctor'), (req, res) => {
     stats2: doctorStats(doc),
     clinicVisits, // upcoming visits for doctors listed at my clinic who have no login yet
     completed: mine.filter((c) => c.status === 'completed').map(enrichConsult).sort((a, b) => (a.completedAt < b.completedAt ? 1 : -1)).slice(0, 20),
+    week: doctorWeek(mine, doc), // [{ date: 'YYYY-MM-DD', consults, earnings }] × 7, oldest first, today last
     stats: {
       today: mine.filter((c) => c.status === 'completed' && c.completedAt && istDay(c.completedAt) === today).length,
       waiting: queue.filter((c) => c.status === 'queued').length,
@@ -2204,6 +2359,15 @@ app.put('/api/doctor/me', auth, role('doctor'), (req, res) => {
   const doc = doctorFor(req.user);
   // `fee` is intentionally NOT self-editable (earnings integrity) — only an admin sets it.
   const d = db();
+  if (!req.body || typeof req.body !== 'object') req.body = {};
+  // Doctors abroad keep their hours in their own zone; availabilityOf/timingsOf read doc.tz (default APP_TZ).
+  if (req.body.tz !== undefined) {
+    const tz = clean(req.body.tz, 64);
+    if (tz) {
+      try { new Intl.DateTimeFormat('en', { timeZone: tz }); } catch { return res.status(400).json({ error: 'Choose a valid time zone (e.g. Asia/Dubai).' }); }
+      doc.tz = tz;
+    } else doc.tz = null;
+  }
   if (req.body.languages !== undefined) doc.languages = cleanList(req.body.languages, 12);
   if (req.body.slots !== undefined) {
     const s = req.body.slots;
@@ -2270,6 +2434,7 @@ app.put('/api/doctor/profile', auth, role('doctor'), async (req, res) => {
   if (regDup) return res.status(409).json({ error: 'This registration number is already linked to another doctor.' });
   if (!b.photoFileId) return res.status(400).json({ error: 'Please add a professional photo (with your stethoscope).' });
   // Files must be this doctor's own uploads, and images where we expect images.
+  b.degreeFileId = clean(b.degreeFileId, 80) || null; b.photoFileId = clean(b.photoFileId, 80) || null;
   for (const [key, fid, mustBeImage] of [['degree', b.degreeFileId, false], ['photo', b.photoFileId, true]]) {
     if (!fid) continue;
     const f = await store.adapter().fileGet(fid);
@@ -2466,8 +2631,10 @@ app.get('/api/doctor/patient/:id', auth, role('doctor'), (req, res) => {
     // Break-glass: critical data only, time-limited.
     return res.json({ emergency: true, expiresAt: new Date(new Date(bg.at).getTime() + 60 * 60000).toISOString(), patient: { id: p.id, name: p.name, age: ageOf(p.dob), gender: p.gender, bloodGroup: p.bloodGroup, allergies: p.allergies, conditions: p.conditions, currentMeds: p.currentMeds, emergencyContacts: p.emergencyContacts } });
   }
+  // Account-level settings (privacy choices, deletion requests, kiosk session) are the patient's own — not part of the clinical record.
+  const { privacy: _priv, deletionRequest: _del, kioskSeen: _ks, ...clinical } = p;
   res.json({
-    patient: { ...p, age: ageOf(p.dob) },
+    patient: { ...clinical, age: ageOf(p.dob) },
     visits: d.consults.filter((c) => c.patientId === p.id && c.status === 'completed').map(enrichConsult),
     prescriptions: d.prescriptions.filter((r) => r.patientId === p.id).map(enrichRx),
     labs: d.labOrders.filter((o) => o.patientId === p.id).map(enrichLab),
@@ -2527,17 +2694,32 @@ function autoContact(p) {
   const { mobile, email } = contactOf(p);
   return { firstName: String(p.name || '').split(' ')[0], mobile, email, language: p.language || 'English' };
 }
-// Prefer whatever actually reaches the patient: real SMS if a gateway is connected, else email over SMTP.
+// Can an approval (consent) code go out as a plain SMS? A Twilio-Verify-only setup can't: otp.js refuses,
+// because a Verify code is checked per phone number and would double as a login code.
+const consentSmsOk = () => otp.publicConfig().provider !== 'twilio_verify' || Boolean(process.env.TWILIO_FROM || process.env.TWILIO_MESSAGING_SERVICE_SID);
+// Prefer whatever actually reaches the patient: real SMS if a gateway can send it, else email over SMTP.
+// null → no usable channel; the route asks the patient to approve from their app instead.
 function pickChannel(c, wanted) {
+  const mobile = Boolean(c.mobile) && consentSmsOk();
   if (wanted === 'email' && c.email) return 'email';
-  if (wanted === 'sms' && c.mobile) return 'sms';
-  if (c.mobile && smsLive()) return 'sms';
+  if (wanted === 'sms' && mobile) return 'sms';
+  if (mobile && smsLive()) return 'sms';
   if (c.email && emailLive()) return 'email';
-  return c.mobile ? 'sms' : c.email ? 'email' : null;
+  return mobile ? 'sms' : c.email ? 'email' : null;
 }
 const targetFor = (c, channel) => (channel === 'email' ? c.email : normalizePhone(c.mobile));
 
 const accessLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 30, key: (r) => r.headers.authorization || r.ip, message: 'Too many approval codes sent. Please wait a while.' });
+// Which channel each doctor's last code for a patient went to, so verify checks the same target even when
+// the client doesn't repeat `channel`. Lives a little longer than the code itself; small and pruned on use.
+const accessChannels = new Map(); // `${doctorUserId}:${patientId}` → { channel, expiresAt }
+const ACCESS_CHANNEL_MS = 15 * 60000;
+function rememberAccessChannel(key, channel) {
+  const now = Date.now();
+  for (const [k, v] of accessChannels) if (v.expiresAt <= now) accessChannels.delete(k);
+  for (const k of accessChannels.keys()) { if (accessChannels.size < 5000) break; accessChannels.delete(k); }
+  accessChannels.set(key, { channel, expiresAt: now + ACCESS_CHANNEL_MS });
+}
 app.post('/api/doctor/patient-access', auth, role('doctor'), accessLimiter, async (req, res) => {
   const p = db().patients.find((x) => x.id === req.body?.patientId);
   if (!p) return res.status(404).json({ error: 'Patient not found.' });
@@ -2546,10 +2728,11 @@ app.post('/api/doctor/patient-access', auth, role('doctor'), accessLimiter, asyn
   if (!channel) return res.status(400).json({ error: 'This passport has no mobile number or email. Ask the patient to approve from their app instead.' });
   try {
     const sent = await otp.sendCode(channel === 'email' ? { channel: 'email', email: c.email, lang: 'en', ip: req.ip, purpose: 'consent' } : { channel: 'sms', phone: c.mobile, lang: 'en', ip: req.ip, purpose: 'consent' });
+    rememberAccessChannel(`${req.user.id}:${p.id}`, channel);
     res.json({
       ok: true, masked: sent.masked, channel, devCode: sent.devCode, emailPreview: sent.emailPreview,
       // Let the doctor switch if the patient can't see this one.
-      alternatives: [c.mobile && channel !== 'sms' ? 'sms' : null, c.email && channel !== 'email' ? 'email' : null].filter(Boolean),
+      alternatives: [c.mobile && consentSmsOk() && channel !== 'sms' ? 'sms' : null, c.email && channel !== 'email' ? 'email' : null].filter(Boolean),
     });
   } catch (e) {
     if (e instanceof OtpError) return res.status(e.status).json({ error: e.message });
@@ -2557,16 +2740,21 @@ app.post('/api/doctor/patient-access', auth, role('doctor'), accessLimiter, asyn
   }
 });
 
-app.post('/api/doctor/patient-access/verify', auth, role('doctor'), async (req, res) => {
+app.post('/api/doctor/patient-access/verify', auth, role('doctor'), otpVerifyLimiter, async (req, res) => {
   const d = db();
   const doc = doctorFor(req.user);
   const p = d.patients.find((x) => x.id === req.body?.patientId);
   if (!p) return res.status(404).json({ error: 'Patient not found.' });
   const c = contactOf(p);
-  const channel = req.body?.channel === 'email' && c.email ? 'email' : c.mobile ? 'sms' : 'email';
+  const memoKey = `${req.user.id}:${p.id}`;
+  const memo = accessChannels.get(memoKey);
+  const wanted = ['email', 'sms'].includes(req.body?.channel) ? req.body.channel : memo && memo.expiresAt > Date.now() ? memo.channel : null;
+  const smsOk = Boolean(c.mobile) && consentSmsOk();
+  const channel = wanted === 'email' && c.email ? 'email' : wanted === 'sms' && smsOk ? 'sms' : smsOk ? 'sms' : 'email';
   try {
     const ok = await otp.verifyCode({ target: targetFor(c, channel), code: String(req.body?.code || ''), purpose: 'consent' });
     if (!ok) throw new OtpError('That code is not right.', 400);
+    accessChannels.delete(memoKey);
   } catch (e) {
     if (e instanceof OtpError) return res.status(e.status).json({ error: e.message });
     throw e;
@@ -2672,7 +2860,7 @@ function createFollowUp(d, { p, doc, days, diagnosis, from }) {
   };
   d.consults.push(c);
   d.consents.push({ id: store.id('cst'), patientId: p.id, granteeType: 'doctor', granteeId: doc.id, granteeName: doc.name, scope: ['history', 'prescriptions', 'labs', 'allergies'], purpose: 'Follow-up visit', start: nowIso(), expiry: new Date(Date.parse(c.scheduledAt) + 3 * 86400000).toISOString(), status: 'active' });
-  const when = new Date(c.scheduledAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  const when = new Date(c.scheduledAt).toLocaleString('en-IN', { timeZone: APP_TZ, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
   patientOwnerUserIds(p).forEach((u) => notify(u, 'Follow-up booked', `${doc.name} wants to see you again on ${when}${inPerson ? ` at ${location.name}` : ' (video)'}.`));
   automation.emit('followup.scheduled', { consultId: c.id, followUpOf: c.followUpOf, patientId: p.id, doctorId: doc.id, doctorName: doc.name, mode: c.mode, location: c.location?.name || null, scheduledAt: c.scheduledAt }, { contact: autoContact(p) });
   return c;
@@ -2685,11 +2873,11 @@ app.post('/api/doctor/prescriptions', auth, role('doctor'), async (req, res) => 
   const p = d.patients.find((x) => x.id === b.patientId);
   if (!p) return res.status(404).json({ error: 'Patient not found.' });
   if (!hasConsent(p.id, [doc.id])) return res.status(403).json({ error: 'The patient hasn\'t approved this visit yet. Send them the one-time code first.' });
-  const items = (Array.isArray(b.items) ? b.items : []).slice(0, 25).map((it) => ({ drug: clean(it.drug, 80), dose: clean(it.dose, 40), freq: clean(it.freq, 80), days: Math.max(0, Math.min(365, parseInt(it.days, 10) || 0)), ...(it.food ? { food: clean(it.food, 30) } : {}), ...(it.note ? { note: clean(it.note, 120) } : {}) })).filter((it) => it.drug);
-  const labTests = (Array.isArray(b.labTests) ? b.labTests : []).slice(0, 15).filter((t) => t && catalog.TESTS[t.code]).map((t) => ({ code: t.code, name: catalog.TESTS[t.code].name }));
+  const items = cleanRxItems(b.items);
+  const labTests = (Array.isArray(b.labTests) ? b.labTests : []).slice(0, 15).filter((t) => t && own(catalog.TESTS, t.code)).map((t) => ({ code: t.code, name: catalog.TESTS[t.code].name }));
   let paperFileId = null;
   if (b.paperFileId) {
-    const f = await store.adapter().fileGet(b.paperFileId);
+    const f = await store.adapter().fileGet(clean(b.paperFileId, 80));
     if (!f || f.uploadedBy !== req.user.id) return res.status(400).json({ error: 'Please upload the prescription photo again.' });
     paperFileId = f.id;
   }
@@ -2732,10 +2920,11 @@ app.get('/api/doctor/prescriptions', auth, role('doctor'), (req, res) => {
 });
 
 app.post('/api/break-glass', auth, role('doctor'), (req, res) => {
-  const { patientId, reason } = req.body || {};
+  const patientId = clean(req.body?.patientId, 40);
+  const reason = clean(req.body?.reason, 500);
   const p = db().patients.find((x) => x.id === patientId);
   if (!p) return res.status(404).json({ error: 'Patient not found.' });
-  if (!reason || reason.trim().length < 10) return res.status(400).json({ error: 'Please describe the emergency (at least 10 characters). This is reviewed by an admin.' });
+  if (reason.length < 10) return res.status(400).json({ error: 'Please describe the emergency (at least 10 characters). This is reviewed by an admin.' });
   db().audit.unshift({ id: store.id('aud'), actorId: req.user.id, actorName: req.user.name, role: req.user.role, action: 'break_glass', patientId, recordType: 'critical', reason, at: nowIso(), reviewed: false });
   patientOwnerUserIds(p).forEach((u) => notify(u, '⚠️ Emergency access to your records', `${req.user.name} opened your critical health data in an emergency. Reason: "${reason}". This is logged and reviewed.`, 'alert'));
   store.save();
@@ -2760,7 +2949,7 @@ app.post('/api/consults/:id/start', auth, role('doctor'), (req, res) => {
 app.post('/api/prescriptions/check', auth, role('doctor'), (req, res) => {
   const p = db().patients.find((x) => x.id === req.body?.patientId);
   if (!p) return res.status(404).json({ error: 'Patient not found.' });
-  res.json(engines.checkPrescription(p, req.body.items || []));
+  res.json(engines.checkPrescription(p, cleanRxItems(req.body.items)));
 });
 
 app.post('/api/consults/:id/complete', auth, role('doctor'), (req, res) => {
@@ -2788,11 +2977,11 @@ app.post('/api/consults/:id/complete', auth, role('doctor'), (req, res) => {
   doc.earnings += c.kioskId ? doc.fee : Math.max(0, Number(c.fee) || 0); // what the patient actually paid online
 
   let rx = null;
-  const validItems = items.filter((i) => i.drug);
+  const validItems = cleanRxItems(items);
   if (validItems.length) {
     const warnings = engines.checkPrescription(p, validItems);
     rx = {
-      id: store.id('rx'), consultId: c.id, patientId: p.id, doctorId: doc.id, items: validItems, advice, warnings, status: 'issued', pharmacyId: null, fulfilment: null, createdAt: nowIso(), signature: `${doc.name} · ${doc.regNo}`,
+      id: store.id('rx'), consultId: c.id, patientId: p.id, doctorId: doc.id, items: validItems, advice: clean(advice, 600), warnings, status: 'issued', pharmacyId: null, fulfilment: null, createdAt: nowIso(), signature: `${doc.name} · ${doc.regNo}`,
       complaint: c.triage?.symptoms || null, diagnosis: clean(diagnosis, 200) || null, dos: cleanList(req.body?.dos, 12), donts: cleanList(req.body?.donts, 12),
     };
     // Kiosk visits send the prescription straight to the attached/nearest pharmacy.
@@ -2816,10 +3005,14 @@ app.post('/api/consults/:id/complete', auth, role('doctor'), (req, res) => {
   // Tests: the doctor may refer them to a specific centre (and share the prescription with it); otherwise
   // each goes to the nearest centre that does it, and the patient can compare prices and switch.
   const refLab = req.body?.labId ? d.facilities.find((f) => f.id === req.body.labId && f.type === 'lab' && f.verified) : null;
-  const cleanTests = labTests.filter((t) => t && t.code).map((t) => ({ code: t.code, name: catalog.TESTS[t.code]?.name || clean(t.name, 80) }));
+  const cleanTests = labTests.slice(0, 15).filter((t) => t && clean(t.code, 40)).map((t) => ({ code: clean(t.code, 40), name: own(catalog.TESTS, t.code)?.name || clean(t.name, 80) })).filter((t) => t.name);
   createLabOrders(d, { p, doc, labTests: cleanTests, lab: refLab, rx, shareRx: Boolean(refLab) && req.body?.shareRxWithLab !== false });
-  if (referral?.facilityId) {
-    d.referrals.unshift({ id: store.id('ref'), patientId: p.id, patientName: p.name, age: ageOf(p.dob), fromDoctorId: doc.id, fromName: `${doc.name} (teleconsult)`, toFacilityId: referral.facilityId, bedType: referral.bedType || 'general', reason: referral.reason || diagnosis, urgency: c.triage.level, status: 'pending', eta: '45 min', createdAt: nowIso() });
+  // A referral goes only to a verified hospital on the network, for a bed type it actually has.
+  const refTo = referral && typeof referral === 'object' ? d.facilities.find((f) => f.id === referral.facilityId && f.type === 'hospital' && f.verified) : null;
+  if (refTo) {
+    const bedType = clean(referral.bedType, 20);
+    d.referrals.unshift({ id: store.id('ref'), patientId: p.id, patientName: p.name, age: ageOf(p.dob), fromDoctorId: doc.id, fromName: `${doc.name} (teleconsult)`, toFacilityId: refTo.id, bedType: bedType && d.beds.some((x) => x.facilityId === refTo.id && x.type === bedType) ? bedType : 'general', reason: clean(referral.reason, 300) || c.diagnosis, urgency: c.triage.level, status: 'pending', eta: '45 min', createdAt: nowIso() });
+    d.users.filter((u) => u.role === 'hospital_admin' && u.facilityId === refTo.id).forEach((u) => touch(u.id));
   }
   if (Number(followUpDays) > 0) {
     const fu = createFollowUp(d, { p, doc, days: Number(followUpDays), diagnosis, from: c });
@@ -2830,7 +3023,7 @@ app.post('/api/consults/:id/complete', auth, role('doctor'), (req, res) => {
   automation.emit('consult.completed', { consultId: c.id, patientId: p.id, doctorId: doc.id, doctorName: doc.name, prescriptionId: rx?.id || null }, { contact: autoContact(p) });
   store.save();
   broadcast('consults', 'queue', 'prescriptions', 'pharmacy', 'lab', 'referrals', 'supply', `consult:${c.id}`);
-  res.json({ consult: enrichConsult(c), prescription: rx });
+  res.json({ consult: enrichConsult(c), prescription: rx ? { ...rx, pharmacyName: facilityName(rx.pharmacyId) || null } : null });
 });
 
 app.get('/api/referral-options', auth, role('doctor', 'kiosk_operator'), (req, res) => {
@@ -2859,7 +3052,9 @@ app.get('/api/kiosk/home', auth, role('kiosk_operator'), (req, res) => {
   });
 });
 
-app.post('/api/kiosk/identify', auth, role('kiosk_operator'), (req, res) => {
+// A kiosk login could otherwise walk through phone numbers / passport ids to enumerate patients.
+const identifyLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 120, key: (r) => r.headers.authorization || r.ip, message: 'Too many patient look-ups from this kiosk. Please wait a while.' });
+app.post('/api/kiosk/identify', auth, role('kiosk_operator'), identifyLimiter, (req, res) => {
   const q = String(req.body?.query || '').trim();
   const users = db().users;
   const asPhone = q.replace(/\D/g, '').length >= 6 ? normalizePhone(q, req.body?.dialCode) : null;
@@ -2875,12 +3070,15 @@ app.post('/api/kiosk/identify', auth, role('kiosk_operator'), (req, res) => {
 });
 
 app.post('/api/kiosk/register', auth, role('kiosk_operator'), (req, res) => {
-  const { name, dob, gender, phone, language, bloodGroup, allergies = '', conditions = '' } = req.body || {};
-  if (!name || !dob) return res.status(400).json({ error: 'Name and date of birth are required.' });
+  const b = req.body || {};
+  const name = clean(b.name, 80);
+  const dobT = Date.parse(b.dob);
+  if (name.length < 2 || !Number.isFinite(dobT) || dobT > Date.now() || dobT < Date.parse('1900-01-01')) return res.status(400).json({ error: 'Name and date of birth are required.' });
   const kiosk = db().facilities.find((f) => f.id === req.user.facilityId);
-  const split = (v) => String(v).split(',').map((s) => s.trim()).filter(Boolean);
+  const phone = b.phone ? normalizePhone(clean(b.phone, 20), b.dialCode) || clean(b.phone, 20) : '';
   const p = {
-    id: makePassportId(), userId: null, name, dob, gender, language: language || 'Hindi', bloodGroup: bloodGroup || 'Unknown', allergies: split(allergies), conditions: split(conditions), currentMeds: [],
+    id: makePassportId(), userId: null, name, dob: new Date(dobT).toISOString().slice(0, 10), gender: ['Female', 'Male', 'Other'].includes(b.gender) ? b.gender : 'Prefer not to say', language: clean(b.language, 40) || 'Hindi',
+    bloodGroup: BLOOD_GROUPS.includes(b.bloodGroup) ? b.bloodGroup : 'Unknown', allergies: cleanList(b.allergies, 30), conditions: cleanList(b.conditions, 30), currentMeds: [],
     emergencyContacts: phone ? [{ name: 'Self', relation: 'Mobile', phone }] : [], abha: '', pincode: kiosk.pincode, district: kiosk.district, state: kiosk.state, vaccinations: [], registeredAt: kiosk.name, createdAt: nowIso(),
     kioskSeen: { kioskId: kiosk.id, at: nowIso() },
   };
@@ -2896,16 +3094,19 @@ app.post('/api/kiosk/register', auth, role('kiosk_operator'), (req, res) => {
 app.post('/api/kiosk/vitals/read', auth, role('kiosk_operator'), (req, res) => {
   const r = (a, b, dec = 0) => +(a + Math.random() * (b - a)).toFixed(dec);
   const kiosk = db().facilities.find((f) => f.id === req.user.facilityId);
+  const devices = kiosk.devices || {};
   res.json({
     bp: `${r(112, 146)}/${r(72, 92)}`, pulse: r(68, 104), spo2: r(93, 99), temp: r(97.6, 101.2, 1), weight: r(48, 78, 1),
-    sugar: kiosk.devices.glucometer === 'ok' ? r(92, 220) : null,
-    deviceWarnings: Object.entries(kiosk.devices).filter(([, s]) => s !== 'ok').map(([k, s]) => `${k}: ${s.replace('_', ' ')}`),
+    sugar: (devices.glucometer || 'ok') === 'ok' ? r(92, 220) : null,
+    deviceWarnings: Object.entries(devices).filter(([, s]) => s !== 'ok').map(([k, s]) => `${k}: ${String(s).replace('_', ' ')}`),
   });
 });
 
 app.put('/api/kiosk/status', auth, role('kiosk_operator'), (req, res) => {
   const kiosk = db().facilities.find((f) => f.id === req.user.facilityId);
-  if (req.body.status) kiosk.status = req.body.status;
+  const status = req.body?.status;
+  if (!['online', 'offline'].includes(status)) return res.status(400).json({ error: 'Status must be online or offline.' });
+  kiosk.status = status;
   store.save();
   broadcast('kiosks', 'admin');
   res.json(kiosk);
@@ -2923,15 +3124,41 @@ app.get('/api/hospital/home', auth, role('hospital_admin'), (req, res) => {
     doctors: d.doctors.filter((x) => x.verified && x.facilityId === fid).map((x) => publicDoctor(x)),
     referrals,
     opd: d.opdSlots.filter((o) => o.facilityId === fid),
-    analytics: {
+    analytics: DATA_MODE === 'demo' ? {
       occupancyTrend: [71, 74, 78, 76, 81, 84, 80, 83, 86, 82, 79, 81, 85, 80],
       referralsWeek: [4, 6, 3, 8, 7, 5, 9],
       avgTurnaroundMin: 34,
       accepted: referrals.filter((r) => r.status === 'accepted').length,
       rejected: referrals.filter((r) => r.status === 'rejected').length,
-    },
+    } : hospitalAnalytics(d, fid, referrals),
   });
 });
+
+// Live hospitals see only what the data supports. Bed history isn't stored, so the occupancy "trend" is
+// today's figure as a 1-point series (null with no beds); referrals are counted per 7-day week, oldest
+// first (this week last); turnaround = mean minutes from referral to decision (null until one is decided).
+function hospitalAnalytics(d, fid, referrals) {
+  const WEEK = 7 * 86400000;
+  const beds = d.beds.filter((b) => b.facilityId === fid);
+  const total = beds.reduce((s, b) => s + (Number(b.total) || 0), 0);
+  const occupied = beds.reduce((s, b) => s + (Number(b.occupied) || 0), 0);
+  const now = Date.now();
+  const referralsWeek = new Array(7).fill(0);
+  let tSum = 0; let tN = 0;
+  for (const r of referrals) {
+    const w = 6 - Math.floor((now - Date.parse(r.createdAt)) / WEEK);
+    if (w >= 0 && w <= 6) referralsWeek[w] += 1;
+    const ms = Date.parse(r.decidedAt) - Date.parse(r.createdAt);
+    if (ms >= 0) { tSum += ms; tN += 1; }
+  }
+  return {
+    occupancyTrend: total ? [Math.round((occupied / total) * 100)] : null,
+    referralsWeek,
+    avgTurnaroundMin: tN ? Math.round(tSum / tN / 60000) : null,
+    accepted: referrals.filter((r) => r.status === 'accepted').length,
+    rejected: referrals.filter((r) => r.status === 'rejected').length,
+  };
+}
 
 app.put('/api/hospital/beds', auth, role('hospital_admin'), (req, res) => {
   const { type, total, occupied } = req.body || {};
@@ -2949,16 +3176,19 @@ app.put('/api/hospital/beds', auth, role('hospital_admin'), (req, res) => {
 app.put('/api/hospital/roster/:id', auth, role('hospital_admin'), (req, res) => {
   const r = db().roster.find((x) => x.id === req.params.id && x.facilityId === req.user.facilityId);
   if (!r) return res.status(404).json({ error: 'Staff member not found.' });
-  for (const k of ['onDuty', 'teleconsult', 'shift']) if (req.body[k] !== undefined) r[k] = req.body[k];
+  const b = req.body || {};
+  for (const k of ['onDuty', 'teleconsult']) if (b[k] !== undefined) r[k] = Boolean(b[k]);
+  if (b.shift !== undefined) r.shift = clean(b.shift, 40);
   store.save();
   broadcast('hospital', 'roster');
   res.json(r);
 });
 
 app.post('/api/hospital/roster', auth, role('hospital_admin'), (req, res) => {
-  const { name, department, shift } = req.body || {};
+  const b = req.body || {};
+  const name = clean(b.name, 80); const department = clean(b.department, 60);
   if (!name || !department) return res.status(400).json({ error: 'Name and department are required.' });
-  const r = { id: store.id('ros'), facilityId: req.user.facilityId, name, department, shift: shift || '09:00 – 17:00', onDuty: true, teleconsult: false };
+  const r = { id: store.id('ros'), facilityId: req.user.facilityId, name, department, shift: clean(b.shift, 40) || '09:00 – 17:00', onDuty: true, teleconsult: false };
   db().roster.push(r);
   store.save();
   broadcast('hospital', 'roster');
@@ -3011,7 +3241,7 @@ app.put('/api/pharmacy/profile', auth, role('pharmacist'), async (req, res) => {
   if (!(b.lat != null && geo.validCoord(lat, lng)) && !geo.byDistrict(b.district, b.state) && !geo.validCoord(f.lat, f.lng)) {
     return res.status(400).json({ error: 'Tap "Use my location" at the store so patients nearby can find you.' });
   }
-  for (const [key, fid, label] of [['storePhotoFileId', b.storePhotoFileId, 'store photo'], ['licenceFileId', b.licenceFileId, 'licence photo']]) {
+  for (const [key, fid, label] of [['storePhotoFileId', clean(b.storePhotoFileId, 80), 'store photo'], ['licenceFileId', clean(b.licenceFileId, 80), 'licence photo']]) {
     if (!fid) return res.status(400).json({ error: `Please add a ${label}.` });
     const file = await store.adapter().fileGet(fid);
     if (!file || file.uploadedBy !== req.user.id) return res.status(400).json({ error: `Please upload the ${label} again.` });
@@ -3042,7 +3272,7 @@ app.post('/api/referrals/:id/:action', auth, role('hospital_admin'), (req, res) 
   if (!['accept', 'reject'].includes(action)) return res.status(400).json({ error: 'Unknown action.' });
   r.status = action === 'accept' ? 'accepted' : 'rejected';
   r.decidedAt = nowIso();
-  r.note = req.body?.note;
+  r.note = clean(req.body?.note, 300) || undefined;
   if (action === 'accept') {
     const b = d.beds.find((x) => x.facilityId === r.toFacilityId && x.type === r.bedType);
     if (b && b.occupied < b.total) { b.occupied += 1; b.updatedAt = nowIso(); }
@@ -3057,16 +3287,21 @@ app.post('/api/referrals/:id/:action', auth, role('hospital_admin'), (req, res) 
 app.put('/api/hospital/opd/:id', auth, role('hospital_admin'), (req, res) => {
   const o = db().opdSlots.find((x) => x.id === req.params.id && x.facilityId === req.user.facilityId);
   if (!o) return res.status(404).json({ error: 'Slot not found.' });
-  if (req.body.capacity !== undefined) o.capacity = Number(req.body.capacity);
+  if (req.body?.capacity !== undefined) {
+    const n = Number(req.body.capacity);
+    if (!Number.isFinite(n) || n < 0 || n > 10000) return res.status(400).json({ error: 'Enter a valid capacity.' });
+    o.capacity = Math.round(n);
+  }
   store.save();
   broadcast('hospital', 'roster');
   res.json(o);
 });
 
 app.post('/api/hospital/opd', auth, role('hospital_admin'), (req, res) => {
-  const { department, date, time, capacity } = req.body || {};
+  const b = req.body || {};
+  const department = clean(b.department, 60); const date = clean(b.date, 20); const time = clean(b.time, 30);
   if (!department || !date || !time) return res.status(400).json({ error: 'Department, date and time are required.' });
-  const o = { id: store.id('opd'), facilityId: req.user.facilityId, department, date, time, capacity: Number(capacity) || 20, booked: 0 };
+  const o = { id: store.id('opd'), facilityId: req.user.facilityId, department, date, time, capacity: Math.max(1, Math.min(10000, parseInt(b.capacity, 10) || 20)), booked: 0 };
   db().opdSlots.push(o);
   store.save();
   broadcast('hospital', 'roster');
@@ -3105,13 +3340,25 @@ app.put('/api/lab-orders/:id/status', auth, role('lab_tech'), (req, res) => {
   res.json(enrichLab(o));
 });
 
-app.post('/api/lab-orders/:id/report', auth, role('lab_tech'), (req, res) => {
+app.post('/api/lab-orders/:id/report', auth, role('lab_tech'), async (req, res) => {
   const d = db();
   const o = d.labOrders.find((x) => x.id === req.params.id && x.labId === req.user.facilityId);
   if (!o) return res.status(404).json({ error: 'Order not found.' });
-  const results = (req.body.results || []).filter((r) => r.name && r.value !== '');
+  if (o.status === 'reported') return res.status(409).json({ error: 'This report has already been uploaded.' });
+  // Optional signed report (PDF/photo) uploaded through /api/files by this same lab user.
+  let reportFileId = null;
+  if (req.body?.reportFileId) {
+    const f = await store.adapter().fileGet(clean(req.body.reportFileId, 40));
+    if (!f || f.uploadedBy !== req.user.id) return res.status(400).json({ error: 'Please attach the signed report again.' });
+    reportFileId = f.id;
+  }
+  // Only the fields a result has (name, value, unit, range, flag), each bounded — never arbitrary objects.
+  const results = (Array.isArray(req.body?.results) ? req.body.results : []).slice(0, 60).filter((r) => r && typeof r === 'object')
+    .map((r) => ({ name: clean(r.name, 80), value: clean(r.value, 40), unit: clean(r.unit, 20), range: clean(r.range, 40), flag: clean(r.flag, 20) }))
+    .filter((r) => r.name && r.value !== '');
   if (!results.length) return res.status(400).json({ error: 'Add at least one result value.' });
   o.results = results;
+  if (reportFileId) o.reportFileId = reportFileId;
   o.status = 'reported';
   o.reportedAt = nowIso();
   o.critical = results.some((r) => r.flag === 'critical');
@@ -3195,8 +3442,9 @@ app.post('/api/prescriptions/:id/dispense', auth, role('pharmacist'), (req, res)
 app.put('/api/inventory/:id', auth, role('pharmacist', 'distributor'), (req, res) => {
   const i = db().inventory.find((x) => x.id === req.params.id && x.facilityId === req.user.facilityId);
   if (!i) return res.status(404).json({ error: 'Item not found.' });
-  for (const k of ['qty', 'safetyStock']) if (req.body[k] !== undefined) {
-    const n = Number(req.body[k]);
+  const b = req.body || {};
+  for (const k of ['qty', 'safetyStock']) if (b[k] !== undefined) {
+    const n = Number(b[k]);
     if (!Number.isFinite(n) || n < 0 || n > 1e7) return res.status(400).json({ error: `Enter a valid ${k === 'qty' ? 'quantity' : 'safety stock'}.` });
     i[k] = Math.round(n);
   }
@@ -3250,7 +3498,8 @@ app.post('/api/transfers/:id/:action', auth, role('pharmacist', 'distributor'), 
   const { action } = req.params;
   if (t.fromId !== req.user.facilityId && action !== 'receive') return res.status(403).json({ error: 'Only the source facility can act on this.' });
   const FROM = { accept: ['requested'], decline: ['requested', 'accepted'], dispatch: ['accepted'], receive: ['dispatched', 'in_transit', 'delivered'] };
-  if (FROM[action] && !FROM[action].includes(t.status)) return res.status(409).json({ error: `This transfer is ${t.status} — that step isn't possible.` });
+  if (!own(FROM, action)) return res.status(400).json({ error: 'Unknown action.' });
+  if (!FROM[action].includes(t.status)) return res.status(409).json({ error: `This transfer is ${t.status} — that step isn't possible.` });
   if (action === 'accept') t.status = 'accepted';
   else if (action === 'decline') t.status = 'declined';
   else if (action === 'dispatch') {
@@ -3290,16 +3539,40 @@ app.get('/api/distributor/home', auth, role('distributor'), (req, res) => {
     warehouse: d.facilities.find((f) => f.id === fid),
     inventory,
     transfers: d.transfers.filter((t) => t.fromId === fid).map((t) => ({ ...t, toName: facilityName(t.toId), fromName: facilityName(t.fromId) })),
-    forecast: [
+    forecast: DATA_MODE === 'demo' ? [
       { drug: 'ORS sachet', district: 'Barabanki', next14d: 4200, trend: +38, reason: 'Dengue & heat' },
       { drug: 'Dengue NS1 rapid kit', district: 'Barabanki', next14d: 640, trend: +210, reason: 'Outbreak alert al_1' },
       { drug: 'Paracetamol 500mg', district: 'Barabanki', next14d: 9800, trend: +24, reason: 'Fever cases rising' },
       { drug: 'Budesonide inhaler 200mcg', district: 'Barabanki', next14d: 180, trend: +12, reason: 'Repeat shortage' },
       { drug: 'Metformin 500mg', district: 'Lucknow', next14d: 12000, trend: +2, reason: 'Stable chronic demand' },
-    ],
+    ] : distributorForecast(d, fid),
     regionalShortages: d.alerts.filter((a) => a.type === 'shortage' && a.status === 'open'),
   });
 });
+
+// Live warehouses: the next 14 days projected from what chemists actually asked this warehouse for in the
+// last 14 (per medicine and destination district); trend = % change vs the 14 days before (null with no
+// earlier requests). null when there's nothing to project from.
+function distributorForecast(d, fid) {
+  const DAY = 86400000;
+  const now = Date.now();
+  const facs = new Map(d.facilities.map((f) => [f.id, f]));
+  const rows = new Map();
+  for (const t of d.transfers) {
+    if (t.fromId !== fid || t.status === 'declined') continue;
+    const age = now - Date.parse(t.createdAt);
+    if (!(age >= 0 && age < 28 * DAY)) continue;
+    const district = facs.get(t.toId)?.district || '—';
+    const key = `${t.drug}|${district}`;
+    const r = rows.get(key) || { drug: t.drug, district, last: 0, prev: 0 };
+    if (age < 14 * DAY) r.last += Number(t.qty) || 0; else r.prev += Number(t.qty) || 0;
+    rows.set(key, r);
+  }
+  const out = [...rows.values()].filter((r) => r.last > 0)
+    .map((r) => ({ drug: r.drug, district: r.district, next14d: r.last, trend: r.prev ? Math.round(((r.last - r.prev) / r.prev) * 100) : null, reason: 'Transfer requests from chemists in the last 14 days' }))
+    .sort((a, b) => b.next14d - a.next14d).slice(0, 20);
+  return out.length ? out : null;
+}
 
 // ---------- dispatch ----------
 app.get('/api/dispatch/jobs', auth, role('delivery'), (req, res) => {
@@ -3359,7 +3632,8 @@ app.get('/api/gov/overview', auth, role('official'), (req, res) => {
     const sum = (t, k) => beds.filter((b) => !t || b.type === t).reduce((s, b) => s + b[k], 0);
     return { id: h.id, name: h.name, district: h.district, state: h.state, totalBeds: sum(null, 'total'), freeBeds: sum(null, 'total') - sum(null, 'occupied'), icuTotal: sum('icu', 'total'), icuFree: sum('icu', 'total') - sum('icu', 'occupied'), oxygenFree: sum('oxygen', 'total') - sum('oxygen', 'occupied') };
   });
-  const stockDays = d.inventory.filter((i) => d.facilities.find((f) => f.id === i.facilityId && f.type === 'pharmacy' && inScope(f))).map((i) => ({ drug: i.drug, facility: facilityName(i.facilityId), qty: i.qty, daysLeft: Math.round(i.qty / Math.max(1, i.safetyStock / 7)) })).filter((s) => s.daysLeft < 14).sort((a, b) => a.daysLeft - b.daysLeft);
+  const pharmaciesInScope = new Set(d.facilities.filter((f) => f.type === 'pharmacy' && inScope(f)).map((f) => f.id));
+  const stockDays = d.inventory.filter((i) => pharmaciesInScope.has(i.facilityId)).map((i) => ({ drug: i.drug, facility: facilityName(i.facilityId), qty: i.qty, daysLeft: Math.round(i.qty / Math.max(1, i.safetyStock / 7)) })).filter((s) => s.daysLeft < 14).sort((a, b) => a.daysLeft - b.daysLeft);
   res.json({
     scope: scoped ? { level: 'district', district: req.user.region.district, state: req.user.region.state } : { level: 'national' },
     totals: {
@@ -3377,10 +3651,16 @@ app.get('/api/gov/overview', auth, role('official'), (req, res) => {
     corridors: d.corridors,
     shortages: stockDays,
     transfersInTransit: d.transfers.filter((t) => ['accepted', 'dispatched'].includes(t.status)).map((t) => ({ ...t, fromName: facilityName(t.fromId), toName: facilityName(t.toId) })),
-    outbreakTrend: { labels: ['W-6', 'W-5', 'W-4', 'W-3', 'W-2', 'W-1', 'This wk'], dengue: [9, 11, 10, 14, 19, 28, 41], baseline: [10, 11, 12, 12, 12, 12, 12], ili: [40, 38, 45, 52, 61, 74, 88] },
+    outbreakTrend: outbreakTrend(),
     advisories: d.advisories,
   });
 });
+
+// Seven-week positives curve: an illustration for the demo network only. A live network gets null
+// (the Outbreaks page shows "No outbreak signals yet") instead of invented figures.
+const outbreakTrend = () => (DATA_MODE === 'demo'
+  ? { labels: ['W-6', 'W-5', 'W-4', 'W-3', 'W-2', 'W-1', 'This wk'], dengue: [9, 11, 10, 14, 19, 28, 41], baseline: [10, 11, 12, 12, 12, 12, 12], ili: [40, 38, 45, 52, 61, 74, 88] }
+  : null);
 
 app.post('/api/alerts/:id/:action', auth, role('official'), (req, res) => {
   const d = db();
@@ -3390,10 +3670,11 @@ app.post('/api/alerts/:id/:action', auth, role('official'), (req, res) => {
   if (req.user.scope === 'state' && a.state && a.state !== req.user.region?.state) return res.status(403).json({ error: 'This alert is outside your state.' });
   const { action } = req.params;
   const map = { confirm: 'confirmed', dismiss: 'dismissed', resolve: 'resolved', acknowledge: 'acknowledged' };
-  if (!map[action]) return res.status(400).json({ error: 'Unknown action.' });
+  if (!own(map, action)) return res.status(400).json({ error: 'Unknown action.' });
   a.status = map[action];
   const note = { confirm: 'Confirmed — pharmacies advised, stock pre-positioning started, doctors notified', dismiss: 'Dismissed as false signal', resolve: 'Marked resolved', acknowledge: 'Acknowledged, under review' }[action];
-  a.actions.push({ at: nowIso(), by: req.user.name, action: req.body?.note || note });
+  a.actions = a.actions || [];
+  a.actions.push({ at: nowIso(), by: req.user.name, action: clean(req.body?.note, 300) || note });
   if (action === 'confirm' && a.type === 'outbreak') {
     // Flow E step 5: stock advisory + pre-position + clinical heads-up.
     // Only clinicians and chemists in the affected district — not the whole country.
@@ -3410,9 +3691,10 @@ app.post('/api/alerts/:id/:action', auth, role('official'), (req, res) => {
 });
 
 app.post('/api/corridors', auth, role('official'), (req, res) => {
-  const { from, to, reason } = req.body || {};
+  const b = req.body || {};
+  const from = clean(b.from, 80); const to = clean(b.to, 80);
   if (!from || !to) return res.status(400).json({ error: 'Choose both regions.' });
-  const c = { id: store.id('cor'), from, to, reason: reason || 'Overflow load balancing', status: 'active', patientsRouted: 0, createdAt: nowIso(), openedBy: req.user.name };
+  const c = { id: store.id('cor'), from, to, reason: clean(b.reason, 200) || 'Overflow load balancing', status: 'active', patientsRouted: 0, createdAt: nowIso(), openedBy: req.user.name };
   db().corridors.unshift(c);
   store.save();
   broadcast('gov');
@@ -3430,9 +3712,10 @@ app.post('/api/corridors/:id/close', auth, role('official'), (req, res) => {
 });
 
 app.post('/api/advisories', auth, role('official', 'super_admin'), (req, res) => {
-  const { title, body, region, languages = ['Hindi', 'English'], publish } = req.body || {};
+  const b = req.body || {};
+  const title = clean(b.title, 120); const body = clean(b.body, 2000); const publish = Boolean(b.publish);
   if (!title || !body) return res.status(400).json({ error: 'Title and message are required.' });
-  const a = { id: store.id('adv'), title, body, region: region || 'All', languages, status: publish ? 'published' : 'draft', createdAt: nowIso(), by: req.user.name };
+  const a = { id: store.id('adv'), title, body, region: clean(b.region, 80) || 'All', languages: b.languages === undefined ? ['Hindi', 'English'] : cleanList(b.languages, 12), status: publish ? 'published' : 'draft', createdAt: nowIso(), by: req.user.name };
   db().advisories.unshift(a);
   if (publish) db().users.filter((u) => u.role === 'patient').forEach((u) => notify(u.id, `Health advisory: ${title}`, body, 'alert'));
   store.save();
@@ -3443,8 +3726,17 @@ app.post('/api/advisories', auth, role('official', 'super_admin'), (req, res) =>
 app.put('/api/advisories/:id', auth, role('official', 'super_admin'), (req, res) => {
   const a = db().advisories.find((x) => x.id === req.params.id);
   if (!a) return res.status(404).json({ error: 'Advisory not found.' });
-  for (const k of ['title', 'body', 'status', 'languages']) if (req.body[k] !== undefined) a[k] = req.body[k];
-  if (req.body.status === 'published') db().users.filter((u) => u.role === 'patient').forEach((u) => notify(u.id, `Health advisory: ${a.title}`, a.body, 'alert'));
+  const b = req.body || {};
+  if (b.title !== undefined && clean(b.title, 120)) a.title = clean(b.title, 120);
+  if (b.body !== undefined && clean(b.body, 2000)) a.body = clean(b.body, 2000);
+  if (b.languages !== undefined) a.languages = cleanList(b.languages, 12);
+  const wasPublished = a.status === 'published';
+  if (b.status !== undefined) {
+    if (!['draft', 'published', 'archived'].includes(b.status)) return res.status(400).json({ error: 'Status must be draft, published or archived.' });
+    a.status = b.status;
+  }
+  // Patients are told when it goes live — not again every time an already-published advisory is edited.
+  if (a.status === 'published' && !wasPublished) { a.publishedAt = nowIso(); db().users.filter((u) => u.role === 'patient').forEach((u) => notify(u.id, `Health advisory: ${a.title}`, a.body, 'alert')); }
   store.save();
   broadcast('gov', 'admin', 'advisories');
   res.json(a);
@@ -3530,14 +3822,16 @@ app.post('/api/admin/verify/:kind/:id', auth, role('super_admin'), (req, res) =>
 app.get('/api/admin/users', auth, role('super_admin'), (_req, res) => res.json(db().users.map(publicUser)));
 
 app.post('/api/admin/users', auth, role('super_admin'), async (req, res) => {
-  const { name, email, phone, role: r, facilityId, scope, district, state, password } = req.body || {};
+  const { role: r, facilityId, scope, district, state, password } = req.body || {};
+  const name = clean(req.body?.name, 80); const email = clean(req.body?.email, 160).toLowerCase(); const phone = clean(req.body?.phone, 20);
   if (!name || !email || !r) return res.status(400).json({ error: 'Name, email and role are required.' });
+  if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Please enter a valid email address.' });
   const ROLES = ['patient', 'caregiver', 'kiosk_operator', 'doctor', 'hospital_admin', 'lab_tech', 'pharmacist', 'distributor', 'delivery', 'official', 'super_admin'];
   if (!ROLES.includes(r)) return res.status(400).json({ error: 'Unknown role.' });
-  if (db().users.some((u) => u.email.toLowerCase() === email.toLowerCase())) return res.status(409).json({ error: 'Email already in use.' });
-  if (!password || password.length < 8) return res.status(400).json({ error: 'Set a password of at least 8 characters for the new user.' });
+  if (findUserByEmail(email)) return res.status(409).json({ error: 'Email already in use.' });
+  if (typeof password !== 'string' || password.length < 8 || password.length > 200) return res.status(400).json({ error: 'Set a password of at least 8 characters for the new user.' });
   if (['pharmacist', 'kiosk_operator', 'lab_tech', 'hospital_admin', 'distributor'].includes(r) && !db().facilities.some((f) => f.id === facilityId)) return res.status(400).json({ error: 'Choose the facility this person works at.' });
-  const u = { id: store.id('u'), name, email, phone: phone || '', role: r, facilityId, scope, status: 'active', region: { district: clean(district), state: clean(state) }, passwordHash: await bcrypt.hash(password, 10), createdAt: nowIso() };
+  const u = { id: store.id('u'), name, email, phone, role: r, facilityId: clean(facilityId, 60) || undefined, scope: ['national', 'state', 'district'].includes(scope) ? scope : undefined, status: 'active', region: { district: clean(district), state: clean(state) }, passwordHash: await bcrypt.hash(password, 10), createdAt: nowIso() };
   db().users.push(u);
   audit(req.user, 'created_user', null, 'user', `${name} (${r})`);
   store.save();
@@ -3548,8 +3842,11 @@ app.put('/api/admin/users/:id/status', auth, role('super_admin'), (req, res) => 
   const u = db().users.find((x) => x.id === req.params.id);
   if (!u) return res.status(404).json({ error: 'User not found.' });
   if (u.id === req.user.id) return res.status(400).json({ error: 'You can\'t suspend your own account.' });
-  u.status = req.body.status;
-  audit(req.user, `user_${req.body.status}`, null, 'user', u.name);
+  const status = req.body?.status;
+  if (!['active', 'suspended', 'pending'].includes(status)) return res.status(400).json({ error: 'Status must be active, suspended or pending.' });
+  u.status = status;
+  if (status === 'suspended') u.tokenVersion = (u.tokenVersion || 0) + 1; // ends their open sessions on every device
+  audit(req.user, `user_${status}`, null, 'user', u.name);
   store.save();
   res.json(publicUser(u));
 });
@@ -3612,7 +3909,7 @@ app.post('/api/admin/kiosks/:id/:action', auth, role('super_admin'), (req, res) 
   const k = db().facilities.find((f) => f.id === req.params.id && f.type === 'kiosk');
   if (!k) return res.status(404).json({ error: 'Kiosk not found.' });
   if (req.params.action === 'update') k.version = '1.4.3';
-  else if (req.params.action === 'restart') { k.status = 'online'; k.devices = Object.fromEntries(Object.keys(k.devices).map((x) => [x, 'ok'])); }
+  else if (req.params.action === 'restart') { k.status = 'online'; k.devices = Object.fromEntries(Object.keys(k.devices || {}).map((x) => [x, 'ok'])); }
   else return res.status(400).json({ error: 'Unknown action.' });
   store.save();
   broadcast('kiosks', 'admin');
@@ -3629,7 +3926,7 @@ app.post('/api/admin/audit/:id/review', auth, role('super_admin'), (req, res) =>
   const a = db().audit.find((x) => x.id === req.params.id);
   if (!a) return res.status(404).json({ error: 'Entry not found.' });
   a.reviewed = true;
-  a.reviewNote = req.body?.note || 'Reviewed — justified';
+  a.reviewNote = clean(req.body?.note, 300) || 'Reviewed — justified';
   a.reviewedBy = req.user.name;
   store.save();
   res.json(a);
@@ -3638,9 +3935,14 @@ app.post('/api/admin/audit/:id/review', auth, role('super_admin'), (req, res) =>
 app.get('/api/admin/content', auth, role('super_admin'), (_req, res) => res.json({ translations: db().translations, advisories: db().advisories }));
 
 app.put('/api/admin/translations/:key', auth, role('super_admin'), (req, res) => {
-  const t = db().translations.find((x) => x.key === req.params.key);
-  if (t) Object.assign(t, req.body);
-  else db().translations.push({ key: req.params.key, ...req.body });
+  const key = clean(req.params.key, 80);
+  // Language → text only (strings, bounded); never arbitrary keys like __proto__ or the record's own key.
+  const patch = Object.fromEntries(Object.entries(req.body && typeof req.body === 'object' ? req.body : {})
+    .filter(([k, v]) => k !== 'key' && /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(k) && typeof v === 'string').map(([k, v]) => [k, v.slice(0, 2000)]));
+  if (!key || !Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to save.' });
+  const t = db().translations.find((x) => x.key === key);
+  if (t) Object.assign(t, patch);
+  else db().translations.push({ key, ...patch });
   store.save();
   res.json(db().translations);
 });
@@ -3909,11 +4211,30 @@ function expireUnpaid() {
   if (changed) store.save();
 }
 
+// Notifications only ever grow (every patient gets each advisory). Screens show the latest 30, so once the
+// list is large, entries older than 180 days are dropped — newest-first order means they sit at the end.
+const NOTIFICATION_KEEP = 5000;
+const NOTIFICATION_DAYS = 180;
+function pruneNotifications() {
+  const list = db().notifications;
+  if (list.length <= NOTIFICATION_KEEP) return;
+  const cutoff = new Date(Date.now() - NOTIFICATION_DAYS * 86400000).toISOString();
+  let keep = list.length;
+  while (keep > NOTIFICATION_KEEP && (list[keep - 1].at || '') < cutoff) keep -= 1;
+  if (keep === list.length) return;
+  list.length = keep;
+  notifCounts.list = null; // per-user counts are rebuilt on the next notify()
+  store.save();
+}
+
 (async () => {
   await store.init();
   automation.init({ dataMode: DATA_MODE });
   expireUnpaid();
-  setInterval(expireUnpaid, 5 * 60000).unref();
+  expireConsents();
+  setInterval(() => { expireUnpaid(); expireConsents(); }, 5 * 60000).unref();
+  pruneNotifications();
+  setInterval(pruneNotifications, 6 * 3600000).unref();
   await i18n.init({ broadcast });
   const server = app.listen(PORT, () => {
     const o = otp.publicConfig();

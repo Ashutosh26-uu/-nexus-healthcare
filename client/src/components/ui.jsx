@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { Children, cloneElement, createContext, isValidElement, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CheckCircle2, AlertCircle, X, Inbox } from 'lucide-react';
 import { getLocale } from '../i18n';
@@ -24,7 +24,7 @@ export const fmtDateTime = (iso) => (iso ? new Date(iso).toLocaleString(safeLoca
 export const fmtTime = (iso) => (iso ? new Date(iso).toLocaleTimeString(safeLocale(), { hour: 'numeric', minute: '2-digit' }) : '—');
 export const fmtMoney = (n, currency = 'INR') => new Intl.NumberFormat(safeLocale(), { style: 'currency', currency, maximumFractionDigits: 0 }).format(Number(n || 0));
 export const fmtNum = (n) => Number(n || 0).toLocaleString(safeLocale());
-export const initials = (name = '') => name.replace(/^(Dr\.|Mr\.|Mrs\.|Ms\.)\s*/i, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+export const initials = (name) => String(name || '').replace(/^(Dr\.|Mr\.|Mrs\.|Ms\.)\s*/i, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 export const cx = (...a) => a.filter(Boolean).join(' ');
 
 const AVATAR_COLORS = ['#0f5c4d', '#d9734e', '#3d7fb8', '#7a4f9a', '#b8862b', '#2a8a6e', '#c8463d', '#4b6b8a'];
@@ -57,20 +57,30 @@ export function StatusBadge({ status, children }) {
 }
 
 /* ---------- primitives ---------- */
-export function Button({ variant, size, block, loading, icon: Icon, children, className, ...rest }) {
+export function Button({ variant, size, block, loading, icon: Icon, disabled, children, className, ...rest }) {
+  // `disabled` goes after the spread: a caller's disabled={false} must not re-enable a button mid-request.
   return (
-    <button className={cx('btn', variant, size, block && 'block', className)} disabled={loading || rest.disabled} {...rest}>
+    <button className={cx('btn', variant, size, block && 'block', className)} {...rest} disabled={loading || disabled}>
       {loading ? <span className="spinner sm" style={{ borderTopColor: 'currentColor' }} /> : Icon ? <Icon /> : null}
       {children}
     </button>
   );
 }
 
+const CONTROLS = new Set(['input', 'select', 'textarea']);
 export function Field({ label, hint, error, children, className }) {
+  // Tie the label to the first plain control so screen readers announce it (and a tap on the label focuses it).
+  const auto = useId();
+  let id;
+  const kids = Children.map(children, (c) => {
+    if (id || !isValidElement(c) || !CONTROLS.has(c.type)) return c;
+    id = c.props.id || auto;
+    return c.props.id ? c : cloneElement(c, { id });
+  });
   return (
     <div className={cx('field', className)}>
-      {label && <label>{label}</label>}
-      {children}
+      {label && <label htmlFor={id}>{label}</label>}
+      {kids}
       {error ? <span className="hint" style={{ color: 'var(--rose)' }}>{error}</span> : hint ? <span className="hint">{hint}</span> : null}
     </div>
   );
@@ -128,7 +138,7 @@ export function Tabs({ tabs, value, onChange }) {
   return (
     <div className="tabs" role="tablist">
       {tabs.map((t) => (
-        <button key={t.value} role="tab" aria-selected={value === t.value} className={cx('tab', value === t.value && 'active')} onClick={() => onChange(t.value)}>
+        <button key={t.value} type="button" role="tab" aria-selected={value === t.value} className={cx('tab', value === t.value && 'active')} onClick={() => onChange(t.value)}>
           {t.icon && <t.icon size={16} />}
           {t.label}
           {t.count !== undefined && <span className="count">{t.count}</span>}
@@ -142,7 +152,7 @@ export function Pills({ options, value, onChange }) {
   return (
     <div className="pills">
       {options.map((o) => (
-        <button key={o.value} className={cx('pill', value === o.value && 'active')} onClick={() => onChange(o.value)}>{o.label}</button>
+        <button key={o.value} type="button" className={cx('pill', value === o.value && 'active')} onClick={() => onChange(o.value)}>{o.label}</button>
       ))}
     </div>
   );
@@ -155,24 +165,29 @@ let bodyOverflow = '';
 export function Modal({ open, onClose, title, subtitle, children, footer, wide }) {
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const boxRef = useRef(null);
   useEffect(() => {
     if (!open) return undefined;
     const token = {};
     if (!modalStack.length) { bodyOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; }
     modalStack.push(token);
+    // Keyboard and screen-reader users land inside the dialog, and get back to where they were on close.
+    const opener = document.activeElement;
+    boxRef.current?.focus({ preventScroll: true });
     const onKey = (e) => e.key === 'Escape' && modalStack[modalStack.length - 1] === token && closeRef.current?.();
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
       modalStack.splice(modalStack.indexOf(token), 1);
       if (!modalStack.length) document.body.style.overflow = bodyOverflow;
+      if (opener?.isConnected) opener.focus?.({ preventScroll: true });
     };
   }, [open]);
   if (!open) return null;
   // Portal to <body> so an animated/transformed ancestor can't trap the fixed-position backdrop.
   return createPortal(
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}>
-      <div className={cx('modal', wide && 'wide')} role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined}>
+      <div ref={boxRef} tabIndex={-1} className={cx('modal', wide && 'wide')} role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined}>
         <div className="modal-head">
           <div>
             <h3>{title}</h3>
@@ -239,6 +254,16 @@ export function useAction() {
   return [run, busy];
 }
 
+/* Debounced copy of a value (search boxes, dependency checks) — shared so portals don't import each other. */
+export function useDebounced(value, ms = 400) {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
+
 /* ---------- tiny charts (hand-rolled SVG) ---------- */
 export function Sparkline({ data = [], color = 'var(--green-2)', height = 48, fill = true }) {
   if (!data.length) return null;
@@ -287,7 +312,7 @@ export function LineChart({ series = [], labels = [], height = 180 }) {
             <text x={pad.l - 6} y={y(t) + 4} fontSize="10" textAnchor="end" fill="var(--ink-3)">{t}</text>
           </g>
         ))}
-        {labels.map((l, i) => <text key={l} x={x(i)} y={height - 6} fontSize="10" textAnchor="middle" fill="var(--ink-3)">{l}</text>)}
+        {labels.map((l, i) => <text key={i} x={x(i)} y={height - 6} fontSize="10" textAnchor="middle" fill="var(--ink-3)">{l}</text>)}
         {series.map((s) => (
           <g key={s.name}>
             <path d={s.data.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join(' ')} fill="none" stroke={s.color} strokeWidth="2.5" strokeDasharray={s.dashed ? '6 5' : ''} strokeLinecap="round" strokeLinejoin="round" />

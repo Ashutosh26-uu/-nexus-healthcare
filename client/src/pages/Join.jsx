@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth';
 import {
-  ArrowLeft, ArrowRight, Building2, Stethoscope, Check, ShieldCheck, Search, Clock, Wallet, MonitorSmartphone, Store, Truck,
-  CalendarClock, Users, BedDouble, FileCheck2, Sparkles, MapPin, Video, Copy, CircleCheck, XCircle, Hourglass,
+  ArrowLeft, ArrowRight, Building2, Stethoscope, Check, ShieldCheck, Search, MonitorSmartphone, Store, Truck,
+  CalendarClock, Users, BedDouble, FileCheck2, Sparkles, Copy, CircleCheck, XCircle, Hourglass,
 } from 'lucide-react';
 import Logo from '../components/Logo';
 import LanguagePicker from '../components/LanguagePicker';
 import { api } from '../api';
 import { COUNTRIES, guessCountry } from '../i18n/countries';
-import { Button, Field, cx, fmtMoney } from '../components/ui';
+import { Button, Field, cx } from '../components/ui';
 import './auth.css';
 import './join.css';
 
@@ -20,8 +20,6 @@ const SERVICES = {
   lab: ['Home sample collection', 'Blood tests', 'X-Ray', 'Ultrasound', 'ECG', 'NABL accredited', 'Reports in 24 h'],
   pharmacy: ['Home delivery', 'Generic medicines', 'Jan Aushadhi', 'Open 24 hours', 'Cold chain (insulin, vaccines)'],
 };
-const CONSULTS_PER_HOUR = 4;
-
 const toggleIn = (list, v) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
 function Chips({ options, value, onChange }) {
@@ -166,21 +164,6 @@ function FacilityForm({ options, onDone }) {
 }
 
 /* ---------------- track 2: doctors — quick account, finish the profile in the portal ---------------- */
-export function Estimator({ hours, fee, share }) {
-  const consults = Math.round(hours * 4.3 * CONSULTS_PER_HOUR);
-  const monthly = Math.round(consults * fee * share);
-  return (
-    <div className="j-estimate">
-      <Wallet />
-      <div>
-        <div className="tiny muted">Estimated side income</div>
-        <div className="j-estimate-amt">{fmtMoney(monthly)}<small>/month</small></div>
-        <div className="tiny muted">~{consults} consults × ₹{fee} × {Math.round(share * 100)}% your share. Estimate — real numbers depend on demand.</div>
-      </div>
-    </div>
-  );
-}
-
 function CountrySelect({ value, onChange }) {
   return (
     <Field label="Country">
@@ -289,7 +272,9 @@ function StatusCheck({ initialRef = '' }) {
     setBusy(true); setError(''); setRes(null);
     try { setRes(await api.get(`/public/join/status/${encodeURIComponent(ref.trim())}`)); } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
-  useEffect(() => { if (initialRef) check(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  // Look up a reference arriving in the URL once, on mount.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (initialRef) check(); }, []);
   const s = res && STATUS[res.status];
   return (
     <div className="j-status">
@@ -328,7 +313,7 @@ function Success({ result }) {
           <span className="tiny muted">Your application reference</span>
           <div className="row" style={{ gap: 8, justifyContent: 'center' }}>
             <span className="mono j-ref-code" translate="no">{result.ref}</span>
-            <button type="button" className="icon-btn" aria-label="Copy reference" onClick={() => { navigator.clipboard?.writeText(result.ref); setCopied(true); }}>{copied ? <Check /> : <Copy />}</button>
+            <button type="button" className="icon-btn" aria-label="Copy reference" onClick={() => { navigator.clipboard?.writeText(result.ref).then(() => setCopied(true)).catch(() => {}); }}>{copied ? <Check /> : <Copy />}</button>
           </div>
           <span className="tiny muted">Save it — you can track your application with it anytime.</span>
         </div>

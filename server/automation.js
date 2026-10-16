@@ -102,9 +102,14 @@ function emit(event, data = {}, { contact } = {}) {
   return payload.id;
 }
 
+let timerDue = Infinity;
 function schedule(ms) {
-  if (timer) return;
-  timer = setTimeout(() => { timer = null; pump(); }, ms);
+  const due = Date.now() + ms;
+  if (timer && due >= timerDue) return; // an earlier wake-up is already set
+  // A new event must not wait behind a long retry back-off (up to 30 min) — move the wake-up forward.
+  clearTimeout(timer);
+  timerDue = due;
+  timer = setTimeout(() => { timer = null; timerDue = Infinity; pump(); }, ms);
   timer.unref?.();
 }
 

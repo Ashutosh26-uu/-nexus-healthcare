@@ -145,7 +145,7 @@ export function HistoryPanel({ data }) {
       <CriticalCard p={p} />
       {p.vaccinations?.length > 0 && (
         <Section icon={ShieldCheck} title="Vaccinations">
-          {p.vaccinations.map((v) => <div key={v.name} className="small">{v.name} <span className="muted">· {fmtDate(v.date)}</span></div>)}
+          {p.vaccinations.map((v) => <div key={`${v.name}|${v.date}`} className="small">{v.name} <span className="muted">· {fmtDate(v.date)}</span></div>)}
         </Section>
       )}
       {data.prescriptions?.length > 0 && (
@@ -222,7 +222,7 @@ export function LabsPanel({ labs }) {
 export function RecordView({ patientId }) {
   const rec = useRecord(patientId);
   if (rec.loading && !rec.data) return <Loading />;
-  if (rec.error) return <Empty title="Couldn't open this record">{rec.error}</Empty>;
+  if (rec.error && !rec.data) return <Empty title="Couldn't open this record">{rec.error}</Empty>; // a failed live refetch keeps the record on screen
   const d = rec.data;
   if (d.restricted) return <AccessGate record={d} onChanged={rec.reload} />;
   if (d.emergency) {
@@ -241,7 +241,7 @@ export function RecordView({ patientId }) {
         <PatientHead p={d.patient} />
         {d.copyOnly ? <span className="badge sun">Read-only copy</span> : <span className="badge green"><ShieldCheck />Consent active</span>}
       </div>
-      {d.copyOnly && <div className="callout"><ShieldCheck /><span>This patient moved their care to another doctor. You keep a read-only copy of their records up to {new Date(d.copyUntil).toLocaleDateString()} — nothing recorded after that is shared with you.</span></div>}
+      {d.copyOnly && <div className="callout"><ShieldCheck /><span>This patient moved their care to another doctor. You keep a read-only copy of their records up to {fmtDate(d.copyUntil)} — nothing recorded after that is shared with you.</span></div>}
       <div className="grid two">
         <div className="stack"><h4 className="mb-0">Health summary</h4><HistoryPanel data={d} /></div>
         <div className="stack">

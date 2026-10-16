@@ -21,7 +21,13 @@ export function TodayTimings({ doc }) {
 
 export default function DoctorProfile({ doc, onClose, onConsult, busy, consultLabel }) {
   const [rev, setRev] = useState(null);
-  useEffect(() => { setRev(null); if (doc?.id) api.get(`/doctors/${doc.id}/reviews`).then(setRev).catch(() => {}); }, [doc?.id]);
+  useEffect(() => {
+    setRev(null);
+    if (!doc?.id) return undefined;
+    let alive = true; // opening another profile quickly must not show the previous doctor's reviews
+    api.get(`/doctors/${doc.id}/reviews`).then((r) => alive && setRev(r)).catch(() => {});
+    return () => { alive = false; };
+  }, [doc?.id]);
   if (!doc) return null;
   const st = rev?.stats || { rating: doc.rating, reviewCount: doc.reviewCount, satisfaction: doc.satisfaction, patientsSeen: doc.patientsSeen };
   const today = todayKey();

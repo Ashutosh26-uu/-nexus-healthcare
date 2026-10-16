@@ -94,14 +94,17 @@ export function DrugSearch({ onPick, onAddNew }) {
 
 function Success({ done, consult, onBack }) {
   const { prescription: rx, summary } = done;
+  const sentName = done.pharmacyName || rx?.pharmacyName || null;
   const [pharmacy, setPharmacy] = useState(null);
   useEffect(() => {
-    if (!rx?.pharmacyId) return;
-    // Resolve the pharmacy name from the stock grid (the complete endpoint returns only its id).
+    if (!rx?.pharmacyId || sentName || !rx.items?.length) return undefined;
+    // Fallback for servers that return only the id: resolve the name from the stock grid.
+    let alive = true;
     api.get(`/stock?drug=${encodeURIComponent(rx.items[0].drug)}`)
-      .then((rows) => setPharmacy(rows.find((r) => r.facilityId === rx.pharmacyId)?.facilityName || null))
+      .then((rows) => alive && setPharmacy(rows.find((r) => r.facilityId === rx.pharmacyId)?.facilityName || null))
       .catch(() => {});
-  }, [rx]);
+    return () => { alive = false; };
+  }, [rx, sentName]);
   return (
     <Card className="dr-success fade-in">
       <div className="dr-success-icon"><CheckCircle2 /></div>
@@ -110,7 +113,7 @@ function Success({ done, consult, onBack }) {
       <div className="dr-success-grid">
         <div><span className="tiny muted">Diagnosis</span><strong>{summary.diagnosis || '—'}</strong></div>
         <div><span className="tiny muted">E-prescription</span><strong>{rx ? `${rx.items.length} medicine${rx.items.length > 1 ? 's' : ''} · ${rx.id}` : 'No medicines'}</strong></div>
-        <div><span className="tiny muted">Sent to</span><strong>{rx?.pharmacyId ? (pharmacy || 'Nearest stocked pharmacy') : rx ? 'Patient\'s phone & app' : '—'}</strong></div>
+        <div><span className="tiny muted">Sent to</span><strong>{rx?.pharmacyId ? (sentName || pharmacy || 'Nearest stocked pharmacy') : rx ? 'Patient\'s phone & app' : '—'}</strong></div>
         <div><span className="tiny muted">Lab tests</span><strong>{summary.labs.length ? summary.labs.map((l) => l.name).join(', ') : 'None'}</strong></div>
         <div><span className="tiny muted">Referral</span><strong>{summary.referral ? `${summary.referral.name} · ${summary.referral.bedType} bed` : 'None'}</strong></div>
         <div><span className="tiny muted">Follow-up</span><strong>{summary.followUpDays ? `${fmtDate(new Date(Date.now() + summary.followUpDays * 86400000).toISOString())}` : 'Not needed'}</strong></div>

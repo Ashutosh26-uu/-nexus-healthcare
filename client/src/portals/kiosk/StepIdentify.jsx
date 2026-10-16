@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { QrCode, Smartphone, Fingerprint, Delete, Search, ArrowRight, UserPlus, Check, RotateCcw, AlertTriangle, Droplet, CreditCard } from 'lucide-react';
 import { api } from '../../api';
+import { usePublicConfig } from '../../config';
 import { Avatar, cx } from '../../components/ui';
 import { useKiosk } from './context';
 import { langOf, LANGS } from './i18n';
@@ -130,13 +131,16 @@ export default function StepIdentify() {
   const [fresh, setFresh] = useState(false);
   const [scanState, setScanState] = useState('idle'); // finger: idle | scanning | done
   const timer = useRef(null);
+  // The thumb reader is a demo stand-in (no biometric store); on a live network the tab is hidden.
+  const demo = !!usePublicConfig()?.demo;
 
   useEffect(() => { say('identify_sub'); return () => clearTimeout(timer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => { setErr(''); setNotFound(false); }, [tab]);
+  useEffect(() => { if (!demo && tab === 'finger') setTab('qr'); }, [demo, tab]);
 
-  const identify = async (query, dialCode) => {
+  const identify = async (query, dialCode, viaThumb) => {
     if (!query) return;
     setBusy(true); setErr(''); setNotFound(false);
     try {
@@ -144,7 +148,9 @@ export default function StepIdentify() {
       setFound(p);
       say('is_this_you');
     } catch (e) {
-      if (e.status === 404) { setNotFound(true); say('not_found'); } else setErr(e.message);
+      // A thumb "match" that finds nobody must never fall through to registering a wrong patient.
+      if (e.status === 404 && viaThumb) setErr('Fingerprint reader not connected — use the QR card or mobile number.');
+      else if (e.status === 404) { setNotFound(true); say('not_found'); } else setErr(e.message);
     } finally { setBusy(false); setScanState('idle'); }
   };
 
@@ -160,7 +166,7 @@ export default function StepIdentify() {
   const scanThumb = () => {
     setScanState('scanning');
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => identify('9876500002', '+91'), 2200);
+    timer.current = setTimeout(() => identify('9876500002', '+91', true), 2200);
   };
 
   const accept = () => { setFlow({ patient: found, step: 2 }); };
@@ -191,7 +197,7 @@ export default function StepIdentify() {
   const tabs = [
     { v: 'qr', icon: QrCode, label: t('tab_qr') },
     { v: 'mobile', icon: Smartphone, label: t('tab_mobile') },
-    { v: 'finger', icon: Fingerprint, label: t('tab_finger') },
+    ...(demo ? [{ v: 'finger', icon: Fingerprint, label: t('tab_finger') }] : []),
   ];
 
   return (

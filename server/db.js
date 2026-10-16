@@ -44,6 +44,9 @@ let flushing = Promise.resolve();
 let auditTimer = null;
 let probationTimer = null;
 let auditRunning = false;
+let retryTimer = null;
+let retryMs = 2000; // back-off between retries of a failed write (2 s → 60 s)
+let closing = null;
 
 // ---------------------------------------------------------------- tracking state
 let cols = new Map(); // name -> collection state
@@ -294,7 +297,7 @@ const rootHandler = {
   set(t, k, v) {
     if (typeof k !== 'string' || SKIP.has(k)) { t[k] = v; return true; }
     const old = t[k];
-    if (old === v && (v === null || typeof v !== 'object' || Array.isArray(v))) return true;
+    if (old === v) return true; // same value already installed (e.g. `db.wallets = db.wallets || {}`) — not a change
     if (Array.isArray(v)) {
       const st = installCollection(k, v);
       st.full = true; st.memVersion += 1;
@@ -565,7 +568,17 @@ function flush(forceOrder = false) {
       await adapter.write(changes); // if this throws, the baseline is NOT advanced → retried next flush
     } catch (e) { changes.rollback(); throw e; }
     changes.commit();
-  }).catch((e) => console.error('[db] write failed (will retry on next change):', e.message));
+    retryMs = 2000;
+  }).catch((e) => {
+    // A transient database error must not leave changes sitting in memory until the next request
+    // happens to call save() — retry on our own, backing off.
+    console.error(`[db] write failed (retrying in ${retryMs / 1000} s):`, e.message);
+    if (!retryTimer && !closing) {
+      retryTimer = setTimeout(() => { retryTimer = null; save(); }, retryMs);
+      retryTimer.unref?.();
+      retryMs = Math.min(retryMs * 2, 60000);
+    }
+  });
   return flushing;
 }
 
@@ -665,15 +678,22 @@ function stopTimers() {
   clearInterval(probationTimer); probationTimer = null;
   clearInterval(auditTimer); auditTimer = null;
   clearTimeout(orderTimer); orderTimer = null;
+  clearTimeout(retryTimer); retryTimer = null;
 }
 
+// Runs as one step on the write chain: a request that saves during a reset must queue behind it, not
+// race the DROP/CREATE TABLEs (that surfaced as "relation does not exist" / duplicate pg_type errors).
 async function reset() {
-  await flushing;
-  await adapter.wipe();
-  snapshot.clear();
-  kvSnapshot.clear();
-  install(require('./seed')());
-  await persistAll();
+  clearTimeout(retryTimer); retryTimer = null;
+  const step = flushing.then(async () => {
+    await adapter.wipe();
+    snapshot.clear();
+    kvSnapshot.clear();
+    install(require('./seed')());
+    await persistAll();
+  });
+  flushing = step.catch(() => {}); // later flushes still run if the reset failed
+  await step;
   return db;
 }
 
@@ -689,24 +709,27 @@ function get() {
   return db;
 }
 
-async function close() {
-  stopTimers();
-  await flush(true);
-  if (raw && adapter) {
-    // Final safety net: the original full diff. Anything it finds is a change tracking missed.
-    try {
-      const changes = fullDiff();
-      if (changes.count) {
-        const where = [...Object.keys(changes.upserts), ...Object.keys(changes.deletes), ...changes.kv.map(([k]) => k)];
-        console.warn(`[db] safety net on close: change tracking missed ${changes.count} change(s) in ${[...new Set(where)].join(', ')} — writing them now`);
-        await adapter.write(changes);
-        changes.commit();
+// Idempotent: SIGINT and SIGTERM can both arrive, and pool.end() throws if called twice.
+function close() {
+  return (closing ||= (async () => {
+    stopTimers();
+    await flush(true);
+    if (raw && adapter) {
+      // Final safety net: the original full diff. Anything it finds is a change tracking missed.
+      try {
+        const changes = fullDiff();
+        if (changes.count) {
+          const where = [...Object.keys(changes.upserts), ...Object.keys(changes.deletes), ...changes.kv.map(([k]) => k)];
+          console.warn(`[db] safety net on close: change tracking missed ${changes.count} change(s) in ${[...new Set(where)].join(', ')} — writing them now`);
+          await adapter.write(changes);
+          changes.commit();
+        }
+      } catch (e) {
+        console.error('[db] final write failed:', e.message);
       }
-    } catch (e) {
-      console.error('[db] final write failed:', e.message);
     }
-  }
-  await adapter?.close();
+    await adapter?.close();
+  })());
 }
 
 module.exports = { init, save, flush, reset, get, id, close, adapter: () => adapter };

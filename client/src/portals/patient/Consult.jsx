@@ -1,31 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Video, Phone, MessageCircle, ChevronRight, Repeat } from 'lucide-react';
+import { ChevronRight, Repeat } from 'lucide-react';
 import NearbyDoctors from './NearbyDoctors';
 import { Button, StatusBadge, cx, fmtDateTime } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient } from './shared';
 import { getLocale } from '../../i18n';
-
-export const MODES = [
-  { value: 'video', label: 'Video', icon: Video, hint: 'Face to face' },
-  { value: 'audio', label: 'Audio', icon: Phone, hint: 'Works on slow internet' },
-  { value: 'chat', label: 'Chat', icon: MessageCircle, hint: 'Type at your own pace' },
-];
-
-export function ModePicker({ value, onChange }) {
-  return (
-    <div className="pt-modes" role="radiogroup" aria-label="How would you like to talk?">
-      {MODES.map((m) => (
-        <button key={m.value} type="button" role="radio" aria-checked={value === m.value} className={cx('pt-mode', value === m.value && 'on')} onClick={() => onChange(m.value)}>
-          <m.icon size={18} />
-          <span className="strong small">{m.label}</span>
-          <span className="tiny muted">{m.hint}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
 
 /* ---------- date + time slot picker ---------- */
 function buildDays() {
@@ -105,7 +85,7 @@ export default function Consult() {
         <div className="pt-cp-banner fade-in">
           <div className="grow">
             <strong>Complete your profile to book</strong>
-            <div className="small muted">You can browse doctors now. To book, we need your age, permanent address and an ID.</div>
+            <div className="small muted">You can browse doctors now. To book, we need your age and permanent address.</div>
           </div>
           <Button variant="clay" onClick={() => navigate('/patient/complete-profile', { state: { returnTo: '/patient/consult' } })}>Complete now</Button>
         </div>
@@ -124,7 +104,9 @@ export default function Consult() {
         </div>
       )}
 
-      <NearbyDoctors full symptoms={start.symptoms || patient?.currentSymptoms?.text || ''} department={start.department || patient?.currentSymptoms?.department || ''} />
+      {/* Keyed on the profile: the finder only reads its prefills on mount, and `patient` arrives after the
+          first render on a cold load (and changes on a family-profile switch). */}
+      <NearbyDoctors key={patient?.id || 'none'} full symptoms={start.symptoms || patient?.currentSymptoms?.text || ''} department={start.department || patient?.currentSymptoms?.department || ''} />
     </div>
   );
 }

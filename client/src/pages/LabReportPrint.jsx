@@ -14,7 +14,9 @@ export default function LabReportPrint() {
   const [o, setO] = useState(null);
   const [error, setError] = useState('');
   useEffect(() => {
+    const title = document.title;
     api.get(`/lab-orders/${encodeURIComponent(id)}`).then((r) => { setO(r); document.title = `Lab report ${r.id} · ${r.patient?.name || ''}`; }).catch((e) => setError(e.message));
+    return () => { document.title = title; }; // don't leave the patient's name in the tab after "Back"
   }, [id]);
   if (error) return <div className="rxp-wrap"><div className="rxp-error">{error}</div></div>;
   if (!o) return <Loading />;
@@ -50,13 +52,13 @@ export default function LabReportPrint() {
           <div><span>Ordered</span><strong>{fmtDate(o.createdAt)}</strong></div>
           <div><span>Reported</span><strong>{reported ? fmtDateTime(o.reportedAt) : 'Pending'}</strong></div>
         </section>
-        <h4 className="rxp-section-title">{o.tests.map((t) => t.name).join(' · ')}</h4>
+        <h4 className="rxp-section-title">{(o.tests || []).map((t) => t.name).join(' · ')}</h4>
         {reported ? (
           <table className="rxp-table">
             <thead><tr><th>Test</th><th>Result</th><th>Unit</th><th>Reference range</th><th>Flag</th></tr></thead>
             <tbody>
-              {o.results.map((r) => (
-                <tr key={r.name} className={r.flag && !['normal', 'negative'].includes(r.flag) ? 'rxp-flag' : ''}>
+              {(o.results || []).map((r, i) => (
+                <tr key={`${r.name}-${i}`} className={r.flag && !['normal', 'negative'].includes(r.flag) ? 'rxp-flag' : ''}>
                   <td>{r.name}</td><td><strong>{r.value}</strong></td><td>{r.unit}</td><td>{r.range}</td><td>{r.flag && !['normal', 'negative'].includes(r.flag) ? r.flag.toUpperCase() : r.flag || ''}</td>
                 </tr>
               ))}

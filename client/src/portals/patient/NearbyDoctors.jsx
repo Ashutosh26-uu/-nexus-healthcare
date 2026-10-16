@@ -2,10 +2,9 @@ import { useEffect, useState } from 'react';
 import { useConsent, openLocationSettings } from '../../consent';
 import { LocateFixed, MapPin, Star, Languages, Video, Stethoscope, Ambulance, Phone, Building2, Loader2, CalendarClock, BedDouble, Clock, X, Smile, Users, Briefcase, Globe2, Radar, MonitorSmartphone, Home as HomeIcon } from 'lucide-react';
 import { api } from '../../api';
-import { Avatar, Button, Empty, Field, fmtMoney, cx } from '../../components/ui';
+import { Avatar, Button, Empty, Field, fmtMoney, cx, useDebounced } from '../../components/ui';
 import { AvailBadge, availClass } from '../../components/Availability';
 import VoiceInput from '../../components/VoiceInput';
-import { useDebounced } from '../doctor/shared';
 import { getLocale } from '../../i18n';
 import DoctorProfile, { TodayTimings } from './DoctorProfile';
 import BookingFlow from './BookingFlow';
@@ -62,6 +61,7 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
   const device = shared || own;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [profile, setProfile] = useState(null);
   const [scope, setScope] = useState(defaultScope);
   const [typed, setTyped] = useState(givenSymptoms || '');
@@ -86,12 +86,12 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
   useEffect(() => {
     if (!active) { setData(null); return undefined; }
     let alive = true;
-    setLoading(true);
+    setLoading(true); setError('');
     const params = new URLSearchParams({ symptoms: q, scope });
     if (dept) params.set('department', dept);
     if (excludeId) params.set('exclude', excludeId);
     if (place) { params.set('district', place.district); params.set('state', place.state); } else if (device.loc) { params.set('lat', device.loc.lat); params.set('lng', device.loc.lng); } else if (device.manual?.district) { params.set('district', device.manual.district); params.set('state', device.manual.state || ''); }
-    api.get(`/doctors/recommend?${params}`).then((r) => alive && setData(r)).catch(() => alive && setData(null)).finally(() => alive && setLoading(false));
+    api.get(`/doctors/recommend?${params}`).then((r) => alive && setData(r)).catch((e) => { if (alive) { setData(null); setError(e.message); } }).finally(() => alive && setLoading(false));
     return () => { alive = false; };
   }, [q, dept, scope, device.loc, device.manual, place, active, excludeId]);
 
@@ -149,6 +149,7 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
       )}
 
       {loading && !data && <div className="row small muted mt-2"><span className="spinner sm" /> Finding the right doctors…</div>}
+      {error && !loading && <div className="form-error mt-2">{error}</div>}
       {data && data.doctors.length === 0 && (
         <Empty icon={Stethoscope} title={scope === 'near' ? 'No matching doctor within 20 km yet' : 'No verified doctors for this yet'}>
           {scope === 'near' ? <>Our network is growing. <button type="button" className="link-btn" onClick={() => setScope('all')}>See doctors across {countryName}</button> — many consult by video.</> : 'Try another department, or a general physician.'}
@@ -216,7 +217,7 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
                   {f.doctors?.length > 0 && (
                     <div className="pt-fac-docs">
                       {f.doctors.map((x) => (
-                        <button type="button" key={x.id} className={cx('pt-fac-doc', !x.available && 'off')} onClick={() => pick({ ...x, fee: x.fee })}>
+                        <button type="button" key={x.id} className={cx('pt-fac-doc', !x.available && 'off')} onClick={() => pick(x)}>
                           <span className={cx('dot', x.available ? 'green' : '')} />
                           <span translate="no">{x.name}</span>
                           <span className="muted">· {x.specialty} · ★{x.rating ? Number(x.rating).toFixed(1) : 'New'}</span>

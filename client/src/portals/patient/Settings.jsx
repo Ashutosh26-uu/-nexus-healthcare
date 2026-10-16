@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Save, Plus, Trash2, ShieldCheck, Bell, Lock, UserX, Languages, ChevronRight } from 'lucide-react';
 import { api } from '../../api';
 import { useAuth } from '../../auth';
-import { Button, Card, Field, Modal, Switch, useAction, useToast } from '../../components/ui';
+import { Button, Card, Field, Modal, Switch, fmtDate, useAction } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, firstName, splitList, BLOOD_GROUPS, PageSkeleton } from './shared';
 import { LANGUAGES as APP_LANGUAGES, useI18n, codeForName } from '../../i18n';
@@ -43,10 +43,10 @@ export default function Settings() {
   const [form, setForm] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [notifs, setNotifs] = useState(loadNotifs);
-  const [privacy, setPrivacy] = useState({ research: true, kioskOtp: true });
+  const [privacyDraft, setPrivacyDraft] = useState(null); // optimistic value while a save is in flight
   const [deleting, setDeleting] = useState(false);
+  const [reason, setReason] = useState('');
   const [run, busy] = useAction();
-  const toast = useToast();
   const navigate = useNavigate();
   const isSelf = profiles.find((x) => x.id === patient?.id)?.self;
   const { setLang } = useI18n();
@@ -80,6 +80,24 @@ export default function Settings() {
     setNotifs(next);
     try { localStorage.setItem(NOTIF_KEY, JSON.stringify(next)); } catch { /* ignore */ }
   };
+
+  // Saved on the server per profile (defaults: research off, kiosk OTP on).
+  const privacy = privacyDraft || { research: !!patient.privacy?.research, kioskOtp: patient.privacy?.kioskOtp !== false };
+  const setPrivacy = (k, v, msg) => {
+    if (privacyDraft) return; // one change at a time, so the switch can't flicker back mid-save
+    run(`privacy-${k}`, async () => {
+      setPrivacyDraft({ ...privacy, [k]: v });
+      try { await api.put('/patient/privacy', { [k]: v }); await reloadHome(); } finally { setPrivacyDraft(null); }
+    }, msg);
+  };
+
+  const deletion = patient.deletionRequest?.status === 'requested' ? patient.deletionRequest : null;
+  const requestDeletion = () => run('delete', async () => {
+    await api.post('/patient/deletion-request', { reason: reason.trim() || undefined });
+    await reloadHome();
+    setDeleting(false); setReason('');
+  }, 'Deletion requested. An admin will confirm it within 30 days.');
+  const cancelDeletion = () => run('undelete', async () => { await api.del('/patient/deletion-request'); await reloadHome(); }, 'Deletion request cancelled. Nothing will be removed.');
 
   return (
     <div className="stack lg">
@@ -175,11 +193,11 @@ export default function Settings() {
             </button>
             <div className="list-item">
               <div className="grow"><div className="small strong">Help spot outbreaks early</div><div className="tiny muted">Share anonymised symptoms and PIN code — never your name</div></div>
-              <Switch checked={privacy.research} onChange={(v) => { setPrivacy((s) => ({ ...s, research: v })); toast(v ? 'Thank you for helping your community' : 'Turned off. Nothing more will be shared.'); }} label="Share anonymised data for outbreak detection" />
+              <Switch checked={privacy.research} onChange={(v) => setPrivacy('research', v, v ? 'Thank you for helping your community' : 'Turned off. Nothing more will be shared.')} label="Share anonymised data for outbreak detection" />
             </div>
             <div className="list-item">
               <div className="grow"><div className="small strong">Ask for OTP at kiosks</div><div className="tiny muted">An E-Clinic can only open your passport after you share the OTP</div></div>
-              <Switch checked={privacy.kioskOtp} onChange={(v) => setPrivacy((s) => ({ ...s, kioskOtp: v }))} label="Require OTP at kiosks" />
+              <Switch checked={privacy.kioskOtp} onChange={(v) => setPrivacy('kioskOtp', v, v ? 'Kiosks will ask for your OTP.' : 'Kiosks won’t ask for an OTP any more.')} label="Require OTP at kiosks" />
             </div>
           </div>
         </Card>
@@ -189,25 +207,32 @@ export default function Settings() {
         <div className="row wrap between">
           <div className="grow">
             <strong>Delete {isSelf ? 'my account' : `${firstName(patient.name)}’s profile`}</strong>
-            <p className="small muted mb-0">Removes the passport and all records from Nexus Healthcare after a 30-day grace period.</p>
+            {deletion
+              ? <p className="small mb-0">Deletion requested on <strong>{fmtDate(deletion.at)}</strong> — an admin will confirm within 30 days. Until then nothing is removed.</p>
+              : <p className="small muted mb-0">Removes the passport and all records from Nexus Healthcare after a 30-day grace period.</p>}
           </div>
-          <Button variant="secondary" icon={UserX} onClick={() => setDeleting(true)}>Delete…</Button>
+          {deletion
+            ? <Button variant="secondary" loading={busy === 'undelete'} onClick={cancelDeletion}>Cancel request</Button>
+            : <Button variant="secondary" icon={UserX} onClick={() => setDeleting(true)}>Delete…</Button>}
         </div>
       </Card>
 
       <Modal open={deleting} onClose={() => setDeleting(false)} title="Are you sure?" subtitle="We’re sorry to see you go."
         footer={<>
           <Button variant="ghost" onClick={() => setDeleting(false)}>Keep my account</Button>
-          <Button variant="danger" onClick={() => { setDeleting(false); toast('Deletion scheduled. Sign in any time in the next 30 days to cancel it.'); }}>Schedule deletion</Button>
+          <Button variant="danger" loading={busy === 'delete'} onClick={requestDeletion}>Request deletion</Button>
         </>}>
         <div className="stack">
           <p className="mb-0">Here&apos;s what happens:</p>
           <ul className="small pt-plain-list">
-            <li>For the next <strong>30 days</strong>, nothing is lost. Just sign in again to cancel.</li>
+            <li>An admin reviews the request and confirms it within <strong>30 days</strong>. Until then nothing is lost — you can cancel it from this page.</li>
             <li>After that, {isSelf ? 'your' : 'this'} passport, records and consents are permanently erased.</li>
             <li>Prescriptions already with a pharmacy, and records hospitals are legally required to keep, stay with them.</li>
             {isSelf && profiles.length > 1 && <li>Family profiles you manage ({profiles.filter((x) => !x.self).map((x) => firstName(x.name)).join(', ')}) will need a new guardian.</li>}
           </ul>
+          <Field label="Why are you leaving? (optional)">
+            <input className="input" value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} placeholder="Anything we could do better" />
+          </Field>
         </div>
       </Modal>
     </div>

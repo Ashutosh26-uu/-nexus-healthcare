@@ -46,7 +46,8 @@ export function ProtectedImg({ fileId, alt, className }) {
   useEffect(() => {
     if (!fileId) return undefined;
     let url; let alive = true;
-    api.fileObjectUrl(fileId).then((u) => { url = u; if (alive) setSrc(u); }).catch(() => {});
+    // Resolved after unmount → nobody will revoke it later, so free the blob right away.
+    api.fileObjectUrl(fileId).then((u) => { if (!alive) { URL.revokeObjectURL(u); return; } url = u; setSrc(u); }).catch(() => {});
     return () => { alive = false; if (url) URL.revokeObjectURL(url); };
   }, [fileId]);
   if (!src) return <span className={cx('protected-img ph', className)} />;

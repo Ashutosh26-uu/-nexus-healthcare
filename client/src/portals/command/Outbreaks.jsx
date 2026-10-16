@@ -68,16 +68,21 @@ export default function Outbreaks() {
           </Card>
 
           <Card title={<div><h3>Seven-week trend</h3><p className="tiny muted mb-0">Weekly positives{data.scope.level === 'district' ? ` · ${data.scope.district}` : ' · pilot districts'}</p></div>}>
-            <LineChart
-              labels={tr.labels}
-              series={[
-                { name: 'Dengue NS1 positives', data: tr.dengue, color: 'var(--rose)' },
-                { name: 'Seasonal baseline', data: tr.baseline, color: 'var(--ink-3)', dashed: true },
-                { name: 'Influenza-like illness', data: tr.ili, color: 'var(--sky)' },
-              ]}
-              height={210}
-            />
-            <p className="tiny muted mb-0 mt-1">This week dengue is <strong>{(tr.dengue.at(-1) / tr.baseline.at(-1)).toFixed(1)}×</strong> the baseline. Alerts fire above 3× with at least 10 tests.</p>
+            {/* Live mode sends outbreakTrend: null rather than invented figures. */}
+            {tr?.dengue?.length ? (
+              <>
+                <LineChart
+                  labels={tr.labels}
+                  series={[
+                    { name: 'Dengue NS1 positives', data: tr.dengue, color: 'var(--rose)' },
+                    { name: 'Seasonal baseline', data: tr.baseline, color: 'var(--ink-3)', dashed: true },
+                    { name: 'Influenza-like illness', data: tr.ili, color: 'var(--sky)' },
+                  ]}
+                  height={210}
+                />
+                <p className="tiny muted mb-0 mt-1">This week dengue is <strong>{(tr.dengue.at(-1) / (tr.baseline.at(-1) || 1)).toFixed(1)}×</strong> the baseline. Alerts fire above 3× with at least 10 tests.</p>
+              </>
+            ) : <Empty icon={Activity} title="No outbreak signals yet">Trends appear as labs report results.</Empty>}
           </Card>
         </div>
 

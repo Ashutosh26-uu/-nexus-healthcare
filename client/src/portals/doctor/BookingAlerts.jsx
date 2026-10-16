@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BellRing, Video, Building2, MonitorSmartphone, CalendarClock, FileText, FlaskConical, IndianRupee, ScanLine, Camera, KeyRound, CheckCircle2, History, Pill } from 'lucide-react';
 import { api } from '../../api';
-import { Avatar, Button, Modal, TriageBadge, fmtDateTime, fmtMoney, useAction } from '../../components/ui';
+import { Avatar, Button, Modal, TriageBadge, fmtDate, fmtDateTime, fmtMoney, useAction } from '../../components/ui';
 import { OtpInput } from '../../components/OtpFlow';
 import { chime } from '../../components/chime';
 
@@ -61,21 +61,21 @@ export function NewBookingPopup({ home }) {
           <span className="tiny muted">Seen before?</span>
           {c.previousVisits?.length ? (
             <ul className="dr-nb-reports">
-              {c.previousVisits.map((v, i) => <li key={i}><History size={14} /> {new Date(v.date).toLocaleDateString()} · {v.withYou ? <strong>with you</strong> : <span translate="no">{v.doctorName}</span>}{v.diagnosis ? ` — ${v.diagnosis}` : ''}</li>)}
+              {c.previousVisits.map((v, i) => <li key={i}><History size={14} /> {fmtDate(v.date)} · {v.withYou ? <strong>with you</strong> : <span translate="no">{v.doctorName}</span>}{v.diagnosis ? ` — ${v.diagnosis}` : ''}</li>)}
             </ul>
           ) : <p className="small muted mb-0">First visit on Nexus — no previous consultations.</p>}
         </div>
         {c.pastPrescriptions?.length > 0 && (
           <div>
             <span className="tiny muted">Recent prescriptions</span>
-            <ul className="dr-nb-reports">{c.pastPrescriptions.map((r, i) => <li key={i}><Pill size={14} /> {new Date(r.date).toLocaleDateString()} · <span translate="no">{r.doctorName}</span>: {r.items.join(', ')}</li>)}</ul>
+            <ul className="dr-nb-reports">{c.pastPrescriptions.map((r, i) => <li key={i}><Pill size={14} /> {fmtDate(r.date)} · <span translate="no">{r.doctorName}</span>: {r.items.join(', ')}</li>)}</ul>
           </div>
         )}
         <div>
           <span className="tiny muted">Past reports</span>
           {c.pastReports?.length ? (
             <ul className="dr-nb-reports">
-              {c.pastReports.map((r, i) => <li key={i}>{r.kind === 'lab' ? <FlaskConical size={14} /> : <FileText size={14} />} {r.title}{r.flagged && <span className="badge rose tiny">abnormal</span>}{r.date && <span className="tiny muted"> · {new Date(r.date).toLocaleDateString()}</span>}</li>)}
+              {c.pastReports.map((r, i) => <li key={i}>{r.kind === 'lab' ? <FlaskConical size={14} /> : <FileText size={14} />} {r.title}{r.flagged && <span className="badge rose tiny">abnormal</span>}{r.date && <span className="tiny muted"> · {fmtDate(r.date)}</span>}</li>)}
             </ul>
           ) : <p className="small muted mb-0">No past reports uploaded.</p>}
         </div>
@@ -104,7 +104,7 @@ export function CheckInModal({ open, onClose, onCheckedIn }) {
     try {
       const c = await api.post('/visits/check-in', body);
       stop(); setDone(c); onCheckedIn?.(c);
-    } catch (e) { setError(e.message); setCode(''); throw e; }
+    } catch (e) { stop(); setError(e.message); setCode(''); throw e; } // the detect loop has ended, so release the camera and show the scan button again
   });
 
   const scan = async () => {

@@ -3,10 +3,9 @@ import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 're
 import { Home as HomeIcon, HeartPulse, Video, FolderHeart, Pill, ShieldCheck, Users, IdCard, Settings as SettingsIcon, ChevronDown, Check, UserPlus, Activity, Coins, Dna, ScanLine, UserRoundPen, MapPin, Stethoscope, FileUp, FlaskConical, CalendarClock, Repeat } from 'lucide-react';
 import PortalLayout from '../../components/PortalLayout';
 import { Avatar, Button, Modal, cx, useToast } from '../../components/ui';
-import { greeting } from './shared';
 import { session } from '../../api';
 import { useLive } from '../../live';
-import { PatientContext, HOME_TOPICS, PageSkeleton, firstName, relationOf, usePatient } from './shared';
+import { PatientContext, HOME_TOPICS, PageSkeleton, firstName, greeting, relationOf, usePatient } from './shared';
 import Home from './Home';
 import Triage from './Triage';
 import Consult from './Consult';
@@ -205,7 +204,7 @@ function CompleteProfilePrompt() {
         <div className="pt-cp-modal-row"><span><MapPin size={16} /></span><div><strong>Doctors near you</strong><div className="small muted">Share your location or address to see the best doctors close by.</div></div></div>
         <div className="pt-cp-modal-row"><span><Stethoscope size={16} /></span><div><strong>Right specialist for your symptoms</strong><div className="small muted">Tell us how you feel — we match you to the right department.</div></div></div>
         <div className="pt-cp-modal-row"><span><FileUp size={16} /></span><div><strong>All your reports in one place</strong><div className="small muted">Add past reports and your Ayushman / ABHA card for faster, cashless care.</div></div></div>
-        <div className="pt-cp-modal-row"><span><IdCard size={16} /></span><div><strong>Needed to book</strong><div className="small muted">Age, permanent address and Aadhaar (or another government ID). Blood group, medicines and old prescriptions are optional.</div></div></div>
+        <div className="pt-cp-modal-row"><span><IdCard size={16} /></span><div><strong>Needed to book</strong><div className="small muted">Age and permanent address. Aadhaar / ID, blood group, medicines and old prescriptions are optional.</div></div></div>
         <p className="tiny muted mb-0">Your name, email and mobile are already filled in.</p>
       </div>
     </Modal>

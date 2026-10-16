@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Printer, Phone, Droplet, AlertTriangle, HeartPulse, Pill, Smartphone, Pencil, Lock, Copy, WifiOff, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Card, Empty, useToast } from '../../components/ui';
+import { Button, Card, Empty, timeAgo, useToast } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
 import { usePatient, firstName, PassportQR, PageSkeleton } from './shared';
-import { timeAgo } from '../../components/ui';
 
 export default function EmergencyCard() {
   const { patient: p, homeLoading, profiles } = usePatient();
@@ -110,7 +109,7 @@ function Capsule({ patientId }) {
           <PassportQR value={cap.qrPayload} size={150} label="Emergency capsule QR" />
           <div className="pt-capsule-key">
             <span className="tiny muted">Access key</span>
-            <button className="pt-capsule-keyval mono" translate="no" onClick={() => { navigator.clipboard?.writeText(cap.key); toast('Key copied'); }}>
+            <button className="pt-capsule-keyval mono" translate="no" onClick={() => navigator.clipboard?.writeText(cap.key).then(() => toast('Key copied')).catch(() => toast('Couldn’t copy — long-press the key to copy it.', 'error'))}>
               {cap.key} <Copy size={13} />
             </button>
           </div>

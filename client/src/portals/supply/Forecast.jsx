@@ -5,7 +5,8 @@ import { Card, BarChart, fmtNum } from '../../components/ui';
 const short = (d) => d.replace(/ rapid kit| sachet| inhaler| \d+(mg|mcg)/gi, '').trim();
 
 export default function Forecast({ home }) {
-  const rows = home.forecast.map((f) => {
+  // Live networks: null until chemists have sent transfer requests to project from.
+  const rows = (home.forecast || []).map((f) => {
     const inv = home.inventory.find((i) => i.drug === f.drug);
     const usable = inv ? Math.max(inv.qty - inv.safetyStock, 0) : 0;
     return { ...f, stock: inv?.qty ?? 0, usable, gap: f.next14d - usable };
@@ -20,6 +21,7 @@ export default function Forecast({ home }) {
           <table className="table">
             <thead><tr><th>Medicine</th><th>District</th><th className="right">Next 14 days</th><th>Trend</th><th className="right">Spare stock</th><th>Cover</th><th>Why</th></tr></thead>
             <tbody>
+              {rows.length === 0 && <tr><td colSpan={7} className="small muted center">No demand signals yet — the forecast fills in as chemists send transfer requests to your warehouse.</td></tr>}
               {rows.map((r) => (
                 <tr key={r.drug + r.district}>
                   <td><strong className="small" translate="no">{r.drug}</strong></td>
@@ -50,6 +52,7 @@ export default function Forecast({ home }) {
 }
 
 function Trend({ v }) {
+  if (v == null) return <span className="sup-trend flat"><ArrowRight size={15} /> New</span>; // no earlier period to compare
   const up = v > 5;
   const down = v < -5;
   const Icon = down ? TrendingDown : up ? TrendingUp : ArrowRight;

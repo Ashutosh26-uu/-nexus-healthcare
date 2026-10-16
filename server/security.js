@@ -9,7 +9,7 @@ function checkSecrets() {
   const weak = !secret || /change|example|secret-here|your-?secret/i.test(secret) || secret.length < 32 || new Set(secret).size < 10;
   if (weak) {
     if (isProd()) {
-      console.error('FATAL: set a strong JWT_SECRET (24+ random chars) before running in production.');
+      console.error('FATAL: set a strong JWT_SECRET (32+ random chars, e.g. `node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"`) before running in production.');
       process.exit(1);
     }
     console.warn('[security] Using a development JWT secret. Set JWT_SECRET before deploying.');
@@ -25,7 +25,9 @@ function checkSecrets() {
   }
 }
 
-// CORS: same-origin in production unless CORS_ORIGIN lists allowed origins; open in dev.
+// CORS: in production only the origins listed in CORS_ORIGIN (comma-separated) may call the API from a
+// browser; with no list it stays open (auth is a bearer token, never a cookie, so another site cannot
+// ride a user's session). Open in dev.
 function corsOptions() {
   const configured = (process.env.CORS_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean);
   return {

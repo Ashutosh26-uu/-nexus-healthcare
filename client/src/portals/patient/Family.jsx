@@ -5,7 +5,7 @@ import { api } from '../../api';
 import { useAuth } from '../../auth';
 import { Avatar, Button, Card, Empty, Field, Modal, cx, useAction } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
-import { usePatient, firstName, relationOf, BLOOD_GROUPS, PageSkeleton } from './shared';
+import { usePatient, firstName, relationOf, localISO, BLOOD_GROUPS, PageSkeleton } from './shared';
 
 const RELATIONS = ['Son', 'Daughter', 'Mother', 'Father', 'Mother-in-law', 'Father-in-law', 'Spouse', 'Grandparent', 'Sibling', 'Other'];
 const EMPTY = { name: '', dob: '', gender: '', relation: '', bloodGroup: 'Unknown', allergies: '', conditions: '' };
@@ -40,7 +40,7 @@ export default function Family() {
     }, `${firstName(form.name)} has their own health passport now`);
   };
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localISO().slice(0, 10);
 
   return (
     <div className="stack lg">

@@ -129,7 +129,8 @@ export default function Queue() {
             ) : (
               <div className="list">
                 {scheduled.slice(0, 8).map((c) => {
-                  const isToday = (c.scheduledAt || '').slice(0, 10) === new Date().toISOString().slice(0, 10);
+                  // Compare local calendar days — slicing the UTC ISO string mislabels early-morning IST slots.
+                  const isToday = c.scheduledAt && new Date(c.scheduledAt).toDateString() === new Date().toDateString();
                   return (
                     <div key={c.id} className="list-item">
                       <div className="dr-when">
@@ -229,7 +230,7 @@ function ReportsToReview({ home }) {
                 <div><strong className="small" translate="no">{o.patientName}</strong> <span className="tiny muted">· {o.tests.map((t) => t.name).join(', ')} · {o.labName}</span></div>
                 <div className="row" style={{ gap: 6 }}>
                   <button type="button" className="icon-btn" title="Open report" onClick={() => window.open(`/lab-report/${o.id}`, '_blank', 'noopener')}><FileText size={15} /></button>
-                  <Button size="sm" variant={open === o.id ? 'ghost' : 'secondary'} onClick={() => { setOpen(open === o.id ? null : o.id); setText(''); }}>{open === o.id ? 'Close' : 'Add advice'}</Button>
+                  <Button size="sm" variant={open === o.id ? 'ghost' : 'secondary'} onClick={() => { setOpen(open === o.id ? null : o.id); setText(''); setFu(0); }}>{open === o.id ? 'Close' : 'Add advice'}</Button>
                 </div>
               </div>
               <div className="row wrap tiny" style={{ gap: 6, marginTop: 4 }}>

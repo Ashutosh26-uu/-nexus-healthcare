@@ -83,7 +83,8 @@ export function NewOrderPopup({ home, reload }) {
   return (
     <Modal open onClose={close} title={<span className="row" style={{ gap: 8 }}>{o.open ? <Megaphone size={20} /> : <BellRing size={20} className="dr-bell" />} {o.open ? 'Medicine wanted nearby' : 'New medicine order'}</span>}
       subtitle={o.open ? 'A patient near you is asking every chemist within 50 km — the first to accept gets the order.' : `${o.orderNo} · ${o.patientName}`}>
-      <div className="stack">
+      {/* Keyed so accept/decline sub-state never carries over to the next order shown in this pop-up. */}
+      <div className="stack" key={o.id}>
         <OrderBody o={o} />
         <RespondButtons o={o} reload={reload} pharmacy={home.pharmacy} onDone={close} />
       </div>

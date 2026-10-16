@@ -177,6 +177,9 @@
 .ad-partner-tag { font-weight: 700; color: var(--clay); text-transform: uppercase; letter-spacing: .04em; font-size: .68rem; }
 .ad-doc-photo { width: 52px; height: 52px; border-radius: 50%; flex: none; }
 
+/* federated (was borrowing .pt-fed-ring from the patient chunk's CSS, which admin never loads) */
+.ad-fed-ring { width: 64px; height: 64px; border-radius: 50%; background: var(--green-soft); color: var(--green); display: grid; place-items: center; margin: 0 auto 10px; }
+
 .ad-fac-photos { display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap; }
 .ad-fac-photos figure { margin: 0; display: grid; gap: 4px; }
 .ad-fac-photo { width: 140px; height: 96px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line-2); }

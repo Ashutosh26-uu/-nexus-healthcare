@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Stethoscope, Pill, FlaskConical, Upload, Syringe, FolderHeart, ChevronRight, ScanLine, AlertTriangle, Check, FileText, ExternalLink } from 'lucide-react';
-import { api, session } from '../../api';
+import { api } from '../../api';
 import { Button, Card, Empty, Field, Modal, StatusBadge, cx, fmtDate, fmtDateTime, useAction, useToast } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
-import { usePatient, usePatientLive, firstName, Skeleton } from './shared';
+import { usePatient, usePatientLive, firstName, localISO, Skeleton } from './shared';
 import { getLocale } from '../../i18n';
 
 const KINDS = {
@@ -23,7 +23,7 @@ export default function Records() {
   const isSelf = profiles.find((p) => p.id === patient?.id)?.self;
 
   const items = useMemo(() => data?.items || [], [data]);
-  const counts = useMemo(() => items.reduce((acc, it) => ({ ...acc, [it.kind]: (acc[it.kind] || 0) + 1 }), {}), [items]);
+  const counts = useMemo(() => items.reduce((acc, it) => { acc[it.kind] = (acc[it.kind] || 0) + 1; return acc; }, {}), [items]);
   const groups = useMemo(() => {
     const out = [];
     for (const it of items.filter((i) => filter === 'all' || i.kind === filter)) {
@@ -192,45 +192,23 @@ function RecordModal({ item, onClose }) {
   );
 }
 
-const authHeaders = () => {
-  const h = {};
-  if (session.token) h.Authorization = `Bearer ${session.token}`;
-  if (session.profile) h['X-Profile'] = session.profile;
-  return h;
-};
-
 const FILE_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'];
 const MAX_FILE = 10 * 1024 * 1024;
-
-// Stores the file on the server and returns { id, name, mime, size, url }.
-async function uploadFile(file) {
-  const body = new FormData();
-  body.append('file', file);
-  let res;
-  try {
-    res = await fetch('/api/files', { method: 'POST', headers: authHeaders(), body });
-  } catch {
-    throw new Error('Can\'t reach Nexus Healthcare right now. Check your internet connection and try again.');
-  }
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Something went wrong. Please try again.');
-  return data;
-}
+const FILES_PATH = '/api/files/';
 
 // Opens a stored file in a new tab (the file endpoint needs the auth header, so fetch it as a blob).
 function FileLink({ fileId, fileUrl }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   if (!fileId && !fileUrl) return null;
+  // The server always sends fileId with its own /api/files URLs; anything else is a plain link.
+  const id = fileId || (fileUrl.startsWith(FILES_PATH) ? decodeURIComponent(fileUrl.slice(FILES_PATH.length)) : null);
   const open = async () => {
+    if (!id) { window.open(fileUrl, '_blank', 'noopener'); return; }
     const win = window.open('', '_blank');
     setBusy(true);
     try {
-      const url = fileId ? `/api/files/${encodeURIComponent(fileId)}` : fileUrl;
-      const res = await fetch(url, { headers: url.startsWith('/') ? authHeaders() : {} });
-      if (!res.ok) throw new Error('fetch failed');
-      const blob = await res.blob();
-      const objectUrl = URL.createObjectURL(blob);
+      const objectUrl = await api.fileObjectUrl(id);
       if (win) win.location.href = objectUrl; else window.open(objectUrl, '_blank');
       setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
     } catch {
@@ -267,18 +245,20 @@ function ExtractedView({ rec }) {
 }
 
 /* ---------- upload ---------- */
+const emptyUpload = () => ({ title: '', date: localISO().slice(0, 10), text: '', fileName: '' });
+
 function UploadModal({ open, onClose, onDone }) {
-  const [form, setForm] = useState({ title: '', date: new Date().toISOString().slice(0, 10), text: '', fileName: '' });
+  const [form, setForm] = useState(emptyUpload);
   const [file, setFile] = useState(null);
   const [fileErr, setFileErr] = useState('');
   const [saved, setSaved] = useState(null);
   const [run, busy] = useAction();
 
-  const close = () => { setSaved(null); setFile(null); setFileErr(''); setForm({ title: '', date: new Date().toISOString().slice(0, 10), text: '', fileName: '' }); onClose(); };
+  const close = () => { setSaved(null); setFile(null); setFileErr(''); setForm(emptyUpload()); onClose(); };
   const submit = (e) => {
     e.preventDefault();
     run('up', async () => {
-      const stored = file ? await uploadFile(file) : null;
+      const stored = file ? await api.upload(file) : null; // → { id, name, mime, size, url }; sends X-Profile
       const rec = await api.post('/patient/records/upload', { title: form.title || undefined, date: form.date, text: form.text, fileName: form.fileName || undefined, fileId: stored?.id });
       setSaved({ ...rec, fileId: rec.fileId || stored?.id, fileUrl: rec.fileUrl || stored?.url });
       onDone?.();
@@ -291,7 +271,8 @@ function UploadModal({ open, onClose, onDone }) {
       {saved ? <ExtractedView rec={saved} /> : (
         <form className="stack" onSubmit={submit}>
           <label className="pt-drop">
-            <input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" capture="environment" onChange={(e) => {
+            {/* No `capture`: on phones it forces the camera, so a PDF or a photo already in the gallery can't be picked. */}
+            <input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(e) => {
               const f = e.target.files?.[0];
               setFileErr('');
               if (f && !FILE_TYPES.includes(f.type)) { setFileErr('Please choose a PDF, PNG, JPG or WEBP file.'); return; }
@@ -306,7 +287,7 @@ function UploadModal({ open, onClose, onDone }) {
           {fileErr && <div className="callout rose"><AlertTriangle /><span>{fileErr}</span></div>}
           <div className="grid two">
             <Field label="What is it?"><input className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Sugar test, City Lab" /></Field>
-            <Field label="Date on the report"><input className="input" type="date" value={form.date} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field>
+            <Field label="Date on the report"><input className="input" type="date" value={form.date} max={localISO().slice(0, 10)} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field>
           </div>
           <Field label="Paste or type the text from the report" hint="Optional. Even a line like 'HbA1c 7.2, Haemoglobin 11.8' helps us pick out the numbers.">
             <textarea className="textarea" rows={4} value={form.text} onChange={(e) => setForm({ ...form, text: e.target.value })} placeholder="HbA1c: 7.2 %  Fasting glucose: 142 mg/dL" />

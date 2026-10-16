@@ -57,10 +57,10 @@ export function PhoneField({ country, onCountry, value, onChange, autoFocus }) {
         <span className="notranslate" translate="no">{country.flag} {country.dial}</span>
         <ChevronDown size={14} />
       </button>
-      <input className="input" type="tel" inputMode="tel" value={value} onChange={(e) => onChange(e.target.value.replace(/[^\d\s-]/g, '').slice(0, 18))} placeholder={country.iso === 'IN' ? '98765 43210' : 'Mobile number'} autoFocus={autoFocus} required />
+      <input className="input" type="tel" inputMode="tel" aria-label="Mobile number" autoComplete="tel-national" value={value} onChange={(e) => onChange(e.target.value.replace(/[^\d\s-]/g, '').slice(0, 18))} placeholder={country.iso === 'IN' ? '98765 43210' : 'Mobile number'} autoFocus={autoFocus} required />
       {open && (
         <div className="cc-pop">
-          <div className="lang-search"><Search size={15} /><input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search country or code" /></div>
+          <div className="lang-search"><Search size={15} /><input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search country or code" aria-label="Search country or code" /></div>
           <div className="cc-list">
             {list.map((c) => (
               <button type="button" key={c.iso} className={cx('cc-item', c.iso === country.iso && 'on')} onClick={() => { onCountry(c); setOpen(false); setQ(''); try { localStorage.setItem('oc_country', c.iso); } catch { /* ignore */ } }}>
@@ -96,8 +96,10 @@ export default function OtpFlow({ mode = 'login', onDone, initialPhone = '' }) {
   useEffect(() => {
     api.get('/auth/otp/config').then((c) => {
       setConfig(c);
-      // No SMS gateway yet but SMTP is live → email is the channel that actually delivers.
-      if (c.emailLive && !c.live && c.channels?.includes('email')) setChannel('email');
+      const list = c.channels?.length ? c.channels : ['sms'];
+      // The server lists only channels that really deliver. Never stay on one it doesn't offer, and
+      // while SMS isn't live prefer email (older servers still list sms without a gateway).
+      setChannel((cur) => (!c.live && c.emailLive && list.includes('email') ? 'email' : list.includes(cur) ? cur : list[0]));
     }).catch(() => setConfig({ channels: ['sms'], devMode: true }));
   }, []);
   useEffect(() => {
@@ -108,6 +110,8 @@ export default function OtpFlow({ mode = 'login', onDone, initialPhone = '' }) {
 
   const digits = phone.replace(/\D/g, '');
   const canSend = channel === 'email' ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) : digits.length >= 6;
+  const channels = config?.channels?.length ? config.channels : ['sms'];
+  const smsLive = !config || config.live || config.devMode; // devMode prints the code on screen, so SMS "arrives" there
 
   const request = async (e) => {
     e?.preventDefault();
@@ -120,6 +124,8 @@ export default function OtpFlow({ mode = 'login', onDone, initialPhone = '' }) {
       setTimer(r.resendIn || 30);
     } catch (err) {
       setError(err.message);
+      // 503 = no gateway behind this channel; fall back to email so the person can still get a code.
+      if (err.status === 503 && channel !== 'email' && channels.includes('email')) setChannel('email');
     } finally { setBusy(false); }
   };
 
@@ -136,8 +142,6 @@ export default function OtpFlow({ mode = 'login', onDone, initialPhone = '' }) {
     } finally { setBusy(false); }
   };
 
-  const channels = config?.channels || ['sms'];
-
   if (sent) {
     return (
       <form className="stack" onSubmit={verify}>
@@ -151,11 +155,15 @@ export default function OtpFlow({ mode = 'login', onDone, initialPhone = '' }) {
         <Button type="submit" size="lg" block loading={busy} disabled={code.length !== 6}>{sent.exists ? 'Verify & sign in' : 'Verify & continue'}</Button>
         <p className="small muted center mb-0">
           Didn&apos;t get it? {timer > 0 ? <>Resend in {timer}s</> : <button type="button" className="link-btn" onClick={request}>Send a new code</button>}
-          {timer <= 0 && channels.length > 1 && <> · <button type="button" className="link-btn" onClick={() => { setSent(null); setChannel(channel === 'sms' && channels.includes('whatsapp') ? 'whatsapp' : 'sms'); }}>Try another way</button></>}
+          {timer <= 0 && channels.length > 1 && <> · <button type="button" className="link-btn" onClick={() => { setSent(null); setChannel(channels.find((c) => c !== channel) || channel); }}>Try another way</button></>}
         </p>
       </form>
     );
   }
+
+  // Wait for the config before showing a field: on live only email delivers, and swapping the phone
+  // box for an email box a moment after it appeared would be jarring (and lose what was typed).
+  if (!config) return <div className="row" style={{ justifyContent: 'center', padding: 24 }} aria-busy="true"><span className="spinner" /></div>;
 
   return (
     <form className="stack" onSubmit={request}>
@@ -172,17 +180,15 @@ export default function OtpFlow({ mode = 'login', onDone, initialPhone = '' }) {
           <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value.trim())} placeholder="you@example.com" autoFocus required />
         </Field>
       ) : (
-        <Field label="Mobile number" hint={channel === 'whatsapp' ? "We'll send a 6-digit code on WhatsApp." : "We'll text you a 6-digit code. No password needed."}>
+        <Field label="Mobile number" hint={channel === 'whatsapp' ? "We'll send a 6-digit code on WhatsApp." : smsLive ? "We'll text you a 6-digit code. No password needed." : channels.includes('email') ? 'SMS is coming soon — choose Email to get your code.' : 'SMS is coming soon.'}>
           <PhoneField country={country} onCountry={setCountry} value={phone} onChange={setPhone} autoFocus />
         </Field>
       )}
       <Button type="submit" size="lg" block loading={busy} disabled={!canSend}>Send code <ArrowRight /></Button>
-      {config && (
-        <p className="tiny muted center mb-0">
-          <ShieldCheck size={13} style={{ display: 'inline', verticalAlign: '-2px' }} />{' '}
-          {config.live ? 'Codes expire in 5 minutes and work only once.' : 'Demo mode: codes appear on screen until an SMS provider is connected.'}
-        </p>
-      )}
+      <p className="tiny muted center mb-0">
+        <ShieldCheck size={13} style={{ display: 'inline', verticalAlign: '-2px' }} />{' '}
+        {config.live ? 'Codes expire in 5 minutes and work only once.' : config.devMode ? 'Demo mode: codes appear on screen until an SMS provider is connected.' : 'Codes are sent by email for now — SMS is coming soon.'}
+      </p>
     </form>
   );
 }

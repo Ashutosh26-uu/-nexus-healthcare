@@ -23,7 +23,7 @@ export default function BulkOrder({ home }) {
   ]);
 
   const fillGaps = () => {
-    const gaps = home.forecast
+    const gaps = (home.forecast || [])
       .map((f) => {
         const inv = home.inventory.find((i) => i.drug === f.drug);
         const usable = inv ? Math.max(inv.qty - inv.safetyStock, 0) : 0;

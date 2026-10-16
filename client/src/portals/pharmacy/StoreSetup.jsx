@@ -7,7 +7,8 @@ import { Button, Card, Field, Progress, useAction, cx } from '../../components/u
 import { ProtectedImg } from '../../components/Availability';
 import { COUNTRIES } from '../../i18n/countries';
 
-function PhotoBox({ label, hint, fileId, onUploaded, accept = 'image/*', icon: Icon = Upload }) {
+function PhotoBox({ label, hint, fileId, onUploaded, accept = 'image/*', icon }) {
+  const Icon = icon || Upload;
   const input = useRef(null);
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);

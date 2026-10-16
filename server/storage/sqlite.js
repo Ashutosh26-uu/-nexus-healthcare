@@ -1,5 +1,8 @@
 // SQLite adapter using Node's built-in driver (no native build step).
-process.removeAllListeners('warning'); // silence the "SQLite is experimental" notice
+// Silence only the "SQLite is experimental" notice — other warnings (deprecations, leaked listeners) must still show.
+const defaultWarn = process.listeners('warning');
+process.removeAllListeners('warning');
+process.on('warning', (w) => { if (w.name === 'ExperimentalWarning' && /sqlite/i.test(w.message)) return; for (const l of defaultWarn) l.call(process, w); });
 const { DatabaseSync } = require('node:sqlite');
 
 const SAFE = /^[a-zA-Z][a-zA-Z0-9_]*$/;
@@ -82,7 +85,8 @@ module.exports = function sqliteAdapter(file) {
         expires_at=excluded.expires_at, last_sent_at=excluded.last_sent_at, sends_window_start=excluded.sends_window_start,
         sends_in_window=excluded.sends_in_window, provider_ref=excluded.provider_ref`).run({ provider_ref: null, ...row });
     },
-    async otpAttempt(target) { db.prepare('UPDATE otp_codes SET attempts = attempts + 1 WHERE target = ?').run(target); },
+    // Returns the new count, or null when the code is gone.
+    async otpAttempt(target) { const r = db.prepare('UPDATE otp_codes SET attempts = attempts + 1 WHERE target = ? RETURNING attempts').get(target); return r ? Number(r.attempts) : null; },
     async otpDelete(target) { db.prepare('DELETE FROM otp_codes WHERE target = ?').run(target); },
 
     // ----- translations -----

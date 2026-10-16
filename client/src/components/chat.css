@@ -8,12 +8,13 @@
 .chat-fab:hover { transform: translateY(-2px); box-shadow: 0 16px 34px -10px rgba(15, 92, 77, 0.7); }
 .chat-fab svg { width: 23px; height: 23px; }
 .chat-fab.hidden { opacity: 0; transform: scale(0.8); pointer-events: none; }
-.chat-nudge {
-  position: fixed; inset-inline-end: 22px; bottom: 88px; z-index: 89; background: #fff; border: 1px solid var(--line);
-  padding: 11px 14px; border-radius: 16px 16px 4px 16px; box-shadow: var(--shadow); font-size: 0.88rem;
-  display: flex; align-items: center; gap: 10px; cursor: pointer; animation: rise 0.4s var(--ease);
+.chat-nudge { position: fixed; inset-inline-end: 22px; bottom: 88px; z-index: 89; animation: rise 0.4s var(--ease); }
+.chat-nudge-open {
+  display: block; background: #fff; border: 1px solid var(--line); padding-block: 11px; padding-inline: 14px 44px;
+  border-radius: 16px; border-end-end-radius: 4px; box-shadow: var(--shadow); font-size: 0.88rem; cursor: pointer; text-align: start;
 }
-.chat-nudge svg { color: var(--ink-3); }
+.chat-nudge-x { position: absolute; top: 50%; inset-inline-end: 6px; transform: translateY(-50%); width: 32px; height: 32px; border: 0; border-radius: 50%; background: none; color: var(--ink-3); display: grid; place-items: center; cursor: pointer; }
+.chat-nudge-x:hover { background: var(--paper-2); color: var(--ink); }
 
 .chat-panel {
   position: fixed; inset-inline-end: 22px; bottom: 22px; z-index: 95; width: 380px; height: min(620px, calc(100vh - 44px));

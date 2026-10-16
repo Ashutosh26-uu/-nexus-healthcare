@@ -55,9 +55,9 @@ export default function Tracking({ orders, reload, onReport }) {
                   <span className="tiny muted">Ordered by {o.doctorName || 'network doctor'} {timeAgo(o.createdAt)}</span>
                   {o.status === 'processing' ? (
                     <Button variant="clay" icon={Upload} onClick={() => onReport(o)}>Upload report</Button>
-                  ) : (
+                  ) : NEXT[o.status] ? (
                     <Button loading={busy === o.id} onClick={() => advance(o)}>{NEXT[o.status].label} <ChevronRight size={16} /></Button>
-                  )}
+                  ) : null}
                 </div>
               </article>
             );

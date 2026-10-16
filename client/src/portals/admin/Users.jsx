@@ -83,8 +83,8 @@ function CreateUserModal({ open, onClose, facilities, onCreated }) {
           </Field>
         )}
 
-        <Field label="Temporary password" hint="Leave empty to use the demo default (Demo@123).">
-          <input className="input" type="text" value={form.password} onChange={set('password')} autoComplete="new-password" />
+        <Field label="Temporary password" hint="At least 8 characters.">
+          <input className="input" type="text" value={form.password} onChange={set('password')} autoComplete="new-password" required minLength={8} />
         </Field>
         <div className="row" style={{ justifyContent: 'flex-end', gap: 10 }}>
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
@@ -118,7 +118,7 @@ export default function Users() {
     const r = await run(u.id, () => api.put(`/admin/users/${u.id}/status`, { status: next }), next === 'suspended' ? `${u.name} suspended` : `${u.name} reactivated`);
     if (r) { setConfirm(null); live.reload(); }
   };
-  const roleCounts = users.reduce((m, u) => ({ ...m, [u.role]: (m[u.role] || 0) + 1 }), {});
+  const roleCounts = useMemo(() => { const m = {}; for (const u of users) m[u.role] = (m[u.role] || 0) + 1; return m; }, [users]);
 
   return (
     <LiveGate live={live}>

@@ -326,7 +326,6 @@
 .pt-cp-modal { display: grid; gap: 12px; }
 .pt-cp-modal-row { display: flex; gap: 12px; align-items: flex-start; }
 .pt-cp-modal-row > span { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--green-soft); color: var(--green); flex: none; }
-.pt-readonly { display: flex; align-items: center; gap: 8px; background: var(--paper-2); color: var(--ink-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .dr-nb-flags { display: flex; flex-wrap: wrap; gap: 6px; }
 /* Phones: swipe to scroll the week, tap a cell to toggle it. */
 @media (max-width: 760px) {

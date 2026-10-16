@@ -14,8 +14,12 @@ export default function Wallet() {
   const [error, setError] = useState('');
   const [voucher, setVoucher] = useState(null);
 
-  const load = () => api.get('/patient/wallet').then(setData).catch((e) => setError(e.message));
-  useEffect(() => { setData(null); setError(''); load(); /* eslint-disable-next-line */ }, [profileKey]);
+  useEffect(() => {
+    let alive = true;
+    setData(null); setError('');
+    api.get('/patient/wallet').then((d) => alive && setData(d)).catch((e) => alive && setError(e.message));
+    return () => { alive = false; };
+  }, [profileKey]);
 
   if (error) return <Empty title="Couldn't load your Data Wallet">{error}</Empty>;
   if (!data) return <PageSkeleton />;

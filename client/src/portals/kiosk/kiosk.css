@@ -128,7 +128,7 @@
 @media (max-width: 860px) { .k-welcome-hero { grid-template-columns: 1fr; } .k-welcome-side { display: none; } }
 
 /* ---------- identify ---------- */
-.k-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 6px; background: var(--k-soft); border-radius: 22px; }
+.k-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 10px; padding: 6px; background: var(--k-soft); border-radius: 22px; }
 .k-tab { min-height: 64px; display: flex; align-items: center; justify-content: center; gap: 10px; border: 0; background: transparent; border-radius: 17px; font: inherit; font-weight: 700; font-size: 1.05rem; color: var(--ink-3); cursor: pointer; transition: background 0.2s, color 0.2s, box-shadow 0.2s; }
 .k-tab svg { width: 24px; height: 24px; }
 .k-tab.on { background: var(--k-surface); color: var(--ink); box-shadow: 0 4px 14px -8px rgba(0, 0, 0, 0.25); }

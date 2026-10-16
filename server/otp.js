@@ -31,13 +31,16 @@ function configured() {
   };
 }
 
+let warnedProvider = '';
 function smsProvider() {
   const want = env('OTP_PROVIDER') || 'auto';
   const c = configured();
   if (want !== 'auto') {
     if (want === 'console') return 'console';
-    if (!c[want]) throw new Error(`OTP_PROVIDER=${want} but its credentials are missing in .env`);
-    return want;
+    if (c[want]) return want;
+    // A typo in OTP_PROVIDER must not take the whole site down — SMS is simply off (users are offered email).
+    if (warnedProvider !== want) { warnedProvider = want; console.error(`[otp] OTP_PROVIDER=${want} but its credentials are missing — SMS codes are OFF until this is fixed.`); }
+    return 'console';
   }
   if (c.twilio_verify) return 'twilio_verify';
   if (c.twilio) return 'twilio';
@@ -50,6 +53,14 @@ function devMode() {
   if (env('OTP_DEV_MODE')) return env('OTP_DEV_MODE') === 'true';
   return smsProvider() === 'console' && process.env.NODE_ENV !== 'production';
 }
+// The console "provider" only prints the code in the server log — that is a real channel in dev mode
+// (the code is shown on screen) and no channel at all otherwise.
+const smsOn = (sms = smsProvider()) => sms !== 'console' || devMode();
+// WhatsApp needs Twilio Verify, or Twilio Messaging with a WhatsApp-enabled sender.
+const whatsappOn = (sms = smsProvider()) => (sms === 'twilio_verify' ? true : sms === 'twilio' ? Boolean(env('TWILIO_WHATSAPP_FROM') || env('TWILIO_FROM')) : sms === 'console' && devMode());
+// Locales Twilio Verify renders its own message in; anything else must fall back to English, not fail the send.
+const VERIFY_LOCALES = new Set(['af', 'ar', 'ca', 'cs', 'da', 'de', 'el', 'en', 'es', 'fi', 'fr', 'he', 'hi', 'hu', 'id', 'it', 'ja', 'ko', 'ms', 'nb', 'nl', 'pl', 'pt', 'ro', 'ru', 'sv', 'th', 'tl', 'tr', 'vi', 'zh']);
+const verifyLocale = (lang) => { const l = String(lang || 'en').toLowerCase().split('-')[0]; return VERIFY_LOCALES.has(l) ? l : 'en'; };
 
 /* ---------- phone numbers ---------- */
 // Accepts "+44 7700 900123", "0091-98765 00001", or a national number plus a country dial code.
@@ -61,7 +72,9 @@ function normalizePhone(input, dialCode = '+91') {
   if (!digits.startsWith('+')) {
     const dc = String(dialCode || '+91').replace(/[^\d]/g, '');
     digits = digits.replace(/^0+/, '');
-    if (digits.startsWith(dc) && digits.length > dc.length + 6) digits = `+${digits}`;
+    // "919876543210" is +91 already written out — but Indian mobiles are exactly 10 digits and some start
+    // with 91 (e.g. 9198765432), so a 10-digit number under +91 is national, never "+91" + 8 digits.
+    if (digits.startsWith(dc) && digits.length > dc.length + 6 && !(dc === '91' && digits.length === 10)) digits = `+${digits}`;
     else digits = `+${dc}${digits}`;
   }
   const only = digits.slice(1).replace(/\D/g, '');
@@ -92,6 +105,7 @@ const messageFor = (code, lang, purpose = 'login') => (purpose === 'consent'
 // Codes are stored per purpose, so a code sent for one thing (e.g. a patient approving a doctor) can
 // never be redeemed for another (e.g. signing in as that patient).
 const PURPOSES = new Set(['login', 'consent']);
+const DEMO_EMAIL = /@([a-z0-9-]+\.)*(omnicare|nexushealthcare)\.in$/i;
 const keyFor = (purpose, target) => (purpose === 'login' ? target : `${purpose}|${target}`);
 
 /* ---------- providers ---------- */
@@ -131,7 +145,7 @@ async function sendViaProvider(provider, { target, channel, code, lang, purpose 
     return { ref: info.messageId, previewUrl: realSmtp ? null : nodemailer.getTestMessageUrl(info) };
   }
   if (provider === 'twilio_verify') {
-    const r = await twilioRequest(`https://verify.twilio.com/v2/Services/${env('TWILIO_VERIFY_SERVICE_SID')}/Verifications`, { To: target, Channel: channel === 'whatsapp' ? 'whatsapp' : 'sms', Locale: (lang || 'en').split('-')[0] });
+    const r = await twilioRequest(`https://verify.twilio.com/v2/Services/${env('TWILIO_VERIFY_SERVICE_SID')}/Verifications`, { To: target, Channel: channel === 'whatsapp' ? 'whatsapp' : 'sms', Locale: verifyLocale(lang) });
     return { ref: r.sid };
   }
   if (provider === 'twilio') {
@@ -158,15 +172,18 @@ async function sendViaProvider(provider, { target, channel, code, lang, purpose 
 }
 
 /* ---------- rate limiting by IP ---------- */
+const IP_WINDOW = 10 * 60000;
 const ipHits = new Map();
 function ipAllowed(ip) {
   const now = Date.now();
-  const list = (ipHits.get(ip) || []).filter((t) => now - t < 10 * 60000);
+  const list = (ipHits.get(ip) || []).filter((t) => now - t < IP_WINDOW);
   if (list.length >= 20) return false;
   list.push(now);
   ipHits.set(ip, list);
   return true;
 }
+// Forget addresses that fell silent, or the map grows with every IP that ever asked for a code.
+setInterval(() => { const cutoff = Date.now() - IP_WINDOW; for (const [ip, list] of ipHits) if (!list.some((t) => t > cutoff)) ipHits.delete(ip); }, IP_WINDOW).unref?.();
 
 const hash = (target, code) => crypto.createHash('sha256').update(`${SECRET}|${target}|${code}`).digest('hex');
 
@@ -185,10 +202,16 @@ async function sendCode({ phone, dialCode, email, channel = 'sms', lang, ip, pur
     if (!configured().email && !devMode()) throw new OtpError('Email codes aren\'t set up on this server yet. Please use your mobile number.');
     target = String(email || '').trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target)) throw new OtpError('Please enter a valid email address.');
+    // Demo / placeholder addresses (demo accounts, phone-only patients' "…@patient.omnicare.in") are not inboxes
+    // we control — a real mail server must never send sign-in codes there.
+    if (configured().email && DEMO_EMAIL.test(target)) throw new OtpError('That address can\'t receive email. Please use your own email address or your mobile number.');
   } else {
+    // Without a gateway the code would only be printed in the server log and the user would wait for a
+    // text that never comes. Refuse before anything is counted or stored.
+    if (!smsOn()) throw new OtpError('Text-message codes aren\'t switched on yet — please use your email address instead.', 503);
+    if (channel === 'whatsapp' && !whatsappOn()) throw new OtpError('WhatsApp codes aren\'t available here yet. Please choose SMS or email.');
     target = normalizePhone(phone, dialCode);
     if (!target) throw new OtpError('Please enter a valid mobile number, including the country code.');
-    if (channel === 'whatsapp' && !['twilio_verify', 'twilio', 'console'].includes(smsProvider())) throw new OtpError('WhatsApp codes need Twilio. Please choose SMS.');
   }
   if (ip && !ipAllowed(ip)) throw new OtpError('Too many requests from your network. Please wait a few minutes.', 429);
 
@@ -234,16 +257,22 @@ async function sendCode({ phone, dialCode, email, channel = 'sms', lang, ip, pur
   };
 }
 
-async function verifyCode({ target: plainTarget, code, purpose = 'login' }) {
+async function verifyCode({ target: given, code, purpose = 'login' }) {
   const adapter = store.adapter();
   if (!PURPOSES.has(purpose)) throw new OtpError('Invalid code purpose.');
-  const target = plainTarget ? keyFor(purpose, String(plainTarget)) : null;
+  // Codes were stored under the normalised destination (lower-case email / E.164 phone) — look them up the
+  // same way, so "9876500002" and "+91 98765 00002" both find the code, and Twilio Verify always gets E.164.
+  const raw = String(given || '').trim();
+  const plainTarget = !raw ? '' : raw.includes('@') ? raw.toLowerCase() : (normalizePhone(raw) || raw);
+  const target = plainTarget ? keyFor(purpose, plainTarget) : null;
   const row = target ? await adapter.otpGet(target) : null;
   const clean = String(code || '').replace(/\D/g, '');
   if (!row) throw new OtpError('Please request a new code.');
   if (Date.now() > Number(row.expires_at)) { await adapter.otpDelete(target); throw new OtpError('This code has expired. Please request a new one.'); }
-  if (Number(row.attempts) >= MAX_ATTEMPTS) { await adapter.otpDelete(target); throw new OtpError('Too many wrong attempts. Please request a new code.', 429); }
-  await adapter.otpAttempt(target);
+  // Count the attempt atomically in the database and judge by the value it returns: a check on `row.attempts`
+  // alone let many parallel guesses all read the same count before any increment landed.
+  const used = Number(await adapter.otpAttempt(target) ?? Number(row.attempts) + 1);
+  if (Number(row.attempts) >= MAX_ATTEMPTS || used > MAX_ATTEMPTS) { await adapter.otpDelete(target); throw new OtpError('Too many wrong attempts. Please request a new code.', 429); }
 
   let ok = false;
   if (row.provider === 'twilio_verify') {
@@ -257,22 +286,25 @@ async function verifyCode({ target: plainTarget, code, purpose = 'login' }) {
     ok = a.length === b.length && crypto.timingSafeEqual(a, b);
   }
   if (!ok) {
-    const left = MAX_ATTEMPTS - Number(row.attempts) - 1;
+    const left = MAX_ATTEMPTS - used;
     throw new OtpError(left > 0 ? `That code isn't right. ${left} attempt${left === 1 ? '' : 's'} left.` : 'Too many wrong attempts. Please request a new code.');
   }
   await adapter.otpDelete(target);
-  return { target: String(plainTarget), channel: row.channel };
+  return { target: plainTarget, channel: row.channel };
 }
 
 function publicConfig() {
   const c = configured();
   const sms = smsProvider();
+  const dev = devMode();
   return {
-    channels: ['sms', ...(['twilio_verify', 'twilio', 'console'].includes(sms) ? ['whatsapp'] : []), ...(c.email || devMode() ? ['email'] : [])],
+    // Only channels that can actually deliver: SMS/WhatsApp need a gateway (or dev mode, where the code is shown on screen).
+    channels: [...(smsOn(sms) ? ['sms'] : []), ...(whatsappOn(sms) ? ['whatsapp'] : []), ...(c.email || dev ? ['email'] : [])],
     provider: sms,
     live: sms !== 'console',
     emailLive: c.email,
-    devMode: devMode(),
+    devMode: dev,
+    ...(smsOn(sms) ? {} : { smsReason: 'no_gateway' }),
     codeLength: 6,
     ttlSeconds: Math.round(TTL / 1000),
     resendSeconds: Math.round(COOLDOWN / 1000),

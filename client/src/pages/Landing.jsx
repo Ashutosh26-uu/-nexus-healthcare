@@ -33,16 +33,18 @@ const PORTALS = [
 export default function Landing() {
   const { user } = useAuth();
   const config = usePublicConfig();
-  const [stats, setStats] = useState(null);
+  const [stats, setStats] = useState(null); // null = loading, false = failed (row hidden)
   const [faq, setFaq] = useState(0);
   const [menu, setMenu] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
-    fetch('/api/public/stats').then((r) => r.json()).then(setStats).catch(() => {});
+    let alive = true;
+    // Real numbers only — an error page must not render as "0 doctors".
+    fetch('/api/public/stats').then((r) => (r.ok ? r.json() : Promise.reject())).then((s) => alive && setStats(s)).catch(() => alive && setStats(false));
     const onScroll = () => setScrolled(window.scrollY > 12);
     window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    return () => { alive = false; window.removeEventListener('scroll', onScroll); };
   }, []);
 
   const home = user ? ROLE_HOME[user.role] : null;
@@ -138,14 +140,16 @@ export default function Landing() {
           </div>
         </div>
 
-        <div className="l-container">
-          <div className="l-stats">
-            <div><strong>{stats ? fmtNum(stats.passports) : '48,000+'}</strong><span>Health Passports</span></div>
-            <div><strong>{stats ? fmtNum(stats.doctorsOnline) : '1,300+'}</strong><span>doctors online now</span></div>
-            <div><strong>{stats ? stats.kiosks : 45}</strong><span>E-Clinics</span></div>
-            <div><strong>{stats ? stats.states : 8}</strong><span>states connected</span></div>
+        {stats !== false && (
+          <div className="l-container">
+            <div className="l-stats" aria-busy={!stats}>
+              <div><strong>{stats ? fmtNum(stats.passports) : '—'}</strong><span>Health Passports</span></div>
+              <div><strong>{stats ? fmtNum(stats.doctorsOnline) : '—'}</strong><span>doctors online now</span></div>
+              <div><strong>{stats ? fmtNum(stats.kiosks) : '—'}</strong><span>E-Clinics</span></div>
+              <div><strong>{stats ? fmtNum(stats.states) : '—'}</strong><span>states connected</span></div>
+            </div>
           </div>
-        </div>
+        )}
       </section>
 
       {/* ---------- story / how it works ---------- */}

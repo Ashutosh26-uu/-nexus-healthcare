@@ -4,7 +4,7 @@ import { ArrowLeft, Mic, MicOff, Video, VideoOff, PhoneOff, Send, Languages, Spa
 import { api } from '../../api';
 import { useLive } from '../../live';
 import { useAuth } from '../../auth';
-import { Avatar, Button, Card, Empty, Loading, Tabs, TriageBadge, TRIAGE, StatusBadge, Sparkline, timeAgo, fmtTime, useAction, cx } from '../../components/ui';
+import { Avatar, Button, Card, Empty, Loading, Tabs, TriageBadge, TRIAGE, StatusBadge, Sparkline, timeAgo, fmtTime, fmtDateTime, useAction, cx } from '../../components/ui';
 import { VitalsChips, VITAL_META, useLiveVitals, useNow, routeInfo } from './shared';
 import { useRecord, AccessGate, EmergencyBanner, CriticalCard, HistoryPanel, VisitsPanel, LabsPanel, AllergyList } from './Record';
 import RxComposer from './RxComposer';
@@ -16,13 +16,18 @@ function CallTimer({ since }) {
   return <span>{String(Math.floor(s / 60)).padStart(2, '0')}:{String(s % 60).padStart(2, '0')}</span>;
 }
 
+// A booking opened from the "new patient" pop-up or Earnings is still `scheduled` — the server lets it start too.
+const canStart = (c) => c.status === 'queued' || c.status === 'scheduled';
+
 function VideoStage({ consult, doctorName, live, onStart, starting }) {
   const [mic, setMic] = useState(true);
   const [cam, setCam] = useState(true);
   const [ended, setEnded] = useState(false);
+  const stage = useRef(null);
   const from = consult.kioskName ? `connected from ${consult.kioskName.replace('E-Clinic · ', 'E-Clinic ')}` : consult.mode === 'chat' ? 'chat consult from the Nexus Healthcare app' : 'joining from the Nexus Healthcare app';
+  const fullscreen = () => { const el = stage.current; if (!el) return; if (document.fullscreenElement) document.exitFullscreen?.(); else el.requestFullscreen?.(); };
   return (
-    <div className={cx('dr-stage', !live && 'idle', ended && 'ended')}>
+    <div ref={stage} className={cx('dr-stage', !live && 'idle', ended && 'ended')}>
       <div className="dr-stage-top">
         <span className="dr-live-pill">{live && !ended ? <><span className="dr-rec" />LIVE · <CallTimer since={consult.startedAt} /></> : ended ? 'Call ended' : 'Not started'}</span>
         <span className="dr-net"><Signal size={14} />{consult.kioskName ? 'HD · 2.1 Mbps' : 'Good connection'}</span>
@@ -34,7 +39,7 @@ function VideoStage({ consult, doctorName, live, onStart, starting }) {
         </div>
         <div className="dr-stage-name" translate="no">{consult.patientName}</div>
         <div className="dr-stage-sub">{from}</div>
-        {!live && consult.status === 'queued' && (
+        {!live && canStart(consult) && (
           <Button variant="clay" icon={Play} loading={starting} onClick={onStart} className="mt-2">Start consult</Button>
         )}
         {ended && <div className="dr-stage-sub mt-1">Finish the prescription below to close the visit.</div>}
@@ -46,7 +51,7 @@ function VideoStage({ consult, doctorName, live, onStart, starting }) {
       <div className="dr-controls">
         <button className={cx('dr-ctl', !mic && 'off')} onClick={() => setMic((v) => !v)} aria-label={mic ? 'Mute' : 'Unmute'}>{mic ? <Mic /> : <MicOff />}</button>
         <button className={cx('dr-ctl', !cam && 'off')} onClick={() => setCam((v) => !v)} aria-label={cam ? 'Turn camera off' : 'Turn camera on'}>{cam ? <Video /> : <VideoOff />}</button>
-        <button className="dr-ctl" aria-label="Full screen"><Maximize2 /></button>
+        <button className="dr-ctl" onClick={fullscreen} aria-label="Full screen"><Maximize2 /></button>
         <button className="dr-ctl end" disabled={!live || ended} onClick={() => setEnded(true)} aria-label="End call"><PhoneOff /></button>
       </div>
     </div>
@@ -62,10 +67,10 @@ function InPersonStage({ consult, live, onStart, starting }) {
       <div className="grow">
         <span className="eyebrow">{where.kind === 'eclinic' ? 'Nexus E-Clinic visit' : 'In-person visit'}</span>
         <h3 className="mb-0" translate="no">{consult.patientName}</h3>
-        <p className="small muted mb-0">{where.name}{consult.scheduledAt ? ` · booked for ${new Date(consult.scheduledAt).toLocaleString()}` : ''}</p>
+        <p className="small muted mb-0">{where.name}{consult.scheduledAt ? ` · booked for ${fmtDateTime(consult.scheduledAt)}` : ''}</p>
         <p className="small mb-0">{consult.checkedInAt ? `Checked in ${timeAgo(consult.checkedInAt)} with their live QR pass.` : 'Not checked in yet — scan their QR from “Check in patient” on your queue.'}</p>
       </div>
-      {!live && consult.status === 'queued' && <Button variant="clay" icon={Play} loading={starting} onClick={onStart}>Start visit</Button>}
+      {!live && canStart(consult) && <Button variant="clay" icon={Play} loading={starting} onClick={onStart}>Start visit</Button>}
       {live && <span className="badge green">With you now</span>}
     </div>
   );

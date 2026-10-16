@@ -28,7 +28,7 @@ function localNow(now = new Date(), tz = TZ) {
   return { day: parts.weekday, dayIdx: DAYS.indexOf(parts.weekday), hour: Number(parts.hour), minute: Number(parts.minute) };
 }
 
-const hourLabel = (h) => `${((h + 11) % 12) + 1}${h < 12 ? ' AM' : ' PM'}`;
+const hourLabel = (h) => `${((h + 11) % 12) + 1}${h % 24 < 12 ? ' AM' : ' PM'}`; // 24 (end of an 11 PM block) is midnight, "12 AM"
 
 const isEClinicDoctor = (doc) => doc?.engagement === 'eclinic_partner';
 const slotsOf = (doc) => (doc.slots && typeof doc.slots === 'object' && !Array.isArray(doc.slots) ? doc.slots : defaultSlots());

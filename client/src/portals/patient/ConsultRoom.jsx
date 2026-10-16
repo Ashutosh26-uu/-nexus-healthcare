@@ -37,21 +37,28 @@ function InPersonVisit({ c }) {
 }
 
 // Booked but not paid yet — finish payment to confirm.
-function AwaitingPayment({ c }) {
+function AwaitingPayment({ c, onPaid }) {
   const [pay, setPay] = useState(null);
-  useEffect(() => { if (c.paymentId) api.get(`/payments/${c.paymentId}`).then(setPay).catch(() => {}); }, [c.paymentId]);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (!c.paymentId) return undefined;
+    let alive = true;
+    api.get(`/payments/${c.paymentId}`).then((p) => alive && setPay(p)).catch((e) => alive && setError(e.message));
+    return () => { alive = false; };
+  }, [c.paymentId]);
   return (
     <Card>
       <h3 className="mb-1">Complete payment to confirm your booking</h3>
       <p className="small muted">With <span translate="no">{c.doctorName}</span>{c.scheduledAt ? ` · ${fmtDateTime(c.scheduledAt)}` : ''}. The doctor is notified as soon as it's paid.</p>
-      {pay ? <PaymentStep payment={pay} onPaid={() => window.location.reload()} /> : <div className="skeleton" style={{ height: 120, borderRadius: 12 }} />}
+      {pay ? <PaymentStep payment={pay} onPaid={onPaid} /> : error ? <div className="form-error">{error}</div> : <div className="skeleton" style={{ height: 120, borderRadius: 12 }} />}
     </Card>
   );
 }
 
 export default function ConsultRoom() {
   const { id } = useParams();
-  const { data: c, error, loading, setData } = useLive(`/consults/${id}`, [`consult:${id}`, 'consults', 'queue']);
+  const { data: c, error, loading, setData, reload } = useLive(`/consults/${id}`, [`consult:${id}`, 'consults', 'queue']);
+  const { reloadHome } = usePatient();
   const navigate = useNavigate();
 
   if (loading && !c) return <PageSkeleton />;
@@ -64,7 +71,8 @@ export default function ConsultRoom() {
         <div className="grow" />
         <StatusBadge status={c.status}>{statusText(c.status)}</StatusBadge>
       </div>
-      {c.status === 'awaiting_payment' && <AwaitingPayment c={c} />}
+      {/* Refetch in place instead of window.location.reload(): no white flash, keeps the SSE connection. */}
+      {c.status === 'awaiting_payment' && <AwaitingPayment c={c} onPaid={() => { reload(); reloadHome(); }} />}
       {c.mode === 'in_person' && ['scheduled', 'queued', 'in_progress'].includes(c.status) && <InPersonVisit c={c} />}
       {c.mode !== 'in_person' && c.status === 'queued' && <Waiting c={c} setData={setData} />}
       {c.mode !== 'in_person' && c.status === 'scheduled' && <Scheduled c={c} />}
@@ -288,8 +296,14 @@ function ChatPanel({ c, setData, title, hint, tall }) {
 /* ---------- summary ---------- */
 function Summary({ c }) {
   const navigate = useNavigate();
-  const toast = useToast();
-  const [rating, setRating] = useState(0);
+  const [run, busy] = useAction();
+  // The server keeps one review per visit (c.review); the local copy makes the stars light up at once.
+  const [rating, setRating] = useState(c.review?.stars || 0);
+  const rated = !!c.review || rating > 0;
+  const rate = (n) => run('rate', async () => {
+    await api.post(`/consults/${c.id}/review`, { stars: n });
+    setRating(n);
+  }, n >= 4 ? 'Thank you! We’ll pass this on to the doctor.' : 'Thanks for telling us — we’ll look into it.');
   const rx = c.prescription;
   return (
     <div className="grid side">
@@ -341,11 +355,11 @@ function Summary({ c }) {
 
       <div className="stack lg">
         <Card title="How did it go?">
-          <p className="small muted">Your feedback helps us match you with the right doctor next time.</p>
+          <p className="small muted">{rated ? 'Thanks for rating this visit.' : 'Your feedback helps us match you with the right doctor next time.'}</p>
           <div className="pt-stars" role="radiogroup" aria-label="Rate your consult">
             {[1, 2, 3, 4, 5].map((n) => (
               <button key={n} role="radio" aria-checked={rating === n} aria-label={`${n} star${n > 1 ? 's' : ''}`} className={cx('pt-star', n <= rating && 'on')}
-                onClick={() => { setRating(n); toast(n >= 4 ? 'Thank you! We’ll pass this on to the doctor.' : 'Thanks for telling us — we’ll look into it.'); }}>
+                disabled={rated || busy === 'rate'} onClick={() => rate(n)}>
                 <Star size={26} />
               </button>
             ))}

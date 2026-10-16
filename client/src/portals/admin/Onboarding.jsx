@@ -162,7 +162,7 @@ function FacilityCard({ f, rejected, onApprove, onReject, busy }) {
           {(f.storePhotoFileId || f.licenceFileId) && (
             <div className="ad-fac-photos">
               {f.storePhotoFileId && <figure><ProtectedImg fileId={f.storePhotoFileId} alt="Store" className="ad-fac-photo" /><figcaption className="tiny muted">Store</figcaption></figure>}
-              {f.licenceFileId && <figure><button type="button" className="ad-fac-file" onClick={() => { const w = window.open('', '_blank'); api.fileObjectUrl(f.licenceFileId).then((u) => { if (w) w.location.href = u; setTimeout(() => URL.revokeObjectURL(u), 60000); }).catch(() => w?.close()); }}><ProtectedImg fileId={f.licenceFileId} alt="Licence" className="ad-fac-photo" /></button><figcaption className="tiny muted">Drug licence (tap to open)</figcaption></figure>}
+              {f.licenceFileId && <figure><button type="button" className="ad-fac-file" onClick={() => openFile(f.licenceFileId)}><ProtectedImg fileId={f.licenceFileId} alt="Licence" className="ad-fac-photo" /></button><figcaption className="tiny muted">Drug licence (tap to open)</figcaption></figure>}
             </div>
           )}
           {f.selfApplied && <div className="ad-partner tiny"><span className="ad-partner-tag">Self-applied partner</span>{f.applicationRef && <span className="mono">{f.applicationRef}</span>}{f.services?.length > 0 && <span>Services: {f.services.join(', ')}</span>}</div>}

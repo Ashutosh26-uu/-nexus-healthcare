@@ -40,9 +40,14 @@ export const api = {
   upload: async (file) => {
     const body = new FormData();
     body.append('file', file);
+    // Same auth + active-profile headers as the JSON calls: the server owns the file by X-Profile, so a
+    // caregiver's upload for a family member must land on that member's record, not the caregiver's.
+    const headers = {};
+    if (session.token) headers.Authorization = `Bearer ${session.token}`;
+    if (session.profile) headers['X-Profile'] = session.profile;
     let res;
     try {
-      res = await fetch('/api/files', { method: 'POST', headers: session.token ? { Authorization: `Bearer ${session.token}` } : {}, body });
+      res = await fetch('/api/files', { method: 'POST', headers, body });
     } catch {
       throw new Error('Can\'t reach Nexus Healthcare right now. Check your internet connection and try again.');
     }
@@ -59,31 +64,61 @@ export const api = {
 };
 
 // Server-sent events: one shared connection, many listeners.
+// EventSource can't send headers, so the long-lived token never goes in the URL (server logs, proxies,
+// history): we trade the auth header for a single-use ticket (valid ~60 s) and open the stream with that.
 const listeners = new Set();
 let source = null;
 let retry = null;
 let dropped = false;
+let fails = 0;
+let gen = 0; // bumped on disconnect, so a ticket request still in flight can't reopen the stream
+let opening = -1; // gen of the ticket request in flight
 
-function connect() {
-  if (source || !session.token) return;
-  source = new EventSource(`/api/events?token=${encodeURIComponent(session.token)}`);
+function retryLater() {
+  dropped = true;
+  fails += 1;
+  // Several failures in a row may mean the session itself died (password changed elsewhere, account
+  // suspended): request() turns a 401 into the usual sign-out; anything else just means keep trying.
+  if (fails === 3) api.get('/auth/me').catch(() => {});
+  clearTimeout(retry);
+  retry = setTimeout(connect, Math.min(30000, 3000 * 2 ** (fails - 1))); // 3, 6, 12, 24, 30 s…
+}
+
+async function connect() {
+  if (source || opening === gen || !session.token || !listeners.size) return;
+  const my = gen;
+  opening = my;
+  let ticket;
+  try {
+    ({ ticket } = await request('POST', '/events/ticket', {}));
+  } catch {
+    if (my === gen) retryLater();
+    return;
+  } finally {
+    if (opening === my) opening = -1;
+  }
+  if (my !== gen || source || !session.token) return;
+  const es = new EventSource(`/api/events?ticket=${encodeURIComponent(ticket)}`);
+  source = es;
   // Events sent while we were disconnected are lost, so after a reconnect every screen refetches.
-  source.onopen = () => {
+  es.onopen = () => {
+    if (source !== es) return;
     if (dropped) listeners.forEach((fn) => fn(['all']));
     dropped = false;
+    fails = 0;
   };
-  source.onmessage = (e) => {
+  es.onmessage = (e) => {
     try {
       const { topics } = JSON.parse(e.data);
       listeners.forEach((fn) => fn(topics));
     } catch { /* ignore */ }
   };
-  source.onerror = () => {
-    dropped = true;
-    source?.close();
+  // The ticket is single-use, so the browser's own auto-reconnect would be refused: close and start over.
+  es.onerror = () => {
+    es.close();
+    if (source !== es) return;
     source = null;
-    clearTimeout(retry);
-    retry = setTimeout(connect, 3000);
+    retryLater();
   };
 }
 
@@ -94,9 +129,11 @@ export function subscribe(fn) {
 }
 
 export function disconnectLive() {
+  gen += 1;
   source?.close();
   source = null;
   dropped = false;
+  fails = 0;
   clearTimeout(retry);
 }
 

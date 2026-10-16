@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw, PlugZap } from 'lucide-react';
 import { timeAgo, useToast, cx } from '../../components/ui';
 
@@ -25,10 +25,11 @@ export function useHmis() {
   const toast = useToast();
   const [lastSync, setLastSync] = useState(() => new Date(Date.now() - 2 * 60000).toISOString());
   const [syncing, setSyncing] = useState(false);
-  useTick(30000);
+  const timer = useRef(null);
+  useEffect(() => () => clearTimeout(timer.current), []);
   const syncNow = useCallback(() => {
     setSyncing(true);
-    setTimeout(() => {
+    timer.current = setTimeout(() => {
       setSyncing(false);
       setLastSync(new Date().toISOString());
       toast('HMIS sync done — bed counts and duty roster match eHospital');
@@ -38,6 +39,7 @@ export function useHmis() {
 }
 
 export function HmisChip({ hmis, compact }) {
+  useTick(30000); // only the chip shows "x min ago" — ticking here keeps the whole portal from re-rendering every 30 s
   return (
     <div className={cx('hmis-chip', compact && 'compact')}>
       <span className={cx('dot', hmis.syncing ? 'sun' : 'green', !hmis.syncing && 'pulse')} />

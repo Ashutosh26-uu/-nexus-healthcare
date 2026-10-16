@@ -4,7 +4,7 @@ import { Download, ArrowLeft, Printer } from 'lucide-react';
 import { api } from '../api';
 import { Loading, fmtDate, fmtDateTime } from '../components/ui';
 import { LogoMark } from '../components/Logo';
-import { PassportQR } from '../portals/patient/shared';
+import QR from '../components/QR';
 import './rxprint.css';
 
 // A clean A4 prescription. "Download PDF" uses the browser's Save-as-PDF, which renders every
@@ -16,10 +16,12 @@ export default function RxPrint() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    const title = document.title;
     api.get(`/prescriptions/${encodeURIComponent(id)}`).then((r) => {
       setRx(r);
       document.title = `Prescription ${r.id} · ${r.patient?.name || ''}`;
     }).catch((e) => setError(e.message));
+    return () => { document.title = title; }; // don't leave the patient's name in the tab after "Back"
   }, [id]);
 
   if (error) return <div className="rxp-wrap"><div className="rxp-error">{error}</div></div>;
@@ -71,7 +73,7 @@ export default function RxPrint() {
         <table className="rxp-table">
           <thead><tr><th>#</th><th>Medicine</th><th>Dose</th><th>When</th><th>Days</th><th>Qty</th></tr></thead>
           <tbody>
-            {rx.items.map((it, i) => (
+            {(rx.items || []).map((it, i) => (
               <tr key={i}>
                 <td>{i + 1}</td>
                 <td translate="no"><strong>{it.drug}</strong></td>
@@ -98,7 +100,7 @@ export default function RxPrint() {
 
         <footer className="rxp-foot">
           <div className="rxp-qr">
-            <PassportQR value={`nexus:rx:${rx.id}`} size={84} label="Prescription QR" />
+            <QR value={`nexus:rx:${rx.id}`} size={84} label="Prescription QR" />
             <span>Scan at any Nexus Healthcare chemist to verify</span>
           </div>
           <div className="rxp-sign">

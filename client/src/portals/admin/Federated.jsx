@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Network, Lock, TrendingUp, Server, Building2 } from 'lucide-react';
-import { Card, Empty, fmtNum } from '../../components/ui';
+import { Card, Empty, Loading, fmtNum } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
 
@@ -9,9 +9,13 @@ const NODE = { contributing: { c: 'var(--green-2)', label: 'Contributing' }, syn
 export default function Federated() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
-  useEffect(() => { api.get('/admin/federated').then(setData).catch((e) => setError(e.message)); }, []);
+  useEffect(() => {
+    let alive = true;
+    api.get('/admin/federated').then((d) => alive && setData(d)).catch((e) => alive && setError(e.message));
+    return () => { alive = false; };
+  }, []);
   if (error) return <Empty title="Couldn't load the network">{error}</Empty>;
-  if (!data) return <Empty title="Loading…" />;
+  if (!data) return <Loading />;
 
   return (
     <div className="stack lg">
@@ -53,7 +57,7 @@ export default function Federated() {
           </div>
         </Card>
         <Card className="center">
-          <div className="pt-fed-ring"><Network size={40} /></div>
+          <div className="ad-fed-ring"><Network size={40} /></div>
           <div className="serif" style={{ fontSize: '2rem', fontWeight: 600 }}>{fmtNum(data.totalRounds)}</div>
           <div className="muted small">training rounds completed across the network</div>
           <div className="divider" />
