@@ -76,7 +76,7 @@ export default function Landing() {
       <section className="l-hero">
         <div className="l-container l-hero-grid">
           <div className="l-hero-copy fade-in">
-            <span className="l-kicker"><span className="dot green pulse" /> Now live in Barabanki, Uttar Pradesh</span>
+            <span className="l-kicker"><span className="dot green pulse" /> v0.1 is live in India</span>
             <h1>
               A good doctor shouldn&apos;t depend on your{' '}
               <span className="l-underline">pin code.

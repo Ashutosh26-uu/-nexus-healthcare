@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-10-15T17:12:54.770Z",
+ "generatedAt": "2026-10-16T00:35:22.613Z",
  "strings": [
   "% at the lowest point,",
   "% complete",
@@ -1930,7 +1930,6 @@
   "Nothing waiting in this queue. Switch to “Everyone” to see verified entries.",
   "Notifications",
   "Now",
-  "Now live in Barabanki, Uttar Pradesh",
   "Now — in your queue",
   "Number of beds",
   "Number of days",
@@ -3722,6 +3721,7 @@
   "units (strips, sachets, kits)",
   "units ·",
   "updates every 15 min",
+  "v0.1 is live in India",
   "values · mapped to LOINC ·",
   "visits ·",
   "vs baseline",
