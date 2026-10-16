@@ -11,7 +11,7 @@
           ]
         }
       },
-      "id": "7c123fc5-2438-4019-ad02-eeaf20a6cb7a",
+      "id": "7e4bce12-23da-4ae9-ab6c-7904e37988b0",
       "name": "Every day 9:00",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
@@ -25,28 +25,29 @@
         "assignments": {
           "assignments": [
             {
-              "id": "9d7785ec-b0fc-475f-bb0f-051548aa756d",
+              "id": "ad98c371-197f-4d6d-a03a-7d63697cf562",
               "name": "baseUrl",
               "value": "https://nexus-healthcare-50042935756.development.catalystappsail.in",
               "type": "string"
             },
             {
-              "id": "c176945e-b4dc-42d2-a649-42c2368758d4",
+              "id": "557181e0-be8f-4295-90f1-7e99e38ae37b",
               "name": "alertEmail",
               "value": "you@yourdomain.com",
               "type": "string"
             },
             {
-              "id": "cbc97da8-7ece-461c-b39e-1c6e4811a5da",
+              "id": "4fbff6b1-0d4d-4164-93b9-b4f36799e3f5",
               "name": "fromEmail",
               "value": "Nexus Automations <no-reply@yourdomain.com>",
               "type": "string"
             }
           ]
         },
+        "includeOtherFields": true,
         "options": {}
       },
-      "id": "2967185d-4dcc-47e7-b37f-e1c38ddbd800",
+      "id": "ff986850-a65f-4fe6-bae4-abcb3c81aa21",
       "name": "Config",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
@@ -65,7 +66,7 @@
           "timeout": 15000
         }
       },
-      "id": "bba11324-7ba7-4376-921b-5d423807357b",
+      "id": "f72544d7-ce88-40e9-8588-9633c60591ad",
       "name": "Low stock",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -84,7 +85,7 @@
       "parameters": {
         "jsCode": "const { stores } = $input.first().json;\nif (!stores.length) return [];\nconst text = stores.map((s) => [\n  `${s.name}${s.district ? `, ${s.district}` : ''}${s.phone ? ` · ${s.phone}` : ''}`,\n  ...s.low.map((i) => `   LOW  ${i.drug}: ${i.qty} left (keep ${i.safetyStock})`),\n  ...s.expiringSoon.map((i) => `   EXPIRES ${i.expiry}  ${i.drug} · ${i.qty} units · batch ${i.batch}`),\n].join('\\n')).join('\\n\\n');\nreturn [{ json: { subject: `Stock alert — ${stores.length} chemist${stores.length > 1 ? 's' : ''} need attention`, text } }];"
       },
-      "id": "d4292600-3e97-445d-bf8b-8c8f60ad2ac0",
+      "id": "4d34797d-a256-4972-870d-c37eb66bcd14",
       "name": "Write alert",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -103,7 +104,7 @@
         "text": "={{ $json.text }}",
         "options": {}
       },
-      "id": "f81de5e7-a218-4cdf-8442-7ded53139cb7",
+      "id": "58012964-1fe0-45bb-b242-a1b4de51f86f",
       "name": "Email alert",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
@@ -116,7 +117,8 @@
           "id": "nexusSmtp",
           "name": "SMTP (alerts)"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     }
   ],
   "connections": {

@@ -12,7 +12,7 @@
           ]
         }
       },
-      "id": "70ee2140-2645-4b80-bc1b-6bdccd321ced",
+      "id": "a563eb5f-c269-4edb-b587-3b24cb626ebc",
       "name": "Every 30 minutes",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
@@ -26,34 +26,35 @@
         "assignments": {
           "assignments": [
             {
-              "id": "93e88625-2eae-4849-b356-7f69df8e61b4",
+              "id": "be30d040-523e-4d01-a798-5bedf5978da5",
               "name": "baseUrl",
               "value": "https://nexus-healthcare-50042935756.development.catalystappsail.in",
               "type": "string"
             },
             {
-              "id": "3fb30c2a-13b7-4274-946b-29626ae022c2",
+              "id": "adb95098-0515-4f07-830c-45bd0af69fdf",
               "name": "alertEmail",
               "value": "you@yourdomain.com",
               "type": "string"
             },
             {
-              "id": "68484f96-9d8c-45ea-916f-988dab109f48",
+              "id": "33f7661d-522f-4734-8718-c0d15f369d35",
               "name": "fromEmail",
               "value": "Nexus Automations <no-reply@yourdomain.com>",
               "type": "string"
             },
             {
-              "id": "fdbe99cf-47a5-4cbb-82c6-4f4b597dfe6a",
+              "id": "afcdd7dc-244c-4d06-91b7-98dbdfb54c9b",
               "name": "whatsappFrom",
               "value": "+14155238886",
               "type": "string"
             }
           ]
         },
+        "includeOtherFields": true,
         "options": {}
       },
-      "id": "5d1833a8-339b-4c70-be9a-e375076d4bce",
+      "id": "7f3dadfc-a7eb-4822-9da1-d22f27efbffb",
       "name": "Config",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
@@ -72,7 +73,7 @@
           "timeout": 15000
         }
       },
-      "id": "06c834d9-6840-47f1-ac3d-66f3d47c82f6",
+      "id": "890854a6-0fcf-40af-bb8c-a30ad366bebc",
       "name": "Upcoming visits",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -92,7 +93,7 @@
         "fieldToSplitOut": "items",
         "options": {}
       },
-      "id": "c9c3534e-dc57-4cac-8fa5-c1ded6bff213",
+      "id": "5ba20d40-eb3e-48de-8f6d-446d417600a8",
       "name": "One per visit",
       "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
@@ -105,7 +106,7 @@
       "parameters": {
         "jsCode": "const toE164 = (m) => { const d = String(m || '').replace(/\\D/g, ''); return d.length === 10 ? '+91' + d : d ? '+' + d : null; };\n// Reminder text for each upcoming visit or lab slot. Skips demo data and anyone without a mobile number.\nconst live = $('Upcoming visits').first().json.mode === 'live';\nconst out = [];\nfor (const item of $input.all()) {\n  const v = item.json;\n  const c = v.contact || {};\n  if (!live || !c.mobile) continue;\n  const hi = c.firstName ? `Hi ${c.firstName}, ` : 'Hi, ';\n  const text = v.kind === 'lab'\n    ? `${hi}reminder: your test at ${v.labName} is on ${v.when}.${v.homeCollection ? ' A technician will come to your home.' : ''}${v.fastingNeeded ? ' Please don’t eat for 8–10 hours before (water is fine).' : ''} Pay ₹${v.balance} at the lab.`\n    : `${hi}reminder: your ${v.followUp ? 'follow-up ' : ''}appointment with ${v.doctorName} is on ${v.when}${v.mode === 'in_person' ? ` at ${v.location}. Show your visit QR at the reception.` : `. It’s a ${v.mode} consult — open the Nexus app a few minutes early.`}`;\n  out.push({ json: { to: toE164(c.mobile), message: `${text} — Nexus Healthcare`, kind: v.kind, id: v.id } });\n}\nreturn out;"
       },
-      "id": "c2f56974-9c77-4db2-a1b6-fcdb8ec96352",
+      "id": "2bc5b9e3-4c69-49a9-9a8f-0ee46a787ab6",
       "name": "Write reminder",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -122,7 +123,7 @@
         "message": "={{ $json.message }}",
         "options": {}
       },
-      "id": "aacea8f7-b96b-4f0d-8991-4dab5700883b",
+      "id": "e770e41d-c503-424f-b1f6-ff38768f7e12",
       "name": "Send WhatsApp",
       "type": "n8n-nodes-base.twilio",
       "typeVersion": 1,
@@ -136,6 +137,7 @@
           "name": "Twilio (WhatsApp)"
         }
       },
+      "onError": "continueRegularOutput",
       "notes": "Needs a Twilio WhatsApp sender. Swap for MSG91/Gupshup/Interakt if you prefer."
     },
     {
@@ -149,7 +151,7 @@
         "jsonBody": "={{ JSON.stringify({ kind: $('Write reminder').item.json.kind, id: $('Write reminder').item.json.id, channel: 'whatsapp' }) }}",
         "options": {}
       },
-      "id": "b8aafc77-1e4e-4129-8a00-494f07b3857c",
+      "id": "0f21999c-0dab-45a4-978c-0f8f02ec7038",
       "name": "Mark reminded",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,

@@ -11,7 +11,7 @@
           ]
         }
       },
-      "id": "c8a98387-a08f-4db5-a39e-19954e873881",
+      "id": "496525fe-c194-4e35-8338-d02ca25c0059",
       "name": "Every morning 8:00",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
@@ -25,28 +25,29 @@
         "assignments": {
           "assignments": [
             {
-              "id": "64d8ced9-68f7-4563-9ee9-51f6914ae26e",
+              "id": "87bb43da-32b7-4eaa-9252-0e1beea97513",
               "name": "baseUrl",
               "value": "https://nexus-healthcare-50042935756.development.catalystappsail.in",
               "type": "string"
             },
             {
-              "id": "6cfdb7ae-441f-4e58-b6a2-588fb45f6135",
+              "id": "4011dd9e-9a1f-405c-a301-84bb08daf46a",
               "name": "alertEmail",
               "value": "you@yourdomain.com",
               "type": "string"
             },
             {
-              "id": "a7e42378-a052-4c45-83de-6e2e2f009474",
+              "id": "45c35dbe-a0ec-4a0f-bd90-b39626f0a372",
               "name": "fromEmail",
               "value": "Nexus Automations <no-reply@yourdomain.com>",
               "type": "string"
             }
           ]
         },
+        "includeOtherFields": true,
         "options": {}
       },
-      "id": "b965fd6c-7433-4d50-9f7d-b52b802d5eb5",
+      "id": "256c36df-5006-4202-899b-4fe46fa5d00f",
       "name": "Config",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
@@ -65,7 +66,7 @@
           "timeout": 15000
         }
       },
-      "id": "9c689e7b-3d8f-4e6c-9f85-12a66b7d5ead",
+      "id": "7bf21798-044e-49a0-bceb-b84d2212ab6d",
       "name": "Yesterday's numbers",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -84,7 +85,7 @@
       "parameters": {
         "jsCode": "const s = $input.first().json;\nconst rupee = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');\nconst lines = [\n  `Nexus Healthcare — ${s.date}${s.mode !== 'live' ? ' (demo data)' : ''}`,\n  '',\n  `New patients: ${s.patients.new}  (total ${s.patients.total})`,\n  `Doctor bookings: ${s.consults.booked} · consults done: ${s.consults.completed} · follow-ups booked: ${s.consults.followUpsBooked}`,\n  `Prescriptions: ${s.prescriptions}`,\n  `Lab tests: ${s.labs.advised} advised · ${s.labs.booked} booked · ${s.labs.reported} reported${s.labs.critical ? ` · ${s.labs.critical} CRITICAL` : ''}`,\n  `Medicine orders: ${s.medicineOrders.placed} placed · ${s.medicineOrders.delivered} delivered/collected · ${s.medicineOrders.declined} declined · ${s.medicineOrders.cancelled} cancelled`,\n  `Payments: ${s.payments.count} · ${rupee(s.payments.amount)}`,\n  ...Object.entries(s.payments.byPurpose || {}).map(([k, v]) => `   ${k}: ${rupee(v)}`),\n  '',\n  `Refunds waiting: ${s.refundsPending}`,\n  `Waiting for verification: ${s.awaitingVerification.doctors} doctors, ${s.awaitingVerification.facilities} facilities`,\n];\nreturn [{ json: { subject: `Nexus daily report — ${s.date}: ${s.consults.booked} bookings, ${rupee(s.payments.amount)}`, text: lines.join('\\n') } }];"
       },
-      "id": "8ff4a451-97f3-4b1a-82bc-b31e615cd682",
+      "id": "bff23e08-0ae0-45c2-89ba-90615ff91f73",
       "name": "Write report",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -102,7 +103,7 @@
         "text": "={{ $json.text }}",
         "options": {}
       },
-      "id": "8cbc6807-a90e-4d2e-85fc-f0b83760c62f",
+      "id": "ae175d80-43bd-473a-89e8-95f035231d16",
       "name": "Email report",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
@@ -115,7 +116,8 @@
           "id": "nexusSmtp",
           "name": "SMTP (alerts)"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     }
   ],
   "connections": {

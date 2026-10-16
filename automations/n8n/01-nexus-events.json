@@ -9,7 +9,7 @@
         "responseMode": "onReceived",
         "options": {}
       },
-      "id": "6750b9c6-3804-4aec-a4b2-92bcbc7f4104",
+      "id": "a7ff552d-80d5-4b29-9718-9252b5f68c2b",
       "name": "Nexus event",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
@@ -23,7 +23,7 @@
           "name": "Nexus webhook token"
         }
       },
-      "webhookId": "3bed02ac-5369-44ad-92a6-abedfde9e0af",
+      "webhookId": "9a0c738f-66bb-4fe2-be00-6c6e0e89979c",
       "notes": "Header Auth: name X-Nexus-Token, value = N8N_WEBHOOK_SECRET"
     },
     {
@@ -31,34 +31,35 @@
         "assignments": {
           "assignments": [
             {
-              "id": "27959224-8b67-41ec-86c0-4fc2c2d04aa8",
+              "id": "e9a1a8e6-d628-4af4-a942-e4153b5659dc",
               "name": "baseUrl",
               "value": "https://nexus-healthcare-50042935756.development.catalystappsail.in",
               "type": "string"
             },
             {
-              "id": "feb35fee-cb20-4a63-b18c-7179671dfd59",
+              "id": "0a70c0a7-7bc7-45a5-9a7f-eee63b1b40fd",
               "name": "alertEmail",
               "value": "you@yourdomain.com",
               "type": "string"
             },
             {
-              "id": "a189531d-2f5f-46e5-ba7f-e3b1e731c5dc",
+              "id": "682ec9e3-59ca-4815-ae68-9d2b4bf48773",
               "name": "fromEmail",
               "value": "Nexus Automations <no-reply@yourdomain.com>",
               "type": "string"
             },
             {
-              "id": "29b2c622-1944-464f-b383-7236fcd8ab7d",
+              "id": "497fd83a-b6e1-4cb3-bbe9-5f7b1ddf3931",
               "name": "whatsappFrom",
               "value": "+14155238886",
               "type": "string"
             }
           ]
         },
+        "includeOtherFields": true,
         "options": {}
       },
-      "id": "351dd262-bce8-4920-b299-b8529a8fba09",
+      "id": "c1edd8de-33d9-4f13-aceb-229cc7b40185",
       "name": "Config",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
@@ -82,7 +83,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "58eccf2c-4074-4a3f-bbaa-5cae0013ba57",
+                    "id": "882b9946-4c06-4d7b-95b8-648e3a5026ac",
                     "leftValue": "={{ $('Nexus event').item.json.body.event }}",
                     "rightValue": "lab.report_ready",
                     "operator": {
@@ -91,7 +92,7 @@
                     }
                   },
                   {
-                    "id": "77f793e9-b6a0-492a-98ef-35b1e9d252ce",
+                    "id": "c0a44514-6e2b-47b6-bca4-002dd799ea2f",
                     "leftValue": "={{ $('Nexus event').item.json.body.data.critical }}",
                     "rightValue": "",
                     "operator": {
@@ -116,7 +117,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "03048fec-dcbe-40ba-b25e-3c326f9a739b",
+                    "id": "dbdb3a7b-1008-4b6f-983b-283e65737b30",
                     "leftValue": "={{ $('Nexus event').item.json.body.event }}",
                     "rightValue": "onboarding.submitted",
                     "operator": {
@@ -140,7 +141,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "e73965d6-bdc5-47c9-9d02-01179709f31b",
+                    "id": "329726b2-21e3-41b8-b519-29fca594d41d",
                     "leftValue": "={{ $('Nexus event').item.json.body.event }}",
                     "rightValue": "payment.refund_due",
                     "operator": {
@@ -164,7 +165,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "3b6e8e6c-a3f9-4586-adc1-227a09365945",
+                    "id": "a1c41e44-e712-4a60-989f-d7b88068c668",
                     "leftValue": "={{ $('Nexus event').item.json.body.data.contact?.mobile }}",
                     "rightValue": "",
                     "operator": {
@@ -186,7 +187,7 @@
           "fallbackOutput": "extra"
         }
       },
-      "id": "30273abc-4ed9-4527-8298-bcbaf8ccc8ed",
+      "id": "b930b183-16f7-40b6-802e-9c0ed65668cc",
       "name": "Route by event",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
@@ -204,7 +205,7 @@
         "text": "=A critical value was reported.\n\nLab order: {{ $('Nexus event').item.json.body.data.labOrderId }}\nPatient: {{ $('Nexus event').item.json.body.data.patientId }}\nLab: {{ $('Nexus event').item.json.body.data.labName }}\nDoctor: {{ $('Nexus event').item.json.body.data.doctorName }}\n\nThe doctor and patient were notified in the app. Please make sure someone follows up today.",
         "options": {}
       },
-      "id": "db393a38-1b43-40c2-8de3-e69163a38d1e",
+      "id": "af049924-2f09-4bce-8a6e-5e7e649a113b",
       "name": "Alert: critical result",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
@@ -217,7 +218,8 @@
           "id": "nexusSmtp",
           "name": "SMTP (alerts)"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -228,7 +230,7 @@
         "text": "={{ $('Nexus event').item.json.body.data.name }} ({{ $('Nexus event').item.json.body.data.kind }}) — stage: {{ $('Nexus event').item.json.body.data.stage }}.\n\nReview it in Nexus → Super Admin → Onboarding:\n{{ $('Config').first().json.baseUrl }}/admin/onboarding",
         "options": {}
       },
-      "id": "5592bb47-7de3-49df-8efa-4fbf5ee6eb16",
+      "id": "ba9dffed-f386-49a2-b08a-2ec420c0e591",
       "name": "Email: verify new member",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
@@ -241,7 +243,8 @@
           "id": "nexusSmtp",
           "name": "SMTP (alerts)"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -252,7 +255,7 @@
         "text": "=Money was captured for something no longer payable.\n\nPayment: {{ $('Nexus event').item.json.body.data.paymentId }} ({{ $('Nexus event').item.json.body.data.purpose }})\nGateway payment: {{ $('Nexus event').item.json.body.data.gatewayPaymentId }}\nAmount: ₹{{ $('Nexus event').item.json.body.data.amount }}\nReason: {{ $('Nexus event').item.json.body.data.reason }}\n\nRefund it from the Razorpay dashboard.",
         "options": {}
       },
-      "id": "95217186-d094-4ee3-ad72-97e783abed75",
+      "id": "8e157e98-459d-4729-862d-eb3e37a75eca",
       "name": "Email: refund due",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
@@ -265,13 +268,14 @@
           "id": "nexusSmtp",
           "name": "SMTP (alerts)"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
         "jsCode": "const when = (iso) => iso ? new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : 'now';\nconst toE164 = (m) => { const d = String(m || '').replace(/\\D/g, ''); return d.length === 10 ? '+91' + d : d ? '+' + d : null; };\n// One WhatsApp line per event. Demo data is never messaged (its phone numbers may belong to real people).\nconst out = [];\nfor (const item of $input.all()) {\n  const e = item.json.body || {};\n  const d = e.data || {};\n  const c = d.contact || {};\n  if (e.mode !== 'live' || !c.mobile) continue;\n  const hi = c.firstName ? `Hi ${c.firstName}, ` : 'Hi, ';\n  const text = {\n    'booking.confirmed': `${hi}your appointment with ${d.doctorName} is confirmed — ${d.mode === 'in_person' ? `at ${d.location}` : `${d.mode} consult`}, ${when(d.scheduledAt)}.`,\n    'followup.scheduled': `${hi}${d.doctorName} has booked a follow-up for you on ${when(d.scheduledAt)}${d.location ? ` at ${d.location}` : ' (video)'}.`,\n    'lab.booked': `${hi}your test at ${d.labName} is booked${d.slot ? ` for ${when(d.slot)}` : ''}. ₹${d.advancePaid} paid — ₹${d.balance} at the lab.${d.homeCollection ? ' A technician will come to your home.' : ''}`,\n    'lab.sample_collected': `${hi}your sample was collected at ${d.labName}. Your report should be ready by ${when(d.reportDueAt)}.`,\n    'lab.report_ready': d.critical ? `${hi}one of your results needs attention. Your doctor has been told and will contact you. Please open the Nexus app.` : `${hi}your lab report from ${d.labName} is ready in the Nexus app — online and as a PDF, with what to do next.`,\n    'medicine_order.updated': d.status === 'accepted' ? `${hi}${d.pharmacyName} accepted your medicine order ${d.orderNo}.` : d.status === 'declined' ? `${hi}order ${d.orderNo} couldn't be accepted. Please try another chemist in the app.` : null,\n    'medicine_order.delivered': `${hi}your medicines (${d.orderNo}) were delivered. Get well soon!`,\n  }[e.event];\n  if (!text) continue;\n  out.push({ json: { to: toE164(c.mobile), message: `${text} — Nexus Healthcare`, event: e.event, eventId: e.id } });\n}\nreturn out;"
       },
-      "id": "9a4c1caa-7622-4b75-bc37-fb1a10cc6c3e",
+      "id": "65fc6de0-24b3-436f-80ce-162b3c023376",
       "name": "Write WhatsApp message",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -288,7 +292,7 @@
         "message": "={{ $json.message }}",
         "options": {}
       },
-      "id": "da893c12-6434-4d7e-8f55-2c043b081bbd",
+      "id": "fafaa824-daad-4cb4-9b0a-6802283cca8b",
       "name": "Send WhatsApp",
       "type": "n8n-nodes-base.twilio",
       "typeVersion": 1,
@@ -302,11 +306,12 @@
           "name": "Twilio (WhatsApp)"
         }
       },
+      "onError": "continueRegularOutput",
       "notes": "Needs a Twilio WhatsApp sender. Swap for MSG91/Gupshup/Interakt if you prefer."
     },
     {
       "parameters": {},
-      "id": "bd89bc14-cb76-462b-ba1a-cfd094ea36d8",
+      "id": "d4d7e5fa-5508-434b-8686-f9d0df4358cc",
       "name": "Other events",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
