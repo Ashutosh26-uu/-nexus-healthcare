@@ -7,6 +7,7 @@ import { Avatar, Button, Card, Empty, StatusBadge, fmtDate, fmtDateTime, fmtTime
 import { usePatient, usePatientLive, firstName, PageSkeleton } from './shared';
 import { getLocale } from '../../i18n';
 import BookingFlow from './BookingFlow';
+import { LateNotice, VisitChangeActions } from './VisitChange';
 
 const PLACE = {
   video: { icon: Video, label: (c) => `${c.mode === 'audio' ? 'Audio' : c.mode === 'chat' ? 'Chat' : 'Video'} consult` },
@@ -52,10 +53,11 @@ function Countdown({ iso }) {
 }
 
 export default function FollowUps() {
-  const { patient, profiles } = usePatient();
+  const { patient, profiles, reloadHome } = usePatient();
   const navigate = useNavigate();
   // Live: a follow-up the doctor books, or a consult that starts, shows up without a refresh.
-  const { data, error } = usePatientLive('/patient/follow-ups', ['consults', 'queue', 'lab']);
+  const { data, error, reload } = usePatientLive('/patient/follow-ups', ['consults', 'queue', 'lab']);
+  const changed = () => { reload(); reloadHome(); };
   const [rebook, setRebook] = useState(null);
   const isSelf = profiles.find((p) => p.id === patient?.id)?.self;
   if (error && !data) return <Empty title="We couldn't load your visits">{error}</Empty>;
@@ -82,10 +84,12 @@ export default function FollowUps() {
             <div className="row" style={{ gap: 10 }}><Avatar name={next.doctorName} /><div><strong translate="no">{next.doctorName}</strong><div className="tiny muted">{next.doctorSpecialty}</div></div><StatusBadge status={next.status} /></div>
             <div className="pt-fu-where">{(() => { const P = placeOf(next); return <><P.icon size={16} /><span translate="no">{P.label(next)}</span></>; })()}</div>
             <p className="small muted mb-0">{next.triage?.symptoms}</p>
+            <LateNotice c={next} className="mt-0" />
             <div className="row wrap" style={{ gap: 8 }}>
               <Button icon={next.mode === 'in_person' ? QrCode : ArrowRight} onClick={() => navigate(`/patient/consult/${next.id}`)}>{next.status === 'awaiting_payment' ? 'Complete payment' : next.mode === 'in_person' ? 'Show visit pass' : 'Open consult'}</Button>
               {next.scheduledAt && <Button variant="secondary" icon={CalendarPlus} onClick={() => addToCalendar(next)}>Add to calendar</Button>}
             </div>
+            <VisitChangeActions c={next} onChanged={changed} />
           </div>
         </Card>
       )}
@@ -101,6 +105,8 @@ export default function FollowUps() {
                   <div className="grow" style={{ minWidth: 0 }}>
                     <strong className="small" translate="no">{c.doctorName}</strong> {c.followUp && <span className="badge tiny">Follow-up</span>}
                     <div className="tiny muted"><P.icon size={12} style={{ verticalAlign: '-2px' }} /> {P.label(c)} · {relWhen(c.scheduledAt)}</div>
+                    <LateNotice c={c} />
+                    <VisitChangeActions c={c} onChanged={changed} />
                   </div>
                   {c.scheduledAt && <button type="button" className="icon-btn" title="Add to calendar" onClick={() => addToCalendar(c)}><CalendarPlus size={16} /></button>}
                   <Button size="sm" variant="ghost" onClick={() => navigate(`/patient/consult/${c.id}`)}>Open</Button>

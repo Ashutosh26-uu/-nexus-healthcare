@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Mic, MicOff, Video, VideoOff, PhoneOff, Send, Clock, CalendarClock, Pill, Star, FileText, MessageCircle, Phone, X, AlertTriangle, Check, MapPin, Building2 } from 'lucide-react';
+import { ArrowLeft, Mic, MicOff, Video, VideoOff, PhoneOff, Send, Clock, CalendarClock, Pill, Star, FileText, MessageCircle, Phone, X, AlertTriangle, Check, MapPin, Building2, RefreshCw } from 'lucide-react';
 import { api } from '../../api';
+import { useCall } from '../../components/useCall';
+import CallMedia from '../../components/CallMedia';
 import { useLive } from '../../live';
 import { Avatar, Button, Card, Empty, Modal, StatusBadge, TriageBadge, cx, fmtDateTime, fmtTime, timeAgo, useAction, useToast } from '../../components/ui';
 import { usePatient, PageSkeleton } from './shared';
@@ -107,6 +109,13 @@ function CancelButton({ c, label = 'Cancel consult' }) {
   );
 }
 
+// Set by the doctor from their queue (c.runningLate = { minutes, at }).
+function RunningLate({ c }) {
+  const n = Math.round(Number(c.runningLate?.minutes) || 0);
+  if (n <= 0) return null;
+  return <div className="pt-late" role="status"><Clock size={15} /><span>{n === 1 ? 'Your doctor is running about 1 minute late' : <>Your doctor is running about {n} minutes late</>}</span></div>;
+}
+
 /* ---------- waiting room ---------- */
 function Waiting({ c, setData }) {
   const wait = Math.max(2, (c.position - 1) * 8 + 2);
@@ -120,6 +129,7 @@ function Waiting({ c, setData }) {
         <div className="eyebrow">Waiting room</div>
         <h2 className="mb-1">{c.position <= 1 ? 'You’re next!' : `You’re number ${c.position} in line`}</h2>
         <p className="muted">{c.doctorName} ({c.doctorSpecialty}) will join you in about <strong>{wait} minutes</strong>. This page updates by itself — no need to refresh.</p>
+        <RunningLate c={c} />
         <div className="pt-wait-facts">
           <div><span className="tiny muted">Mode</span><strong>{MODE_LABEL[c.mode]}</strong></div>
           <div><span className="tiny muted">Joined</span><strong>{fmtTime(c.createdAt)}</strong></div>
@@ -154,6 +164,7 @@ function Scheduled({ c }) {
         </div>
       </div>
       <div className="pt-result-note small"><strong>Reason:</strong> {c.triage?.symptoms}</div>
+      <RunningLate c={c} />
       <div className="callout sky mt-2">
         <Clock />
         <span>{soon ? 'Your doctor will open the room any moment now — stay on this page.' : 'We’ll send a reminder before it starts. When the doctor opens the room, this page turns into your call.'}</span>
@@ -174,28 +185,11 @@ function CallTimer({ since }) {
 
 function InCall({ c, setData }) {
   const [left, setLeft] = useState(false);
-  const [muted, setMuted] = useState(false);
-  const [camOff, setCamOff] = useState(false);
-  const [stream, setStream] = useState(null);
-  const [mediaNote, setMediaNote] = useState('');
-  const videoRef = useRef(null);
   const { patient } = usePatient();
-  const wantsMedia = c.mode !== 'chat' && !left;
-
-  useEffect(() => {
-    if (!wantsMedia) return undefined;
-    let active = true;
-    let s = null;
-    if (!navigator.mediaDevices?.getUserMedia) { setMediaNote('Your browser can’t share a camera here — the doctor will still hear you on the call.'); return undefined; }
-    navigator.mediaDevices.getUserMedia({ video: c.mode === 'video', audio: true })
-      .then((ms) => { if (!active) { ms.getTracks().forEach((t) => t.stop()); return; } s = ms; setStream(ms); setMediaNote(''); })
-      .catch(() => active && setMediaNote('Camera or mic permission wasn’t given. You can still chat, and allow it from your browser settings any time.'));
-    return () => { active = false; s?.getTracks().forEach((t) => t.stop()); setStream(null); };
-  }, [wantsMedia, c.mode]);
-
-  useEffect(() => { if (videoRef.current && stream) videoRef.current.srcObject = stream; }, [stream, camOff]);
-  useEffect(() => { stream?.getAudioTracks().forEach((t) => { t.enabled = !muted; }); }, [muted, stream]);
-  useEffect(() => { stream?.getVideoTracks().forEach((t) => { t.enabled = !camOff; }); }, [camOff, stream]);
+  const audioOnly = c.mode === 'audio';
+  // Leaving turns the call off (the doctor is told at once); rejoining starts a fresh connection.
+  const call = useCall({ consultId: c.id, role: 'patient', audioOnly, enabled: c.mode !== 'chat' && !left });
+  const { localStream, remoteStream, state, muted, cameraOff: camOff, error: mediaError } = call;
 
   if (left) {
     return (
@@ -206,32 +200,47 @@ function InCall({ c, setData }) {
     );
   }
 
-  const hasVideo = stream && stream.getVideoTracks().length > 0 && !camOff;
+  const hasVideo = !audioOnly && localStream?.getVideoTracks().length > 0 && !camOff;
+  const remoteVideo = !audioOnly && remoteStream?.getVideoTracks().length > 0 && state !== 'ended';
+  const live = state === 'connected';
 
   return (
     <div className={cx('pt-call-layout', c.mode === 'chat' && 'chat-only')}>
       {c.mode !== 'chat' && (
-        <section className="pt-call" aria-label="Call">
+        <section className={cx('pt-call', remoteVideo && 'has-remote')} aria-label="Call">
+          {remoteVideo && <CallMedia stream={remoteStream} className="pt-remote" label="Your doctor’s video" />}
+          {remoteStream && !remoteVideo && <CallMedia stream={remoteStream} audioOnly label="Your doctor’s voice" />}
           <div className="pt-call-top">
-            <span className="pt-live"><span className="dot green pulse" /> Live · <CallTimer since={c.startedAt} /></span>
+            <span className="pt-live"><span className={cx('dot pulse', live ? 'green' : 'sun')} /> {live ? 'Live' : 'Call'} · <CallTimer since={c.startedAt} /></span>
             <span className="small">{MODE_LABEL[c.mode]}</span>
           </div>
-          <div className="pt-doc-tile">
-            <div className="pt-doc-tile-inner">
-              <div className="pt-speaking"><Avatar name={c.doctorName} size="lg" /></div>
-              <strong translate="no">{c.doctorName}</strong>
-              <span className="small">{c.doctorSpecialty} · speaking {c.doctorLanguages?.includes(patient?.language) ? patient.language : c.doctorLanguages?.[0]}</span>
-            </div>
-          </div>
-          {c.mode === 'video' && (
-            <div className="pt-self">
-              {hasVideo ? <video ref={videoRef} autoPlay playsInline muted aria-label="Your camera" /> : <div className="pt-self-ph"><Avatar name={patient?.name || 'You'} /><span className="tiny">{camOff ? 'Camera off' : 'You'}</span></div>}
+          {!(remoteVideo && live) && (
+            <div className={cx('pt-doc-tile', remoteVideo && 'over-video')}>
+              <div className="pt-doc-tile-inner" role="status" aria-live="polite">
+                {!remoteVideo && <div className={cx(live && 'pt-speaking')}><Avatar name={c.doctorName} size="lg" /></div>}
+                <strong translate="no">{c.doctorName}</strong>
+                {state === 'idle' && <span className="small">Waiting for the doctor to join…</span>}
+                {state === 'connecting' && <span className="small">Connecting…</span>}
+                {state === 'reconnecting' && <span className="small">Reconnecting… hold on, the call will pick up again.</span>}
+                {state === 'ended' && <span className="small">Call ended. Your doctor may call back — stay on this page.</span>}
+                {state === 'failed' && <span className="small">We couldn’t connect the call. Check your internet, then try again — or use the chat.</span>}
+                {live && <span className="small">{c.doctorSpecialty} · speaking {c.doctorLanguages?.includes(patient?.language) ? patient.language : c.doctorLanguages?.[0]}</span>}
+                {live && audioOnly && <span className="pt-call-clock"><CallTimer since={c.startedAt} /></span>}
+                {state === 'failed' && <Button size="sm" variant="secondary" icon={RefreshCw} onClick={call.retry} className="mt-1">Try again</Button>}
+              </div>
             </div>
           )}
-          {mediaNote && <div className="pt-media-note small"><AlertTriangle size={15} /> {mediaNote}</div>}
+          {c.mode === 'video' && (
+            <div className="pt-self">
+              {hasVideo ? <CallMedia stream={localStream} self label="Your camera" /> : <div className="pt-self-ph"><Avatar name={patient?.name || 'You'} /><span className="tiny">{camOff ? 'Camera off' : 'You'}</span></div>}
+            </div>
+          )}
+          {mediaError === 'denied' && <div className="pt-media-note small"><AlertTriangle size={15} /> Camera or mic permission wasn’t given. You can still chat, and allow it from your browser settings any time.</div>}
+          {mediaError === 'unsupported' && <div className="pt-media-note small"><AlertTriangle size={15} /> Your browser can’t share your camera or mic here — you can still see and hear the doctor, and chat.</div>}
+          {mediaError === 'no-camera' && <div className="pt-media-note small"><AlertTriangle size={15} /> Your camera isn’t available, so the doctor will only hear you.</div>}
           <div className="pt-call-controls">
-            <button className={cx('pt-ctl', muted && 'off')} onClick={() => setMuted((v) => !v)} aria-label={muted ? 'Unmute microphone' : 'Mute microphone'} aria-pressed={muted}>{muted ? <MicOff /> : <Mic />}<span>{muted ? 'Unmute' : 'Mute'}</span></button>
-            {c.mode === 'video' && <button className={cx('pt-ctl', camOff && 'off')} onClick={() => setCamOff((v) => !v)} aria-label={camOff ? 'Turn camera on' : 'Turn camera off'} aria-pressed={camOff}>{camOff ? <VideoOff /> : <Video />}<span>Camera</span></button>}
+            <button className={cx('pt-ctl', muted && 'off')} onClick={call.toggleMute} disabled={!localStream} aria-label={muted ? 'Unmute microphone' : 'Mute microphone'} aria-pressed={muted}>{muted ? <MicOff /> : <Mic />}<span>{muted ? 'Unmute' : 'Mute'}</span></button>
+            {c.mode === 'video' && <button className={cx('pt-ctl', camOff && 'off')} onClick={call.toggleCamera} disabled={!localStream?.getVideoTracks().length} aria-label={camOff ? 'Turn camera on' : 'Turn camera off'} aria-pressed={camOff}>{camOff ? <VideoOff /> : <Video />}<span>Camera</span></button>}
             <button className="pt-ctl end" onClick={() => setLeft(true)} aria-label="Leave call"><PhoneOff /><span>Leave</span></button>
           </div>
         </section>

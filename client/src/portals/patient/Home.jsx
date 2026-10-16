@@ -4,11 +4,12 @@ import { Button, Card, Empty, StatusBadge, fmtDateTime, timeAgo } from '../../co
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, greeting, firstName, PageSkeleton, PassportQR } from './shared';
 import { getLocale } from '../../i18n';
+import { LateNotice, VisitChangeActions } from './VisitChange';
 
 const MODE_ICON = { video: Video, audio: Phone, chat: MessageCircle };
 
 export default function Home() {
-  const { home, homeLoading, homeError, profiles } = usePatient();
+  const { home, homeLoading, homeError, profiles, reloadHome } = usePatient();
   const navigate = useNavigate();
 
   if (homeLoading) return <PageSkeleton />;
@@ -51,7 +52,7 @@ export default function Home() {
             <span className="pt-next-ic">{new Date(next.scheduledAt).getDate()}<small>{new Date(next.scheduledAt).toLocaleDateString(getLocale(), { month: 'short' })}</small></span>
             <span className="grow">
               <strong>{next.followUp ? 'Next follow-up' : 'Next appointment'}: {new Date(next.scheduledAt).toLocaleString(getLocale(), { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</strong>
-              <span className="small muted block">with <span translate="no">{next.doctorName}</span>{next.mode === 'in_person' ? ` at ${next.location?.name || 'the clinic'}` : ' · video'}</span>
+              <span className="small muted block">with <span translate="no">{next.doctorName}</span>{next.mode === 'in_person' ? ` at ${next.location?.name || 'the clinic'}` : next.mode === 'audio' ? ' · audio call' : next.mode === 'chat' ? ' · chat' : ' · video'}{next.runningLate ? ` · running ~${next.runningLate.minutes} min late` : ''}</span>
             </span>
             <ChevronRight size={18} />
           </Link>
@@ -110,6 +111,8 @@ export default function Home() {
                           {c.status === 'queued' && 'You’re in the queue — we’ll let you know when the doctor is ready.'}
                           {live && 'Your doctor is waiting for you right now.'}
                         </div>
+                        <LateNotice c={c} />
+                        <VisitChangeActions c={c} onChanged={reloadHome} />
                       </div>
                       {live ? (
                         <Button size="sm" variant="clay" onClick={() => navigate(`/patient/consult/${c.id}`)}>Join now</Button>

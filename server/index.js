@@ -523,6 +523,11 @@ app.post('/api/dev/reset', auth, role('super_admin'), async (_req, res) => {
   broadcast('all');
   res.json({ ok: true });
 });
+// Run the 5-minute reminder sweep now (testing). Same production guard as reset.
+app.post('/api/dev/run-reminders', auth, role('super_admin'), (_req, res) => {
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_RESET !== 'true') return res.status(403).json({ error: 'Disabled in production.' });
+  res.json({ ok: true, sent: sweepReminders() });
+});
 
 // ---------- auth ----------
 const findUserByPhone = (phone) => db().users.find((u) => u.phone && samePhone(u.phone, phone));
@@ -1309,6 +1314,68 @@ app.post('/api/consults', auth, role('kiosk_operator'), (req, res) => {
   res.json(enrichConsult(consult));
 });
 
+// ---------- video / audio calls ----------
+// Media flows peer to peer (WebRTC); the server only relays the handshake. Signals are short-lived, so they
+// live in memory per consult — never in the database — and vanish when the visit ends or after 2 h.
+const callSignals = new Map(); // consultId → { seq, at, msgs: [{ seq, from, type, data, at }] }
+const SIGNAL_TYPES = new Set(['offer', 'answer', 'ice', 'hangup', 'ready']);
+const CALL_LIVE = ['queued', 'scheduled', 'in_progress'];
+const signalLimiter = security.rateLimit({ windowMs: 60000, max: 600, key: (r) => r.headers.authorization || r.ip, message: 'Too many call updates. Please wait a moment.' });
+// Patient side (patient, guardian, kiosk operator) or the treating doctor — admins can't join a call.
+function callAccess(req, res) {
+  const c = db().consults.find((x) => x.id === req.params.id);
+  if (!c) { res.status(404).json({ error: 'Consult not found.' }); return null; }
+  if (req.user.role === 'super_admin' || !canAccessConsult(req.user, c)) { res.status(403).json({ error: 'You don\'t have access to this consult.' }); return null; }
+  if (!CALL_LIVE.includes(c.status)) { callSignals.delete(c.id); res.status(409).json({ error: 'This consult has ended.', code: 'call_closed' }); return null; }
+  return c;
+}
+setInterval(() => {
+  const cutoff = Date.now() - 2 * 3600000;
+  for (const [id, s] of callSignals) {
+    const c = db().consults.find((x) => x.id === id);
+    if (s.at < cutoff || !c || !CALL_LIVE.includes(c.status)) callSignals.delete(id);
+  }
+}, 10 * 60000).unref();
+
+app.get('/api/rtc-config', auth, (_req, res) => {
+  const iceServers = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+  // TURN relays media when both sides sit behind strict NATs (common on mobile data) — STUN alone can't connect them.
+  if (process.env.TURN_URL && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
+    iceServers.push({ urls: process.env.TURN_URL.split(',').map((u) => u.trim()).filter(Boolean), username: process.env.TURN_USERNAME, credential: process.env.TURN_CREDENTIAL });
+  }
+  res.json({ iceServers });
+});
+
+app.post('/api/consults/:id/signal', auth, signalLimiter, (req, res) => {
+  const c = callAccess(req, res);
+  if (!c) return;
+  const type = clean(req.body?.type, 10);
+  if (!SIGNAL_TYPES.has(type)) return res.status(400).json({ error: 'Unknown call signal.' });
+  const data = req.body?.data ?? null;
+  if (JSON.stringify(data).length > 20000) return res.status(413).json({ error: 'Call signal is too large.' });
+  const from = req.user.role === 'doctor' ? 'doctor' : 'patient';
+  const s = callSignals.get(c.id) || { seq: 0, at: 0, msgs: [] };
+  s.seq += 1; s.at = Date.now();
+  s.msgs.push({ seq: s.seq, from, type, data, at: nowIso() });
+  if (s.msgs.length > 200) s.msgs.splice(0, s.msgs.length - 200);
+  callSignals.set(c.id, s);
+  // Only the other side needs to hear about it (the sender is in the audience anyway).
+  const p = db().patients.find((x) => x.id === c.patientId);
+  if (from === 'doctor') touch(p ? patientOwnerUserIds(p) : []);
+  else touch(db().doctors.find((x) => x.id === c.doctorId)?.userId);
+  broadcast(`call:${c.id}`);
+  res.json({ seq: s.seq });
+});
+
+app.get('/api/consults/:id/signal', auth, (req, res) => {
+  const c = callAccess(req, res);
+  if (!c) return;
+  const since = Math.max(0, Number.parseInt(req.query.since, 10) || 0);
+  const me = req.user.role === 'doctor' ? 'doctor' : 'patient';
+  const s = callSignals.get(c.id);
+  res.json({ seq: s?.seq || 0, messages: s ? s.msgs.filter((m) => m.seq > since && m.from !== me) : [] });
+});
+
 app.get('/api/consults/:id', auth, (req, res) => {
   const c = db().consults.find((x) => x.id === req.params.id);
   if (!c) return res.status(404).json({ error: 'Consult not found.' });
@@ -1337,14 +1404,102 @@ app.post('/api/consults/:id/cancel', auth, (req, res) => {
   if (!c) return res.status(404).json({ error: 'Consult not found.' });
   if (!canAccessConsult(req.user, c)) return res.status(403).json({ error: 'You don\'t have access to this consult.' });
   if (['completed', 'cancelled', 'expired'].includes(c.status)) return res.status(409).json({ error: 'This consult can no longer be cancelled.' });
-  c.status = 'cancelled'; c.cancelledAt = nowIso();
+  if (c.status === 'in_progress' && PATIENT_SIDE.has(req.user.role)) return res.status(409).json({ error: 'Your consult has already started — please end it from the consult screen.' });
+  const patientSide = PATIENT_SIDE.has(req.user.role);
+  const wasBooked = ['scheduled', 'queued'].includes(c.status); // not an unpaid draft the doctor never saw
+  c.status = 'cancelled'; c.cancelledAt = nowIso(); c.cancelledBy = patientSide ? 'patient' : req.user.role;
   const pay = c.paymentId && db().payments.find((x) => x.id === c.paymentId);
+  // Refund rule (shown to the patient before they confirm): a patient cancelling more than 2 h before the
+  // time — or any not-yet-started instant/queued visit — gets a full refund; inside 2 h the slot was held
+  // for them, so no refund. A cancellation by the doctor / clinic side is always refunded in full.
+  let refund = 0;
   if (pay?.status === 'created') pay.status = 'void';
-  else if (pay?.status === 'paid' && !c.startedAt) { pay.status = 'refund_pending'; pay.refundReason = 'Booking cancelled before the visit'; }
+  else if (pay?.status === 'paid' && !c.startedAt) {
+    if (!patientSide || cancelRefundable(c)) { pay.status = 'refund_pending'; pay.refundReason = 'Booking cancelled before the visit'; refund = pay.amount; }
+    else pay.refundReason = 'Cancelled within 2 hours of the visit — no refund';
+  }
+  if (patientSide && wasBooked) {
+    const doc = db().doctors.find((x) => x.id === c.doctorId);
+    const p = db().patients.find((x) => x.id === c.patientId);
+    if (doc) doctorInbox(db(), doc).forEach((u) => notify(u, 'Booking cancelled', `${p?.name || 'A patient'} cancelled${c.scheduledAt ? ` the ${istWhenShort(c.scheduledAt)} visit` : ' their visit'}.`));
+  }
+  audit(req.user, 'cancelled_consult', c.patientId, 'consult', `${c.id}${refund ? ` · refund ₹${refund}` : ''}`);
+  touchConsultParties(c);
+  store.save();
+  broadcast('consults', 'queue', `consult:${c.id}`);
+  res.json({ ...enrichConsult(c), refund });
+});
+
+// Patient-side changes to a booked visit (reschedule / cancel) are only free more than 2 h ahead.
+const PATIENT_SIDE = new Set(['patient', 'caregiver']);
+const CHANGE_CUTOFF_MS = 2 * 3600000;
+const MAX_RESCHEDULES = 2;
+const cancelRefundable = (c) => !c.scheduledAt || Date.parse(c.scheduledAt) - Date.now() > CHANGE_CUTOFF_MS;
+const istWhenShort = (iso) => new Date(iso).toLocaleString('en-IN', { timeZone: APP_TZ, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+
+// Move a paid, scheduled visit to another time. Same time rule as a new booking (within the next 31 days);
+// the payment, booking number and visit pass carry over unchanged.
+app.post('/api/consults/:id/reschedule', auth, role('patient', 'caregiver'), (req, res) => {
+  const d = db();
+  const c = d.consults.find((x) => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: 'Consult not found.' });
+  if (!ownsPatient(req.user, c.patientId)) return res.status(403).json({ error: 'This visit isn\'t on your account.' });
+  if (c.status !== 'scheduled' || !c.scheduledAt) return res.status(409).json({ error: 'Only a booked visit with a set time can be moved.' });
+  if (Date.parse(c.scheduledAt) - Date.now() <= CHANGE_CUTOFF_MS) return res.status(409).json({ error: 'Your visit is less than 2 hours away, so it can\'t be moved now. Please contact the clinic.' });
+  if ((c.rescheduled || 0) >= MAX_RESCHEDULES) return res.status(409).json({ error: `This visit has already been moved ${MAX_RESCHEDULES} times. Please cancel and book again if the new time doesn't work.` });
+  const t = Date.parse(req.body?.scheduledAt);
+  if (!Number.isFinite(t) || t < Date.now() + 20 * 60000 || t > Date.now() + 31 * 86400000) return res.status(400).json({ error: 'Please pick a time within the next month.' });
+  const at = new Date(t).toISOString();
+  if (at === c.scheduledAt) return res.status(400).json({ error: 'That\'s already your visit time — pick a different one.' });
+  const from = c.scheduledAt;
+  c.scheduledAt = at; c.rescheduled = (c.rescheduled || 0) + 1; c.rescheduledAt = nowIso();
+  c.runningLate = null; // a delay announced for the old time doesn't apply to the new one
+  c.reminderSentAt = null; // let reminder workflows remind about the new time
+  const doc = d.doctors.find((x) => x.id === c.doctorId);
+  const p = d.patients.find((x) => x.id === c.patientId);
+  if (doc) doctorInbox(d, doc).forEach((u) => notify(u, 'Visit moved', `${p?.name || 'A patient'} moved their visit from ${istWhenShort(from)} to ${istWhenShort(at)}.`));
+  audit(req.user, 'rescheduled_consult', c.patientId, 'consult', `${c.id} · ${from} → ${at}`);
   touchConsultParties(c);
   store.save();
   broadcast('consults', 'queue', `consult:${c.id}`);
   res.json(enrichConsult(c));
+});
+
+// The doctor tells waiting / booked patients they're running late — patients keep their place.
+const LATE_MINUTES = [10, 15, 20, 30, 45, 60];
+function markRunningLate(c, doc, minutes) {
+  c.runningLate = { minutes, at: nowIso() };
+  const p = db().patients.find((x) => x.id === c.patientId);
+  if (p) patientOwnerUserIds(p).forEach((u) => notify(u, 'Your doctor is running late', `${doc.name} is running about ${minutes} minutes late — we'll keep your place.`));
+  touchConsultParties(c);
+}
+app.post('/api/consults/:id/late', auth, role('doctor'), (req, res) => {
+  const c = db().consults.find((x) => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: 'Consult not found.' });
+  const doc = doctorFor(req.user);
+  if (!doc || c.doctorId !== doc.id) return res.status(403).json({ error: 'Only the treating doctor can do this.' });
+  if (!['scheduled', 'queued'].includes(c.status)) return res.status(409).json({ error: 'This visit has already started or ended.' });
+  const minutes = Number(req.body?.minutes);
+  if (!LATE_MINUTES.includes(minutes)) return res.status(400).json({ error: `Choose ${LATE_MINUTES.join(', ')} minutes.` });
+  markRunningLate(c, doc, minutes);
+  audit(req.user, 'running_late', c.patientId, 'consult', `${c.id} · ${minutes} min`);
+  store.save();
+  broadcast('consults', 'queue', `consult:${c.id}`);
+  res.json(enrichConsult(c));
+});
+// Bulk: everyone still waiting today — the live queue plus today's remaining booked visits.
+app.post('/api/doctor/running-late', auth, role('doctor'), (req, res) => {
+  const doc = doctorFor(req.user);
+  if (!doc) return res.status(404).json({ error: 'Doctor profile not found.' });
+  const minutes = Number(req.body?.minutes);
+  if (!LATE_MINUTES.includes(minutes)) return res.status(400).json({ error: `Choose ${LATE_MINUTES.join(', ')} minutes.` });
+  const today = istDay(nowIso());
+  const list = db().consults.filter((c) => c.doctorId === doc.id && (c.status === 'queued' || (c.status === 'scheduled' && c.scheduledAt && istDay(c.scheduledAt) === today && Date.parse(c.scheduledAt) > Date.now() - 3600000)));
+  list.forEach((c) => markRunningLate(c, doc, minutes));
+  if (list.length) audit(req.user, 'running_late', null, 'consult', `${list.length} visits · ${minutes} min`);
+  store.save();
+  broadcast('consults', 'queue', ...list.map((c) => `consult:${c.id}`));
+  res.json({ updated: list.length, minutes });
 });
 
 app.post('/api/prescriptions/:id/order', auth, role('patient', 'caregiver'), (req, res) => {
@@ -2910,6 +3065,7 @@ function createFollowUp(d, { p, doc, days, diagnosis, from }) {
   d.consents.push({ id: store.id('cst'), patientId: p.id, granteeType: 'doctor', granteeId: doc.id, granteeName: doc.name, scope: ['history', 'prescriptions', 'labs', 'allergies'], purpose: 'Follow-up visit', start: nowIso(), expiry: new Date(Date.parse(c.scheduledAt) + 3 * 86400000).toISOString(), status: 'active' });
   const when = new Date(c.scheduledAt).toLocaleString('en-IN', { timeZone: APP_TZ, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
   patientOwnerUserIds(p).forEach((u) => notify(u, 'Follow-up booked', `${doc.name} wants to see you again on ${when}${inPerson ? ` at ${location.name}` : ' (video)'}.`));
+  emailPatient(p, `Your follow-up with ${doc.name} is booked`, [`Your follow-up with ${doc.name} is booked for ${istWhen(c.scheduledAt)} IST (${consultWhere(c)}).`, 'We\'ll remind you the day before and an hour before. You can see or change it in the app.']);
   automation.emit('followup.scheduled', { consultId: c.id, followUpOf: c.followUpOf, patientId: p.id, doctorId: doc.id, doctorName: doc.name, mode: c.mode, location: c.location?.name || null, scheduledAt: c.scheduledAt }, { contact: autoContact(p) });
   return c;
 }
@@ -3067,6 +3223,7 @@ app.post('/api/consults/:id/complete', auth, role('doctor'), (req, res) => {
     if (rx) rx.followUpOn = fu.scheduledAt;
   }
   patientOwnerUserIds(p).forEach((u) => notify(u, 'Consult summary ready', `${doc.name} has completed your consult${rx ? ' and sent an e-prescription' : ''}.`));
+  emailPatient(p, rx ? `Your prescription from ${doc.name} is ready` : `Your visit summary from ${doc.name} is ready`, [rx ? `Your prescription from ${doc.name} is ready in the app.` : `${doc.name} has completed your visit. The summary is ready in the app.`, 'Sign in to view it, order medicines or book any tests your doctor advised.']);
   audit(req.user, 'completed_consult', p.id, 'consult', c.id);
   automation.emit('consult.completed', { consultId: c.id, patientId: p.id, doctorId: doc.id, doctorName: doc.name, prescriptionId: rx?.id || null }, { contact: autoContact(p) });
   store.save();
@@ -4242,6 +4399,130 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'Something went wrong on our side. Please try again.' });
 });
 
+// ---------- automatic reminders & patient emails ----------
+// Emails carry NO medical details (no symptoms, diagnosis, medicines, tests or results) — only who, when, where,
+// what to bring, and a link to the app, where the patient signs in to see the rest.
+const APP_URL = () => (process.env.APP_URL || process.env.PUBLIC_URL || 'https://nexus-healthcare-50042935756.development.catalystappsail.in').trim().replace(/\/+$/, '');
+// Demo networks are full of seeded people — only a live network (or an explicit opt-in) emails anyone.
+const reminderEmailsOn = () => DATA_MODE === 'live' || process.env.REMINDER_EMAILS === 'true';
+const escHtml = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+// The real inboxes of everyone who manages this patient (the patient and/or a guardian); otp.sendMail drops placeholders again.
+const ownerEmails = (p) => [...new Set(patientOwnerUserIds(p).map((id) => db().users.find((u) => u.id === id)?.email).filter((e) => e && !DEMO_EMAIL.test(e)).map((e) => e.toLowerCase()))];
+function emailPatient(p, subject, lines) {
+  if (!p || !reminderEmailsOn()) return;
+  const url = APP_URL();
+  const hello = `Hello ${String(p.name || '').split(' ')[0] || 'there'},`;
+  const text = [hello, '', ...lines, '', `Open Nexus Healthcare: ${url}`, '', 'You are receiving this because you have a booking on Nexus Healthcare.'].join('\n');
+  const html = `<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e6dfd3;border-radius:14px;color:#1d2b2a"><h2 style="color:#0f5c4d;margin:0 0 12px">Nexus Healthcare</h2><p>${escHtml(hello)}</p>${lines.filter(Boolean).map((l) => `<p>${escHtml(l)}</p>`).join('')}<p style="margin:20px 0"><a href="${escHtml(url)}" style="background:#0f5c4d;color:#fff;padding:10px 18px;border-radius:10px;text-decoration:none">Open the app</a></p><p style="color:#6f7c78;font-size:12px">You are receiving this because you have a booking on Nexus Healthcare.</p></div>`;
+  for (const to of ownerEmails(p)) otp.sendMail({ to, subject, text, html }).catch(() => {});
+}
+const consultWhere = (c) => (c.mode === 'in_person' ? `at ${c.location?.name || 'the clinic'}${c.location?.address ? `, ${c.location.address}` : ''}` : `${c.mode === 'audio' ? 'audio call' : c.mode === 'chat' ? 'chat' : 'video'} in the app`);
+const consultPrep = (c) => (c.mode === 'in_person'
+  ? 'Please reach 10 minutes early and carry your visit QR (in the app under your appointments) and any old reports.'
+  : 'Please open the app 5 minutes early, with a charged phone and a good connection — the doctor will join you there.');
+
+const H = 3600000;
+// [key, lead, floor]: due once the visit is within `lead`, never sent with `floor` or less to go — after downtime a
+// "tomorrow" note 40 minutes before the visit is noise. Bands don't overlap, so one sweep sends at most one per item.
+const CONSULT_REMINDERS = [['d1', 24 * H, 2 * H, 'tomorrow'], ['h1', H, 0, 'in about an hour']];
+const LAB_REMINDERS = [['h12', 12 * H, 2 * H, 'soon'], ['h1', H, 0, 'in about an hour']];
+// Fresh bookings just got "Booking confirmed" — the early reminder would repeat it. The 1-hour one always goes.
+const justBooked = (paidAt, now) => paidAt && now - Date.parse(paidAt) < 2 * H;
+// A reschedule moves the visit: forget reminders sent for the old time.
+function remindersFor(item, at) {
+  if (!item.reminders || item.reminders.at !== at) item.reminders = { at };
+  return item.reminders;
+}
+// 'in about an hour' would be wrong for a visit booked 20 minutes ahead.
+const bandLabel = (band, left) => (band[0] === 'h1' && left < 45 * 60000 ? `in ${Math.max(1, Math.round(left / 60000))} minutes` : band[3]);
+function dueReminder(bands, r, left, paidAt, now) {
+  return bands.find(([key, lead, floor], i) => !r[key] && left <= lead && left > floor && !(i === 0 && justBooked(paidAt, now)));
+}
+
+// Medicine nudges: only for medicines written in the structured "1-0-1" pattern with a course length in days —
+// free text ("twice daily", "as directed") can't be timed reliably, so it gets no nudge at all.
+const DOSE_SLOTS = [['morning', 8], ['afternoon', 13], ['evening', 18], ['night', 21]];
+function rxSchedule(rx) {
+  const slots = new Set(); let days = 0;
+  for (const it of rx.items || []) {
+    const m = /^\s*(\d)-(\d)-(\d)(?:-(\d))?(?!\d)/.exec(it.freq || '');
+    if (!m || !(it.days > 0)) continue;
+    const n = m.slice(1).filter((x) => x !== undefined).map(Number);
+    const t = n.length === 4 ? n : [n[0], n[1], 0, n[2]];
+    DOSE_SLOTS.forEach(([slot], i) => { if (t[i] > 0) slots.add(slot); });
+    days = Math.max(days, it.days);
+  }
+  const first = DOSE_SLOTS.find(([s]) => slots.has(s));
+  return first && days ? { first: first[0], hour: first[1], slots: DOSE_SLOTS.filter(([s]) => slots.has(s)).map(([s]) => s), days } : null;
+}
+const istHour = (ms) => Number(new Date(ms).toLocaleString('en-GB', { timeZone: APP_TZ, hour: '2-digit', hourCycle: 'h23' }));
+
+// Runs from the 5-minute sweeper (and POST /api/dev/run-reminders). In-app reminders always; emails per reminderEmailsOn().
+function sweepReminders(now = Date.now()) {
+  const d = db();
+  const out = { consult: 0, doctor: 0, lab: 0, medicine: 0 };
+  for (const c of d.consults) {
+    if (c.status !== 'scheduled' || !c.paidAt || !c.scheduledAt) continue;
+    const at = Date.parse(c.scheduledAt); const left = at - now;
+    if (!(left > 0) || left > 24 * H) continue;
+    const r = remindersFor(c, c.scheduledAt);
+    const p = d.patients.find((x) => x.id === c.patientId);
+    const doc = d.doctors.find((x) => x.id === c.doctorId);
+    if (!p || !doc) continue;
+    const band = dueReminder(CONSULT_REMINDERS, r, left, c.paidAt, now);
+    if (band) {
+      r[band[0]] = nowIso();
+      const when = istWhen(c.scheduledAt);
+      patientOwnerUserIds(p).forEach((u) => notify(u, `Appointment ${bandLabel(band, left)}`, `${doc.name} · ${when} · ${consultWhere(c)}. ${consultPrep(c)}`, 'reminder'));
+      emailPatient(p, `Reminder: your appointment with ${doc.name} ${bandLabel(band, left)}`, [`This is a reminder of your appointment with ${doc.name} on ${when} IST (${consultWhere(c)}).`, consultPrep(c)]);
+      out.consult += 1;
+    }
+    // The doctor gets one "next patient" nudge ~15 minutes before a video or in-person visit.
+    if (!r.doc15 && left <= 15 * 60000 && ['video', 'in_person'].includes(c.mode) && doc.userId) {
+      r.doc15 = nowIso();
+      notify(doc.userId, 'Next patient in 15 minutes', `${p.name} · ${c.mode === 'in_person' ? `in person at ${c.location?.name || 'your clinic'}` : 'video consult'} · ${istWhen(c.scheduledAt)}`, 'reminder');
+      out.doctor += 1;
+    }
+  }
+  for (const o of d.labOrders) {
+    if (o.status !== 'ordered' || !o.booking?.paidAt || !o.booking.slot) continue;
+    const left = Date.parse(o.booking.slot) - now;
+    if (!(left > 0) || left > 12 * H) continue;
+    const r = remindersFor(o, o.booking.slot);
+    const band = dueReminder(LAB_REMINDERS, r, left, o.booking.paidAt, now);
+    const p = band && d.patients.find((x) => x.id === o.patientId);
+    if (!p) continue;
+    r[band[0]] = nowIso();
+    const lab = d.facilities.find((f) => f.id === o.labId) || {};
+    const when = istWhen(o.booking.slot);
+    const fasting = o.tests.some((t) => /fasting/i.test(testInfo(t).prep || '') && !/no fasting/i.test(testInfo(t).prep || ''));
+    const where = o.booking.homeCollection ? `home sample collection by ${lab.name || 'the lab'}` : `at ${lab.name || 'the lab'}${lab.address ? `, ${lab.address}` : ''}`;
+    const prep = [fasting ? 'Some of your tests need fasting — please follow the preparation shown in the app (water is fine).' : '', o.booking.homeCollection ? 'Please be at home at the booked time.' : 'Please carry a photo ID and reach a few minutes early.'].filter(Boolean).join(' ');
+    patientOwnerUserIds(p).forEach((u) => notify(u, `Lab visit ${bandLabel(band, left)}`, `${when} · ${where}. ${prep}`, 'reminder'));
+    emailPatient(p, `Reminder: your lab appointment ${bandLabel(band, left)}`, [`This is a reminder of your lab appointment on ${when} IST (${where}).`, prep]);
+    out.lab += 1;
+  }
+  // At most one in-app nudge a day per active prescription, at the first dose time of the day (IST).
+  const today = istDay(now); const hour = istHour(now);
+  for (const rx of d.prescriptions) {
+    if (rx.medNudgeDay === today || !rx.items?.length) continue;
+    const s = rxSchedule(rx);
+    if (!s || hour < s.hour || hour >= 22) continue;
+    const startDay = istDay(rx.createdAt);
+    const dayNo = Math.round((Date.parse(today) - Date.parse(startDay)) / 86400000); // both are YYYY-MM-DD → UTC midnights
+    if (dayNo < 0 || dayNo >= s.days) continue;
+    if (dayNo === 0 && istHour(Date.parse(rx.createdAt)) >= s.hour) continue; // written after today's first dose — start tomorrow
+    const p = d.patients.find((x) => x.id === rx.patientId);
+    if (!p) continue;
+    rx.medNudgeDay = today;
+    const docName = d.doctors.find((x) => x.id === rx.doctorId)?.name;
+    patientOwnerUserIds(p).forEach((u) => notify(u, `Medicine reminder: take your ${s.first} medicines`, `Today's doses${docName ? ` from ${docName}'s prescription` : ''}: ${s.slots.join(', ')}. Day ${dayNo + 1} of ${s.days}.`, 'reminder'));
+    out.medicine += 1;
+  }
+  if (out.consult + out.doctor + out.lab + out.medicine) { store.save(); broadcast('notifications'); }
+  return out;
+}
+
 // Unpaid bookings and delivery orders hold nothing for ever: they expire after 30 minutes.
 function expireUnpaid() {
   const d = db();
@@ -4280,7 +4561,10 @@ function pruneNotifications() {
   automation.init({ dataMode: DATA_MODE });
   expireUnpaid();
   expireConsents();
-  setInterval(() => { expireUnpaid(); expireConsents(); }, 5 * 60000).unref();
+  // Reminders run in their own try: a bad record must never stop unpaid bookings from expiring.
+  const remind = () => { try { sweepReminders(); } catch (e) { console.error('[reminders]', e); } };
+  remind();
+  setInterval(() => { expireUnpaid(); expireConsents(); remind(); }, 5 * 60000).unref();
   pruneNotifications();
   setInterval(pruneNotifications, 6 * 3600000).unref();
   await i18n.init({ broadcast });

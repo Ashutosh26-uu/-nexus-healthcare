@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Video, Building2, MonitorSmartphone, Clock, CalendarClock, Check, ArrowLeft, ArrowRight, Ambulance, Phone, CheckCircle2, QrCode, UserRoundPen, ShieldCheck, Copy } from 'lucide-react';
+import { Video, Building2, MonitorSmartphone, Clock, CalendarClock, Check, ArrowLeft, ArrowRight, Ambulance, Phone, CheckCircle2, QrCode, UserRoundPen, ShieldCheck, Copy, MessageCircle } from 'lucide-react';
 import { api } from '../../api';
 import { Avatar, Button, Field, Modal, fmtDateTime, fmtMoney, cx } from '../../components/ui';
 import { AvailBadge } from '../../components/Availability';
@@ -13,7 +13,14 @@ import QR from '../../components/QR';
 
 const STEPS = ['Where', 'When', 'Symptoms', 'Pay'];
 const DURATIONS = [{ label: 'Today', days: 0 }, { label: '1–3 days', days: 2 }, { label: '4–7 days', days: 5 }, { label: '1–2 weeks', days: 10 }, { label: 'Over 2 weeks', days: 21 }];
-const MISSING_LABEL = { age: 'your age', address: 'your permanent address', aadhaar: 'Aadhaar or a government ID', id: 'a passport / national ID', profile: 'your profile' };
+// How a remote consult happens — the doctor sees this on their queue before the visit.
+const TALK_MODES = [
+  { key: 'video', icon: Video, label: 'Video', sub: 'See each other' },
+  { key: 'audio', icon: Phone, label: 'Audio call', sub: 'Voice only, like a phone call' },
+  { key: 'chat', icon: MessageCircle, label: 'Chat', sub: 'Type messages' },
+];
+const MODE_LABEL = { video: 'Video consult', audio: 'Audio call consult', chat: 'Chat consult' };
+const MISSING_LABEL ={ age: 'your age', address: 'your permanent address', aadhaar: 'Aadhaar or a government ID', id: 'a passport / national ID', profile: 'your profile' };
 
 // Book a doctor: video, or in person at the doctor's own hospital / clinic → pay → booking ID + QR.
 // Nexus E-Clinics show as "coming soon". In person: a ₹100 booking amount now, doctor's fee at the clinic.
@@ -24,6 +31,7 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
   const [step, setStep] = useState(0);
   const [visitType, setVisitType] = useState('clinic');
   const [when, setWhen] = useState('later');
+  const [talk, setTalk] = useState('video'); // video | audio | chat — remote visits only
   const [slot, setSlot] = useState(null);
   const [symptoms, setSymptoms] = useState('');
   const [days, setDays] = useState('');
@@ -38,7 +46,7 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
   useEffect(() => {
     if (!doctor) return undefined;
     let alive = true; // close-and-reopen quickly: the old doctor's options must not land on the new one
-    setStep(0); setBooking(null); setPaid(false); setError(''); setOpts(null); setSlot(null); setCopied(false); setExpired(false);
+    setStep(0); setBooking(null); setPaid(false); setError(''); setOpts(null); setSlot(null); setCopied(false); setExpired(false); setTalk('video');
     setSymptoms(initialSymptoms || patient?.currentSymptoms?.text || '');
     setDays(patient?.currentSymptoms?.days ?? '');
     setMissing(patient?.bookingMissing || []);
@@ -71,7 +79,7 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
     if (symptoms.trim().length < 3) { setError('Please tell the doctor what is bothering you — type it or tap the mic.'); return; }
     setBusy(true); setError('');
     try {
-      const r = await api.post('/bookings', { doctorId: d.id, visitType, when: later ? 'later' : 'now', scheduledAt: later ? slot : undefined, symptoms, symptomDays: days });
+      const r = await api.post('/bookings', { doctorId: d.id, visitType, mode: visitType === 'video' ? talk : undefined, when: later ? 'later' : 'now', scheduledAt: later ? slot : undefined, symptoms, symptomDays: days });
       setBooking(r); setStep(3);
     } catch (e) {
       if (e.code === 'PROFILE_INCOMPLETE') setMissing(e.data?.missing || ['profile']);
@@ -127,7 +135,7 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
                   <Building2 /><span><strong>At the doctor&apos;s {o.clinic?.subtype === 'clinic' ? 'clinic' : 'hospital'}</strong><span className="tiny muted block">{o.clinic ? <><span translate="no">{o.clinic.name}, {o.clinic.district}</span> · pay {fmtMoney(fees.inPerson)} now</> : 'This doctor doesn’t see patients at a clinic'}</span></span>
                 </button>
                 <button type="button" className={cx('pt-bk-type', visitType === 'video' && 'on')} onClick={() => setVisitType('video')}>
-                  <Video /><span><strong>Video consult</strong><span className="tiny muted block">From home, on this phone or laptop · {fmtMoney(fees.video)}</span></span>
+                  <Video /><span><strong>Online consult</strong><span className="tiny muted block">From home — video, audio call or chat · {fmtMoney(fees.video)}</span></span>
                 </button>
                 <button type="button" disabled className="pt-bk-type soon">
                   <MonitorSmartphone /><span><strong>At a Nexus E-Clinic <span className="soon-badge">Coming soon</span></strong><span className="tiny muted block">Our own clinics with vitals checked on arrival</span></span>
@@ -148,6 +156,19 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
                 </button>
               </div>
               {later && <div className="mt-2"><SlotPicker value={slot} onChange={setSlot} /></div>}
+              {visitType === 'video' && (
+                <div className="pt-mode-pick">
+                  <div className="small strong mb-1">How would you like to talk?</div>
+                  <div className="chip-select" role="radiogroup" aria-label="How would you like to talk?">
+                    {TALK_MODES.map((m) => (
+                      <button type="button" key={m.key} role="radio" aria-checked={talk === m.key} title={m.sub} className={cx('chip', talk === m.key && 'on')} onClick={() => setTalk(m.key)}>
+                        <m.icon size={14} style={{ verticalAlign: '-2px' }} /> {m.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="tiny muted mt-1 mb-0">{TALK_MODES.find((m) => m.key === talk)?.sub}. You can still share photos and reports in any mode.</p>
+                </div>
+              )}
             </Field>
           )}
 
@@ -164,7 +185,7 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
               </Field>
               <dl className="kv review">
                 <dt>Doctor</dt><dd translate="no">{d.name}</dd>
-                <dt>Where</dt><dd>{visitType === 'video' ? 'Video consult' : <span translate="no">{place?.name}</span>}</dd>
+                <dt>Where</dt><dd>{visitType === 'video' ? MODE_LABEL[talk] : <span translate="no">{place?.name}</span>}</dd>
                 <dt>When</dt><dd>{!later ? 'Now' : slot ? fmtDateTime(slot) : '—'}</dd>
                 <dt>Pay now</dt><dd><strong>{fmtMoney(amount)}</strong>{visitType !== 'video' ? ' booking amount' : ''}</dd>
                 {visitType !== 'video' && fees.payAtClinic > 0 && <><dt>At the clinic</dt><dd>Doctor&apos;s fee {fmtMoney(fees.payAtClinic)}</dd></>}
@@ -204,7 +225,7 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
           ) : (
             <>
               <QR value={`NEXUS-BOOKING:${booking.consult.bookingNo}`} size={140} label="Booking QR" />
-              <p className="small mb-0">{!later ? 'Stay on the consult screen — you’ll be called in shortly.' : `We'll remind you before ${fmtDateTime(slot)}.`}</p>
+              <p className="small mb-0">{MODE_LABEL[booking.consult.mode] || MODE_LABEL.video}.{!later ? 'Stay on the consult screen — you’ll be called in shortly.' : `We'll remind you before ${fmtDateTime(slot)}.`}</p>
             </>
           )}
         </div>

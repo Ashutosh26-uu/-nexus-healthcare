@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckInModal } from './BookingAlerts';
-import { Clock, Users, Route, Star, Video, MessageSquare, MapPin, Play, CalendarClock, Coffee, ArrowRight, Monitor, UserRound, CheckCircle2, Circle, Hourglass, ShieldCheck, Pill, AlertTriangle, ScanLine, FlaskConical, FileText, Repeat } from 'lucide-react';
+import { Clock, Users, Route, Star, Video, MessageSquare, Phone, Building2, MapPin, Play, CalendarClock, Coffee, ArrowRight, Monitor, UserRound, CheckCircle2, Circle, Hourglass, ShieldCheck, Pill, AlertTriangle, ScanLine, FlaskConical, FileText, Repeat } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
 import { Avatar, Button, Card, Empty, Loading, Stat, TriageBadge, StatusBadge, timeAgo, fmtDateTime, useAction, cx } from '../../components/ui';
@@ -15,6 +15,7 @@ export default function Queue() {
   const [run, busy] = useAction();
   useNow(30000); // keep "waiting for" labels fresh
   const [checkIn, setCheckIn] = useState(false);
+  const [lateFor, setLateFor] = useState(null); // one booked patient to tell "running late"
 
   if (home.loading && !home.data) return <Loading />;
   if (home.error && !home.data) return <Empty title="Couldn't load your queue">{home.error}</Empty>;
@@ -90,7 +91,8 @@ export default function Queue() {
                         </div>
                         <div className="row wrap tiny muted" style={{ gap: 10, marginTop: 2 }}>
                           <span className="row" style={{ gap: 4 }}><Clock size={13} />{live ? `In consult since ${timeAgo(c.startedAt)}` : `Waiting ${timeAgo(c.createdAt).replace(' ago', '')}`}</span>
-                          <span className="row" style={{ gap: 4 }}>{c.mode === 'chat' ? <MessageSquare size={13} /> : <Video size={13} />}{c.mode === 'chat' ? 'Chat' : 'Video'}</span>
+                          <ModeTag c={c} />
+                          <span>{bookingKind(c)}</span>
                           {c.patientLanguage && <span>Speaks {c.patientLanguage}</span>}
                         </div>
                       </div>
@@ -101,7 +103,8 @@ export default function Queue() {
                     </div>
                   </div>
 
-                  <p className="dr-qsym">"{c.triage.symptoms}"</p>
+                  <p className="dr-qsym">"{c.triage.symptoms}"{sinceLabel(c) && <span className="tiny muted" style={{ fontStyle: 'normal' }}> · {sinceLabel(c)}</span>}</p>
+                  {c.runningLate && <p className="tiny muted mb-1"><Hourglass size={12} style={{ verticalAlign: '-2px' }} /> Patient told you&apos;re ~{c.runningLate.minutes} min late</p>}
                   {c.triage.note && <p className="small muted mb-1">{c.triage.note}</p>}
 
                   <VitalsChips vitals={c.vitals} compact />
@@ -123,6 +126,8 @@ export default function Queue() {
         </div>
 
         <div className="stack">
+          {lateFor && <RunningLate key={lateFor.id} home={home} one={lateFor} onDone={() => setLateFor(null)} />}
+          <RunningLate home={home} count={waitingList.length + scheduled.filter((c) => c.scheduledAt && new Date(c.scheduledAt).toDateString() === new Date().toDateString()).length} />
           <Card title="Scheduled" action={<span className="tiny muted">{scheduled.length} upcoming</span>}>
             {scheduled.length === 0 ? (
               <Empty icon={CalendarClock} title="Nothing booked">Open more slots in Schedule & availability.</Empty>
@@ -139,8 +144,15 @@ export default function Queue() {
                       </div>
                       <div className="grow">
                         <div className="small" style={{ fontWeight: 600 }} translate="no">{c.patientName}</div>
-                        <div className="tiny muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.triage?.symptoms}</div>
+                        <div className="tiny muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.triage?.symptoms}>{c.triage?.symptoms}{sinceLabel(c) ? ` · ${sinceLabel(c)}` : ''}</div>
+                        <div className="row wrap tiny muted" style={{ gap: 8 }}>
+                          <ModeTag c={c} />
+                          {c.followUp && <span>Follow-up</span>}
+                          {c.rescheduled > 0 && <span>Moved by patient</span>}
+                          {c.runningLate && <span className="row" style={{ gap: 3 }}><Hourglass size={12} />~{c.runningLate.minutes} min late</span>}
+                        </div>
                       </div>
+                      <button type="button" className="icon-btn" title={`Running late for ${c.patientName}?`} aria-label={`Running late for ${c.patientName}?`} onClick={() => setLateFor(c)}><Hourglass size={15} /></button>
                       <Button size="sm" variant="ghost" title={`Starts ${fmtDateTime(c.scheduledAt)}`} loading={busy === `start-${c.id}`} onClick={() => start(c)}>Start</Button>
                     </div>
                   );
@@ -157,6 +169,49 @@ export default function Queue() {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ---------- what the doctor needs at a glance on a card ---------- */
+const MODES = { video: [Video, 'Video'], audio: [Phone, 'Audio call'], chat: [MessageSquare, 'Chat'], in_person: [Building2, 'In person'] };
+function ModeTag({ c }) {
+  const [Icon, label] = MODES[c.mode] || MODES.video;
+  return <span className="row" style={{ gap: 4 }}><Icon size={13} />{label}</span>;
+}
+// Kiosk walk-in / booked slot / joined the live queue / follow-up.
+const bookingKind = (c) => (c.kioskId ? 'Kiosk walk-in' : c.followUp ? 'Follow-up' : c.type === 'scheduled' ? `Booked${c.scheduledAt ? ` for ${new Date(c.scheduledAt).toLocaleTimeString(getLocale(), { hour: 'numeric', minute: '2-digit' })}` : ''}` : 'Joined now');
+const sinceLabel = (c) => {
+  const n = c.triage?.symptomDays;
+  if (n == null || n === '') return '';
+  return Number(n) === 0 ? 'since today' : `for ${n} day${Number(n) === 1 ? '' : 's'}`;
+};
+
+/* ---------- "Running late?" — tell everyone still waiting today (or one patient) ---------- */
+const LATE_MINUTES = [10, 15, 20, 30, 45, 60];
+function RunningLate({ home, count, one, onDone }) {
+  const [open, setOpen] = useState(false);
+  const [run, busy] = useAction();
+  if (!count && !one) return null;
+  const send = (m) => run(`late-${m}`, async () => {
+    if (one) await api.post(`/consults/${one.id}/late`, { minutes: m });
+    else await api.post('/doctor/running-late', { minutes: m });
+    setOpen(false); onDone?.(); home.reload?.();
+  }, one ? `${one.patientName} has been told you're ~${m} min late` : `Told ${count} waiting ${count === 1 ? 'patient' : 'patients'} you're ~${m} min late`);
+  const show = open || one;
+  return (
+    <Card className="flat">
+      <div className="row between wrap" style={{ gap: 8 }}>
+        <div className="small"><Hourglass size={14} style={{ verticalAlign: '-2px' }} /> <strong>{one ? <>Running late for <span translate="no">{one.patientName}</span>?</> : 'Running late?'}</strong>
+          <div className="tiny muted">{one ? 'We\'ll tell them and keep their place.' : `We'll tell the ${count} ${count === 1 ? 'patient' : 'patients'} still waiting today and keep their place.`}</div></div>
+        {!show ? <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>Tell patients</Button>
+          : <Button size="sm" variant="ghost" onClick={() => { setOpen(false); onDone?.(); }}>Close</Button>}
+      </div>
+      {show && (
+        <div className="chip-select mt-1" role="group" aria-label="How late?">
+          {LATE_MINUTES.map((m) => <button key={m} type="button" className="chip" disabled={!!busy} onClick={() => send(m)}>{busy === `late-${m}` ? '…' : `${m} min`}</button>)}
+        </div>
+      )}
+    </Card>
   );
 }
 

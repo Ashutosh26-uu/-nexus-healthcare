@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Mic, MicOff, Video, VideoOff, PhoneOff, Send, Languages, Sparkles, Activity, History, FlaskConical, ClipboardList, Signal, Monitor, Play, Maximize2, Building2 } from 'lucide-react';
+import { ArrowLeft, Mic, MicOff, Video, VideoOff, PhoneOff, Send, Languages, Sparkles, Activity, History, FlaskConical, ClipboardList, Signal, Monitor, Play, Maximize2, Building2, RefreshCw } from 'lucide-react';
 import { api } from '../../api';
+import { useCall } from '../../components/useCall';
+import CallMedia from '../../components/CallMedia';
 import { useLive } from '../../live';
 import { useAuth } from '../../auth';
 import { Avatar, Button, Card, Empty, Loading, Tabs, TriageBadge, TRIAGE, StatusBadge, Sparkline, timeAgo, fmtTime, fmtDateTime, useAction, cx } from '../../components/ui';
@@ -20,37 +22,64 @@ function CallTimer({ since }) {
 const canStart = (c) => c.status === 'queued' || c.status === 'scheduled';
 
 function VideoStage({ consult, doctorName, live, onStart, starting }) {
-  const [mic, setMic] = useState(true);
-  const [cam, setCam] = useState(true);
   const [ended, setEnded] = useState(false);
   const stage = useRef(null);
+  const audioOnly = consult.mode === 'audio';
+  const inCall = live && !ended && consult.mode !== 'chat';
+  // Ending the call (or leaving the page) hangs up for the patient too; "Rejoin" starts a fresh connection.
+  const call = useCall({ consultId: consult.id, role: 'doctor', audioOnly, enabled: inCall });
+  const { localStream, remoteStream, state, muted, cameraOff } = call;
+  const connected = inCall && state === 'connected';
+  const remoteVideo = inCall && !audioOnly && remoteStream?.getVideoTracks().length > 0 && state !== 'ended';
+  const selfVideo = inCall && !audioOnly && localStream?.getVideoTracks().length > 0 && !cameraOff;
   const from = consult.kioskName ? `connected from ${consult.kioskName.replace('E-Clinic · ', 'E-Clinic ')}` : consult.mode === 'chat' ? 'chat consult from the Nexus Healthcare app' : 'joining from the Nexus Healthcare app';
   const fullscreen = () => { const el = stage.current; if (!el) return; if (document.fullscreenElement) document.exitFullscreen?.(); else el.requestFullscreen?.(); };
   return (
-    <div ref={stage} className={cx('dr-stage', !live && 'idle', ended && 'ended')}>
+    <div ref={stage} className={cx('dr-stage', !live && 'idle', ended && 'ended', remoteVideo && 'has-remote')}>
+      {remoteVideo && <CallMedia stream={remoteStream} className="dr-remote" label="Patient’s video" />}
+      {inCall && remoteStream && !remoteVideo && <CallMedia stream={remoteStream} audioOnly label="Patient’s voice" />}
       <div className="dr-stage-top">
         <span className="dr-live-pill">{live && !ended ? <><span className="dr-rec" />LIVE · <CallTimer since={consult.startedAt} /></> : ended ? 'Call ended' : 'Not started'}</span>
-        <span className="dr-net"><Signal size={14} />{consult.kioskName ? 'HD · 2.1 Mbps' : 'Good connection'}</span>
+        {inCall
+          ? <span className="dr-net" role="status"><Signal size={14} />{connected ? 'Connected' : state === 'reconnecting' ? 'Reconnecting…' : state === 'failed' ? 'Not connected' : state === 'ended' ? 'Patient left' : state === 'connecting' ? 'Connecting…' : 'Waiting'}</span>
+          : <span className="dr-net"><Signal size={14} />{consult.kioskName ? 'HD · 2.1 Mbps' : 'Good connection'}</span>}
       </div>
-      <div className="dr-stage-center">
-        <div className="dr-patient-tile">
-          <Avatar name={consult.patientName} size="lg" />
-          {live && !ended && <span className="dr-voice"><i /><i /><i /><i /></span>}
+      {!(remoteVideo && connected) && (
+        <div className={cx('dr-stage-center', remoteVideo && 'over-video')}>
+          {!remoteVideo && (
+            <div className="dr-patient-tile">
+              <Avatar name={consult.patientName} size="lg" />
+              {connected && <span className="dr-voice"><i /><i /><i /><i /></span>}
+            </div>
+          )}
+          <div className="dr-stage-name" translate="no">{consult.patientName}</div>
+          {!inCall && <div className="dr-stage-sub">{from}</div>}
+          {inCall && state === 'idle' && <div className="dr-stage-sub" role="status">{consult.kioskName ? 'Waiting for the kiosk to join the call…' : 'Waiting for the patient to join…'}</div>}
+          {inCall && state === 'connecting' && <div className="dr-stage-sub" role="status">Connecting…</div>}
+          {inCall && state === 'reconnecting' && <div className="dr-stage-sub" role="status">Reconnecting… the call will pick up again.</div>}
+          {inCall && state === 'ended' && <div className="dr-stage-sub" role="status">The patient left the call. They can rejoin from their app.</div>}
+          {inCall && state === 'failed' && <div className="dr-stage-sub" role="status">The call couldn’t connect. Check your internet and try again, or use the chat.</div>}
+          {connected && audioOnly && <div className="dr-call-clock"><CallTimer since={consult.startedAt} /></div>}
+          {inCall && state === 'failed' && <Button size="sm" variant="secondary" icon={RefreshCw} onClick={call.retry} className="mt-2">Try again</Button>}
+          {!live && canStart(consult) && (
+            <Button variant="clay" icon={Play} loading={starting} onClick={onStart} className="mt-2">Start consult</Button>
+          )}
+          {ended && <div className="dr-stage-sub mt-1">Finish the prescription below to close the visit.</div>}
+          {ended && live && consult.mode !== 'chat' && <Button size="sm" variant="secondary" icon={Video} onClick={() => setEnded(false)} className="mt-2">Rejoin call</Button>}
         </div>
-        <div className="dr-stage-name" translate="no">{consult.patientName}</div>
-        <div className="dr-stage-sub">{from}</div>
-        {!live && canStart(consult) && (
-          <Button variant="clay" icon={Play} loading={starting} onClick={onStart} className="mt-2">Start consult</Button>
-        )}
-        {ended && <div className="dr-stage-sub mt-1">Finish the prescription below to close the visit.</div>}
-      </div>
-      <div className="dr-selfview">
-        {cam ? <Avatar name={doctorName} size="sm" /> : <VideoOff size={16} />}
-        <span>You</span>
-      </div>
+      )}
+      {inCall && call.error === 'denied' && <div className="dr-media-note">Camera or mic permission wasn’t given — the patient can’t see or hear you. Allow it in your browser settings, then tap Try again.</div>}
+      {inCall && call.error === 'no-camera' && <div className="dr-media-note">Your camera isn’t available — the patient will only hear you.</div>}
+      {inCall && call.error === 'unsupported' && <div className="dr-media-note">This browser can’t share your camera or mic. Use a recent Chrome, Edge, Safari or Firefox.</div>}
+      {inCall && call.error === 'denied' && state !== 'failed' && <Button size="sm" variant="secondary" icon={RefreshCw} onClick={call.retry} className="dr-media-retry">Try again</Button>}
+      {!audioOnly && (
+        <div className={cx('dr-selfview', selfVideo && 'has-video')}>
+          {selfVideo ? <CallMedia stream={localStream} self className="dr-self-video" label="Your camera" /> : <>{cameraOff && inCall ? <VideoOff size={16} /> : <Avatar name={doctorName} size="sm" />}<span>You</span></>}
+        </div>
+      )}
       <div className="dr-controls">
-        <button className={cx('dr-ctl', !mic && 'off')} onClick={() => setMic((v) => !v)} aria-label={mic ? 'Mute' : 'Unmute'}>{mic ? <Mic /> : <MicOff />}</button>
-        <button className={cx('dr-ctl', !cam && 'off')} onClick={() => setCam((v) => !v)} aria-label={cam ? 'Turn camera off' : 'Turn camera on'}>{cam ? <Video /> : <VideoOff />}</button>
+        <button className={cx('dr-ctl', muted && 'off')} onClick={call.toggleMute} disabled={!inCall || !localStream} aria-label={muted ? 'Unmute microphone' : 'Mute microphone'} aria-pressed={muted}>{muted ? <MicOff /> : <Mic />}</button>
+        {!audioOnly && <button className={cx('dr-ctl', cameraOff && 'off')} onClick={call.toggleCamera} disabled={!inCall || !localStream?.getVideoTracks().length} aria-label={cameraOff ? 'Turn camera on' : 'Turn camera off'} aria-pressed={cameraOff}>{cameraOff ? <VideoOff /> : <Video />}</button>}
         <button className="dr-ctl" onClick={fullscreen} aria-label="Full screen"><Maximize2 /></button>
         <button className="dr-ctl end" disabled={!live || ended} onClick={() => setEnded(true)} aria-label="End call"><PhoneOff /></button>
       </div>

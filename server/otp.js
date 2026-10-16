@@ -137,17 +137,18 @@ async function getEtherealTransport(nodemailer) {
   return etherealTransport;
 }
 
+const smtpTransport = (nodemailer) => nodemailer.createTransport({ host: env('SMTP_HOST'), port: Number(env('SMTP_PORT') || 587), secure: env('SMTP_SECURE') === 'true', auth: env('SMTP_USER') ? { user: env('SMTP_USER'), pass: env('SMTP_PASS') } : undefined });
+const MAIL_FROM = () => env('SMTP_FROM') || 'Nexus Healthcare <no-reply@nexushealthcare.in>';
+
 async function sendViaProvider(provider, { target, channel, code, lang, purpose }) {
   if (channel === 'email') {
     let nodemailer;
     try { nodemailer = require('nodemailer'); } catch { throw new Error('Email OTP needs the "nodemailer" package.'); }
     const realSmtp = Boolean(env('SMTP_HOST'));
-    const transport = realSmtp
-      ? nodemailer.createTransport({ host: env('SMTP_HOST'), port: Number(env('SMTP_PORT') || 587), secure: env('SMTP_SECURE') === 'true', auth: env('SMTP_USER') ? { user: env('SMTP_USER'), pass: env('SMTP_PASS') } : undefined })
-      : await getEtherealTransport(nodemailer);
+    const transport = realSmtp ? smtpTransport(nodemailer) : await getEtherealTransport(nodemailer);
     const text = messageFor(code, lang, purpose);
     const info = await transport.sendMail({
-      from: env('SMTP_FROM') || 'Nexus Healthcare <no-reply@nexushealthcare.in>', to: target, subject: (SUBJECTS[purpose] || SUBJECTS.login)(code), text,
+      from: MAIL_FROM(), to: target, subject: (SUBJECTS[purpose] || SUBJECTS.login)(code), text,
       html: `<div style="font-family:Arial,sans-serif;max-width:420px;margin:auto;padding:24px;border:1px solid #e6dfd3;border-radius:14px"><h2 style="color:#0f5c4d;margin:0 0 8px">Nexus Healthcare</h2><p>${text.replace(code, '')}</p><p style="font-size:32px;letter-spacing:8px;font-weight:bold;color:#1d2b2a;margin:16px 0">${code}</p><p style="color:#6f7c78;font-size:12px">If you didn't ask for this, you can ignore this email.</p></div>`,
     });
     return { ref: info.messageId, previewUrl: realSmtp ? null : nodemailer.getTestMessageUrl(info) };
@@ -324,4 +325,23 @@ function publicConfig() {
   };
 }
 
-module.exports = { sendCode, verifyCode, normalizePhone, samePhone, publicConfig, OtpError };
+// Plain notification email (visit reminders, "prescription ready"…). Same SMTP settings as codes, but never the
+// Ethereal test mailbox and never a placeholder/demo address. Without SMTP_HOST nothing is sent (dev logs it).
+// Never throws — a reminder email failing must not break the request or the sweeper that sent it.
+async function sendMail({ to, subject, text, html }) {
+  const target = String(to || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target) || DEMO_EMAIL.test(target)) return { sent: false, reason: 'not_a_real_inbox' };
+  if (!configured().email) {
+    if (process.env.NODE_ENV !== 'production') console.log(`[mail] (no SMTP_HOST — not sent) to ${maskEmail(target)}: ${subject}`);
+    return { sent: false, reason: 'no_smtp' };
+  }
+  try {
+    const info = await smtpTransport(require('nodemailer')).sendMail({ from: MAIL_FROM(), to: target, subject, text, html });
+    return { sent: true, ref: info.messageId };
+  } catch (e) {
+    console.error('[mail] delivery failed:', e.message);
+    return { sent: false, reason: 'smtp_error' };
+  }
+}
+
+module.exports = { sendCode, verifyCode, normalizePhone, samePhone, publicConfig, OtpError, sendMail };

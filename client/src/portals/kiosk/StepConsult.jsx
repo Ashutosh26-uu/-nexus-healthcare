@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Video, Mic, MicOff, Signal, Languages, Gauge, HeartPulse, Activity, Thermometer, Send, X, ShieldCheck, Clock, Stethoscope } from 'lucide-react';
+import { Video, VideoOff, Mic, MicOff, Signal, Languages, Gauge, HeartPulse, Activity, Thermometer, Send, X, ShieldCheck, Clock, Stethoscope, RefreshCw } from 'lucide-react';
 import { api } from '../../api';
+import { useCall } from '../../components/useCall';
+import CallMedia from '../../components/CallMedia';
 import { useLive } from '../../live';
 import { Avatar, cx } from '../../components/ui';
 import { useKiosk } from './context';
@@ -60,27 +62,47 @@ function Waiting({ c, t, onCancel, cancelling }) {
 }
 
 function InCall({ c, t, vitals, onSend }) {
-  const [mic, setMic] = useState(true);
   const [msg, setMsg] = useState('');
   const endRef = useRef(null);
   const v = useDrift(vitals);
+  // The kiosk is the patient's side of the call (the operator's account is allowed on its own consults).
+  const audioOnly = c.mode === 'audio';
+  const call = useCall({ consultId: c.id, role: 'patient', audioOnly, enabled: c.mode !== 'chat' });
+  const { localStream, remoteStream, state, muted, cameraOff } = call;
+  const live = state === 'connected';
+  const remoteVideo = !audioOnly && remoteStream?.getVideoTracks().length > 0 && state !== 'ended';
+  const selfVideo = !audioOnly && localStream?.getVideoTracks().length > 0 && !cameraOff;
+  const stateKey = { idle: 'call_waiting', connecting: 'call_connecting', reconnecting: 'call_reconnecting', ended: 'call_ended', failed: 'call_failed', connected: 'call_connected' }[state];
+  const mediaKey = { denied: 'cam_denied', 'no-camera': 'cam_none', unsupported: 'cam_unsupported' }[call.error];
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'nearest' }); }, [c.messages?.length]);
   const send = (e) => { e.preventDefault(); if (msg.trim()) { onSend(msg.trim()); setMsg(''); } };
   return (
     <div className="k-call fade-in">
-      <div className="k-video">
+      <div className={cx('k-video', remoteVideo && 'has-remote')}>
+        {remoteVideo && <CallMedia stream={remoteStream} className="k-remote" label="Doctor’s video" />}
+        {remoteStream && !remoteVideo && <CallMedia stream={remoteStream} audioOnly label="Doctor’s voice" />}
         <div className="k-video-top">
           <span className="k-live"><span />{t('in_call')} · <Timer since={c.startedAt} /></span>
-          <span className="k-hd"><Signal size={16} />HD · encrypted</span>
+          {live && <span className="k-hd"><Signal size={16} />{t(stateKey)}</span>}
         </div>
-        <div className="k-video-doc">
-          <Avatar name={c.doctorName} size="lg" />
-          <strong translate="no">{c.doctorName}</strong>
-          <span>{c.doctorSpecialty}</span>
-        </div>
-        <div className="k-video-self"><Avatar name={c.patientName} size="sm" /><span translate="no">{c.patientName?.split(' ')[0]}</span></div>
+        {!(remoteVideo && live) && (
+          <div className={cx('k-video-doc', remoteVideo && 'over-video')} aria-live="polite">
+            {!remoteVideo && <Avatar name={c.doctorName} size="lg" />}
+            <strong translate="no">{c.doctorName}</strong>
+            <span>{live ? c.doctorSpecialty : t(stateKey)}</span>
+            {live && audioOnly && <span className="k-call-clock"><Timer since={c.startedAt} /></span>}
+            {(state === 'failed' || call.error === 'denied') && <KButton icon={RefreshCw} onClick={call.retry} className="k-retry">{t('try_again')}</KButton>}
+          </div>
+        )}
+        {mediaKey && <div className="k-media-note">{t(mediaKey)}</div>}
+        {!audioOnly && (
+          <div className={cx('k-video-self', selfVideo && 'has-video')}>
+            {selfVideo ? <CallMedia stream={localStream} self className="k-self-video" label="Kiosk camera" /> : <><Avatar name={c.patientName} size="sm" /><span translate="no">{c.patientName?.split(' ')[0]}</span></>}
+          </div>
+        )}
         <div className="k-video-ctl">
-          <button type="button" className={cx(!mic && 'off')} onClick={() => setMic((x) => !x)} aria-label="Microphone">{mic ? <Mic /> : <MicOff />}</button>
+          <button type="button" className={cx(muted && 'off')} onClick={call.toggleMute} disabled={!localStream} aria-label={muted ? 'Unmute microphone' : 'Mute microphone'} aria-pressed={muted}>{muted ? <MicOff /> : <Mic />}</button>
+          {!audioOnly && <button type="button" className={cx(cameraOff && 'off')} onClick={call.toggleCamera} disabled={!localStream?.getVideoTracks().length} aria-label={cameraOff ? 'Turn camera on' : 'Turn camera off'} aria-pressed={cameraOff}>{cameraOff ? <VideoOff /> : <Video />}</button>}
           <span className="k-video-cap"><Languages size={16} />Live captions in {c.patientLanguage || 'Hindi'}</span>
         </div>
       </div>

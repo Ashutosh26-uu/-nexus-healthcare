@@ -30,12 +30,15 @@ Set these as **secrets in the console**, never in files:
 | `JWT_SECRET` | 64+ random characters (`node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`) |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | first super-admin |
 | `CORS_ORIGIN` | your app URL, e.g. `https://nexus-xxxx.development.catalystappsail.in` |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | email codes |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | email codes, visit reminders and "prescription ready" notes |
+| `APP_URL` | the app's public URL, used as the link in reminder emails (default: this Catalyst URL) |
+| `REMINDER_EMAILS` | optional — `true` sends reminder emails outside `DATA_MODE=live` (in-app reminders always run) |
 | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` | real payments (leave unset → demo payments are blocked in live mode) |
 | `UPI_VPA` | optional UPI QR |
 | `BOOKING_FEE` | optional, default `100` |
 | `N8N_WEBHOOK_URL`, `N8N_WEBHOOK_SECRET` | optional — send events to n8n (see [AUTOMATIONS.md](AUTOMATIONS.md)) |
 | `N8N_API_KEY`, `N8N_SHARE_CONTACT`, `N8N_EVENTS` | optional — let n8n workflows call Nexus; include patient contact for reminders; limit which events are sent |
+| `TURN_URL`, `TURN_USERNAME`, `TURN_CREDENTIAL` | optional but recommended — TURN relay for video/audio calls (some mobile networks can't connect peer-to-peer with STUN alone). `TURN_URL` may list several URLs, comma-separated |
 
 The listening port is read automatically from `X_ZOHO_CATALYST_LISTEN_PORT`.
 

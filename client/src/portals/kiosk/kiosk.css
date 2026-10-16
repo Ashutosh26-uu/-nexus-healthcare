@@ -553,3 +553,25 @@ select.k-input { appearance: none; background-image: url("data:image/svg+xml,%3C
 .k-doc { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 14px; border: 1.5px solid var(--line, #e6dfd2); background: #fff; }
 .k-doc.here { border-color: #1fa463; background: #f0faf4; }
 .k-doc .k-fine { margin: 0; }
+
+/* Live call: the doctor's video fills the screen, the kiosk camera is the small picture-in-picture */
+.k-remote { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #0f1a17; }
+.k-video-top, .k-video-ctl { z-index: 3; }
+.k-video.has-remote .k-video-top { text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
+.k-video-doc { z-index: 1; padding: 20px; }
+.k-video-doc.over-video { background: rgba(15, 26, 23, 0.6); }
+.k-call-clock { font-size: 2rem; font-weight: 600; font-variant-numeric: tabular-nums; color: #fff; opacity: 1 !important; }
+.k-retry { margin-top: 12px; }
+.k-media-note { position: absolute; top: 64px; inset-inline-start: 16px; inset-inline-end: 16px; z-index: 3; background: rgba(0, 0, 0, 0.5); color: #f3e3c4; padding: 10px 14px; border-radius: 12px; font-size: 0.95rem; }
+.k-video-self { z-index: 2; overflow: hidden; }
+.k-video-self.has-video { width: 168px; height: 126px; }
+.k-self-video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.k-video-ctl button:disabled { opacity: 0.45; cursor: not-allowed; }
+.k-video .call-unmute { position: absolute; left: 50%; top: 64px; transform: translateX(-50%); z-index: 4; display: inline-flex; align-items: center; gap: 8px; min-height: 52px; padding: 0 22px; border: 0; border-radius: 99px; background: #fff; color: var(--ink); font-weight: 600; cursor: pointer; white-space: nowrap; }
+@media (max-width: 960px) {
+  .k-video { min-height: min(62vh, 560px); }
+  .k-video-cap { display: none; }
+}
+@media (max-width: 640px) {
+  .k-video-self, .k-video-self.has-video { width: 96px; height: 128px; bottom: 92px; inset-inline-end: 10px; }
+}

@@ -698,3 +698,23 @@ button.pt-wtb-head { cursor: pointer; }
 .pt-rate button { border: 0; background: none; font-size: 22px; line-height: 1; padding: 6px 3px; color: var(--line-2); cursor: pointer; }
 .pt-rate button.on { color: #e0a100; }
 .pt-rate button:disabled { cursor: default; }
+
+/* Upcoming visits: reschedule / cancel and the doctor's "running late" note */
+.pt-visit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.pt-visit-why { flex-basis: 100%; }
+.pt-late { display: flex; align-items: flex-start; gap: 6px; margin-top: 6px; padding: 6px 10px; border-radius: 10px; background: var(--sun-soft); color: #6b4708; font-size: 0.82rem; line-height: 1.35; }
+.pt-late svg { flex-shrink: 0; margin-top: 2px; }
+.pt-mode-pick { margin-top: 12px; }
+.pt-mode-pick .chip { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+
+/* Live call: the doctor's video fills the stage, your own camera is the small picture-in-picture */
+.pt-remote { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #08130f; z-index: 0; }
+.pt-call.has-remote .pt-call-top { background: linear-gradient(rgba(0,0,0,.45), transparent); }
+.pt-doc-tile.over-video { position: absolute; inset: 0; z-index: 1; background: rgba(8, 19, 15, .62); }
+.pt-call-clock { font-size: 1.6rem; font-weight: 600; font-variant-numeric: tabular-nums; color: #fff; margin-top: 4px; }
+.pt-ctl:disabled { opacity: .5; cursor: not-allowed; }
+.pt-ctl:focus-visible svg { outline: 2.5px solid var(--sun); outline-offset: 2px; }
+@media (max-width: 760px) {
+  .pt-call.has-remote { min-height: min(72vh, 560px); }
+  .pt-call-controls { gap: 10px; padding: 12px; }
+}
