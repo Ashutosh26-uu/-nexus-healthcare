@@ -91,7 +91,7 @@ function DoctorCard({ d, onApprove, onReject, busy }) {
             <div className="ad-partner tiny">
               <span className="ad-partner-tag">Profile</span>
               <span>Age {k.age}</span>
-              <span className="mono">Aadhaar XXXX XXXX {k.aadhaarLast4}{k.aadhaarChecksumOk ? ' ✓' : ''}</span>
+              {k.aadhaarLast4 ? <span className="mono">Aadhaar XXXX XXXX {k.aadhaarLast4}{k.aadhaarChecksumOk ? ' ✓' : ''}</span> : <span className="muted">Aadhaar not given (optional)</span>}
               <span>Latest degree: {k.latestDegree}{k.degreeNumber ? ` · ${k.degreeNumber}` : ''}</span>
               {d.patientsLifetime ? <span>~{Number(d.patientsLifetime).toLocaleString()} patients seen</span> : null}
               <span>Proposed fee ₹{d.fee}</span>

@@ -685,12 +685,59 @@ app.get('/api/auth/me', auth, (req, res) => {
 
 app.post('/api/auth/password', auth, async (req, res) => {
   const { current, next: nextPw } = req.body || {};
+  // Accounts created with a one-time code have no password yet — they set one with an email code instead.
+  if (!req.user.passwordHash) return res.status(400).json({ error: 'Your account has no password yet. Use "Change with an email code" to set one.' });
   if (typeof current !== 'string' || !(await bcrypt.compare(current, req.user.passwordHash))) return res.status(400).json({ error: 'Current password is incorrect.' });
   if (typeof nextPw !== 'string' || nextPw.length < 8 || nextPw.length > 200) return res.status(400).json({ error: 'New password must be at least 8 characters.' });
   req.user.passwordHash = await bcrypt.hash(nextPw, 10);
   req.user.tokenVersion = (req.user.tokenVersion || 0) + 1; // sign out every other device
   store.save();
   res.json({ ok: true, token: sign(req.user) });
+});
+
+// ---------- forgot / change password with an email code (every role) ----------
+// 1) POST …/request { email } mails a 6-digit code (purpose 'reset' — it can't be used to sign in).
+// 2) POST …/confirm { email, code, password } sets the new password on the one account behind that email,
+//    so it applies in every portal at once; tokenVersion++ signs out all other devices, and this device
+//    gets a fresh token.
+const resetLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 10, key: (r) => `${r.ip}|${String(r.body?.email || '').slice(0, 160).toLowerCase()}`, message: 'Too many requests. Please wait a while and try again.' });
+const resetVerifyLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 20, key: (r) => String(r.body?.email || '').slice(0, 160).toLowerCase(), message: 'Too many attempts. Please wait a few minutes and request a new code.' });
+
+app.post('/api/auth/password-reset/request', resetLimiter, async (req, res) => {
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase().slice(0, 160) : '';
+  if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Please enter a valid email address.' });
+  const user = findUserByEmail(email);
+  // Same answer whether or not the account exists (no account-existence oracle).
+  const reply = { ok: true, message: 'If this email has a Nexus Healthcare account, we\'ve sent a 6-digit code to it.', expiresIn: 300, resendIn: 30 };
+  if (!user || user.status === 'suspended') return res.json(reply);
+  try {
+    const sent = await otp.sendCode({ channel: 'email', email, lang: clean(req.body?.lang, 12) || 'en', ip: req.ip, purpose: 'reset' });
+    res.json({ ...reply, expiresIn: sent.expiresIn, resendIn: sent.resendIn, devCode: sent.devCode, emailPreview: sent.emailPreview });
+  } catch (e) {
+    if (e instanceof OtpError) return res.status(e.status).json({ error: e.message, retryAfter: e.retryAfter });
+    throw e;
+  }
+});
+
+app.post('/api/auth/password-reset/confirm', resetVerifyLimiter, async (req, res) => {
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase().slice(0, 160) : '';
+  const { code, password } = req.body || {};
+  if (typeof password !== 'string' || password.length < 8 || password.length > 200) return res.status(400).json({ error: 'Choose a password of at least 8 characters.' });
+  try {
+    await otp.verifyCode({ target: email, code: String(code || ''), purpose: 'reset' });
+  } catch (e) {
+    if (e instanceof OtpError) return res.status(e.status).json({ error: e.message });
+    throw e;
+  }
+  const user = findUserByEmail(email);
+  if (!user || user.status === 'suspended') return res.status(400).json({ error: 'Please request a new code.' });
+  user.passwordHash = await bcrypt.hash(password, 10);
+  user.tokenVersion = (user.tokenVersion || 0) + 1; // every other session ends; the new password is the only one
+  user.passwordChangedAt = nowIso();
+  notify(user.id, 'Password changed', 'Your password was changed using a code sent to your email. If this wasn\'t you, contact support right away.');
+  audit(user, 'password_reset', null, 'account', 'Password set with an email code');
+  store.save();
+  res.json({ ok: true, token: sign(user), user: publicUser(user) });
 });
 
 // ---------- join the network (public partner applications) ----------
@@ -2685,7 +2732,8 @@ const emailLive = () => otp.publicConfig().emailLive;
 function contactOf(p) {
   const u = db().users.find((x) => x.id === p.userId);
   const mobile = u?.phone || p.emergencyContacts?.find((e) => e.relation === 'Mobile')?.phone || null;
-  const email = u?.email && !DEMO_EMAIL.test(u.email) ? u.email : null;
+  // Demo addresses are never mailed on a live server; in dev mode otp.js shows the code on screen instead.
+  const email = u?.email && (!DEMO_EMAIL.test(u.email) || otp.publicConfig().devMode) ? u.email : null;
   return { mobile, email };
 }
 // Contact details for automation reminders — only when the operator switched on N8N_SHARE_CONTACT.
@@ -2696,7 +2744,7 @@ function autoContact(p) {
 }
 // Can an approval (consent) code go out as a plain SMS? A Twilio-Verify-only setup can't: otp.js refuses,
 // because a Verify code is checked per phone number and would double as a login code.
-const consentSmsOk = () => otp.publicConfig().provider !== 'twilio_verify' || Boolean(process.env.TWILIO_FROM || process.env.TWILIO_MESSAGING_SERVICE_SID);
+const consentSmsOk = () => { const o = otp.publicConfig(); return o.channels.includes('sms') && (o.provider !== 'twilio_verify' || Boolean(process.env.TWILIO_FROM || process.env.TWILIO_MESSAGING_SERVICE_SID)); };
 // Prefer whatever actually reaches the patient: real SMS if a gateway can send it, else email over SMTP.
 // null → no usable channel; the route asks the patient to approve from their app instead.
 function pickChannel(c, wanted) {

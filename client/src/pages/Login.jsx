@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Smartphone, Mail, ArrowRight, ArrowLeft, Lock, ShieldCheck, ChevronRight, Eye, EyeOff } from 'lucide-react';
+import { Mail, ArrowRight, ArrowLeft, Lock, ShieldCheck, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import Logo from '../components/Logo';
 import LanguagePicker from '../components/LanguagePicker';
 import OtpFlow from '../components/OtpFlow';
@@ -59,7 +59,7 @@ export default function Login() {
   };
 
   const onOtp = async (r, who) => {
-    if (r.newUser) navigate('/signup', { state: { ticket: r.ticket, phone: who.phone, email: who.email, country: who.country?.iso } });
+    if (r.newUser) navigate('/signup', { state: { ticket: r.ticket, email: who.email, country: who.country?.iso } });
     else await signIn(r.token);
   };
 
@@ -79,8 +79,8 @@ export default function Login() {
           <p className="muted">Sign in to your Nexus Healthcare account.</p>
 
           <div className="pills auth-pills" role="tablist">
-            <button type="button" role="tab" aria-selected={mode === 'patient'} className={cx('pill', mode === 'patient' && 'active')} onClick={() => { setMode('patient'); setError(''); }}><Smartphone size={15} /> Patient · One-time code</button>
-            <button type="button" role="tab" aria-selected={mode === 'staff'} className={cx('pill', mode === 'staff' && 'active')} onClick={() => { setMode('staff'); setError(''); }}><Mail size={15} /> Email & password</button>
+            <button type="button" role="tab" aria-selected={mode === 'patient'} className={cx('pill', mode === 'patient' && 'active')} onClick={() => { setMode('patient'); setError(''); }}><Mail size={15} /> Email code</button>
+            <button type="button" role="tab" aria-selected={mode === 'staff'} className={cx('pill', mode === 'staff' && 'active')} onClick={() => { setMode('staff'); setError(''); }}><Lock size={15} /> Email & password</button>
           </div>
 
           {error && <div className="form-error mb-2">{error}</div>}
@@ -97,6 +97,9 @@ export default function Login() {
                   <button type="button" className="pw-toggle" onClick={() => setShowPw((v) => !v)} aria-label={showPw ? 'Hide password' : 'Show password'}>{showPw ? <EyeOff size={17} /> : <Eye size={17} />}</button>
                 </div>
               </Field>
+              <div className="row" style={{ justifyContent: 'flex-end', marginTop: -6 }}>
+                <Link to="/forgot-password" state={{ email: identifier.includes('@') ? identifier.trim() : '' }} className="small">Forgot password?</Link>
+              </div>
               <Button type="submit" size="lg" block loading={busy}>Sign in <ArrowRight /></Button>
               <p className="tiny muted center mb-0"><ShieldCheck size={13} style={{ display: 'inline', verticalAlign: '-2px' }} /> Doctors, admins and officials get a second factor in production.</p>
             </form>
@@ -104,8 +107,8 @@ export default function Login() {
 
           {mode === 'patient' && (
             <>
-              <OtpFlow mode="login" onDone={onOtp} />
-              <p className="small muted center mt-2 mb-0">New here? Enter your number — we&apos;ll help you create a Health Passport.</p>
+              <OtpFlow onDone={onOtp} />
+              <p className="small muted center mt-2 mb-0">New here? Enter your email — we&apos;ll help you create a Health Passport.</p>
             </>
           )}
 
@@ -119,7 +122,7 @@ export default function Login() {
           <div className="auth-side-inner">
             <span className="eyebrow" style={{ color: '#f3b89f' }}>Nexus Healthcare</span>
             <h2>One secure sign-in for every part of the network.</h2>
-            <p>Patients sign in with a one-time code. Doctors, hospitals, labs, pharmacies and E-Clinic staff use their email and password — every access is logged and you control who sees your records.</p>
+            <p>Patients sign in with a one-time code sent to their email. Doctors, hospitals, labs, pharmacies and E-Clinic staff use their email and password — every access is logged and you control who sees your records.</p>
           </div>
         </aside>
       ) : (

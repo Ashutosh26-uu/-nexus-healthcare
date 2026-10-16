@@ -53,11 +53,14 @@ function devMode() {
   if (env('OTP_DEV_MODE')) return env('OTP_DEV_MODE') === 'true';
   return smsProvider() === 'console' && process.env.NODE_ENV !== 'production';
 }
+// One-time codes go by email only (product decision). Set OTP_EMAIL_ONLY=false to bring SMS/WhatsApp back
+// once a gateway is connected — the provider code below is kept for that.
+const emailOnly = () => env('OTP_EMAIL_ONLY') !== 'false';
 // The console "provider" only prints the code in the server log — that is a real channel in dev mode
 // (the code is shown on screen) and no channel at all otherwise.
-const smsOn = (sms = smsProvider()) => sms !== 'console' || devMode();
+const smsOn = (sms = smsProvider()) => !emailOnly() && (sms !== 'console' || devMode());
 // WhatsApp needs Twilio Verify, or Twilio Messaging with a WhatsApp-enabled sender.
-const whatsappOn = (sms = smsProvider()) => (sms === 'twilio_verify' ? true : sms === 'twilio' ? Boolean(env('TWILIO_WHATSAPP_FROM') || env('TWILIO_FROM')) : sms === 'console' && devMode());
+const whatsappOn = (sms = smsProvider()) => !emailOnly() && (sms === 'twilio_verify' ? true : sms === 'twilio' ? Boolean(env('TWILIO_WHATSAPP_FROM') || env('TWILIO_FROM')) : sms === 'console' && devMode());
 // Locales Twilio Verify renders its own message in; anything else must fall back to English, not fail the send.
 const VERIFY_LOCALES = new Set(['af', 'ar', 'ca', 'cs', 'da', 'de', 'el', 'en', 'es', 'fi', 'fr', 'he', 'hi', 'hu', 'id', 'it', 'ja', 'ko', 'ms', 'nb', 'nl', 'pl', 'pt', 'ro', 'ru', 'sv', 'th', 'tl', 'tr', 'vi', 'zh']);
 const verifyLocale = (lang) => { const l = String(lang || 'en').toLowerCase().split('-')[0]; return VERIFY_LOCALES.has(l) ? l : 'en'; };
@@ -101,11 +104,16 @@ const MESSAGES = {
 };
 const messageFor = (code, lang, purpose = 'login') => (purpose === 'consent'
   ? `${code} is your Nexus Healthcare approval code. Share it only with the doctor in front of you to let them see your records and write a prescription. It cannot be used to sign in. Valid ${Math.round(TTL / 60000)} min.`
-  : (MESSAGES[(lang || 'en').split('-')[0]] || MESSAGES.en)(code, Math.round(TTL / 60000)));
-// Codes are stored per purpose, so a code sent for one thing (e.g. a patient approving a doctor) can
-// never be redeemed for another (e.g. signing in as that patient).
-const PURPOSES = new Set(['login', 'consent']);
-const DEMO_EMAIL = /@([a-z0-9-]+\.)*(omnicare|nexushealthcare)\.in$/i;
+  : purpose === 'reset'
+    ? `${code} is your Nexus Healthcare code to set a new password. It expires in ${Math.round(TTL / 60000)} minutes. If you didn't ask to change your password, ignore this email — your password stays the same.`
+    : (MESSAGES[(lang || 'en').split('-')[0]] || MESSAGES.en)(code, Math.round(TTL / 60000)));
+const SUBJECTS = { consent: (c) => `${c} — approve your doctor (Nexus Healthcare)`, reset: (c) => `${c} — set a new password (Nexus Healthcare)`, login: (c) => `${c} — your Nexus Healthcare code` };
+// Codes are stored per purpose, so a code sent for one thing (e.g. a patient approving a doctor, or
+// changing a password) can never be redeemed for another (e.g. signing in as that patient).
+const PURPOSES = new Set(['login', 'consent', 'reset']);
+// Addresses that are not real inboxes: demo accounts (and phone-only patients' "…@patient.omnicare.in")
+// plus the reserved example/test domains. A real mail server must never send codes there.
+const DEMO_EMAIL = /@(([a-z0-9-]+\.)*(omnicare|nexushealthcare)\.in|example\.(com|org|net)|[a-z0-9.-]+\.(test|invalid|example|localhost))$/i;
 const keyFor = (purpose, target) => (purpose === 'login' ? target : `${purpose}|${target}`);
 
 /* ---------- providers ---------- */
@@ -139,7 +147,7 @@ async function sendViaProvider(provider, { target, channel, code, lang, purpose 
       : await getEtherealTransport(nodemailer);
     const text = messageFor(code, lang, purpose);
     const info = await transport.sendMail({
-      from: env('SMTP_FROM') || 'Nexus Healthcare <no-reply@nexushealthcare.in>', to: target, subject: purpose === 'consent' ? `${code} — approve your doctor (Nexus Healthcare)` : `${code} — your Nexus Healthcare code`, text,
+      from: env('SMTP_FROM') || 'Nexus Healthcare <no-reply@nexushealthcare.in>', to: target, subject: (SUBJECTS[purpose] || SUBJECTS.login)(code), text,
       html: `<div style="font-family:Arial,sans-serif;max-width:420px;margin:auto;padding:24px;border:1px solid #e6dfd3;border-radius:14px"><h2 style="color:#0f5c4d;margin:0 0 8px">Nexus Healthcare</h2><p>${text.replace(code, '')}</p><p style="font-size:32px;letter-spacing:8px;font-weight:bold;color:#1d2b2a;margin:16px 0">${code}</p><p style="color:#6f7c78;font-size:12px">If you didn't ask for this, you can ignore this email.</p></div>`,
     });
     return { ref: info.messageId, previewUrl: realSmtp ? null : nodemailer.getTestMessageUrl(info) };
@@ -198,13 +206,16 @@ async function sendCode({ phone, dialCode, email, channel = 'sms', lang, ip, pur
   if (!PURPOSES.has(purpose)) throw new OtpError('Invalid code purpose.');
   const adapter = store.adapter();
   let target;
+  let placeholder = false;
+  if (channel !== 'email' && emailOnly()) throw new OtpError('We send one-time codes by email only. Please enter your email address.');
   if (channel === 'email') {
-    if (!configured().email && !devMode()) throw new OtpError('Email codes aren\'t set up on this server yet. Please use your mobile number.');
+    if (!configured().email && !devMode()) throw new OtpError('Email codes aren\'t set up on this server yet. Please contact support.', 503);
     target = String(email || '').trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target)) throw new OtpError('Please enter a valid email address.');
-    // Demo / placeholder addresses (demo accounts, phone-only patients' "…@patient.omnicare.in") are not inboxes
-    // we control — a real mail server must never send sign-in codes there.
-    if (configured().email && DEMO_EMAIL.test(target)) throw new OtpError('That address can\'t receive email. Please use your own email address or your mobile number.');
+    // Placeholder addresses are never mailed. In dev mode the code is shown on screen instead (demo accounts
+    // keep working locally); on a live server they are refused.
+    placeholder = DEMO_EMAIL.test(target);
+    if (placeholder && !devMode()) throw new OtpError('That address can\'t receive email. Please use your own email address.');
   } else {
     // Without a gateway the code would only be printed in the server log and the user would wait for a
     // text that never comes. Refuse before anything is counted or stored.
@@ -229,7 +240,7 @@ async function sendCode({ phone, dialCode, email, channel = 'sms', lang, ip, pur
 
   // Email always runs through the email sender (real SMTP if SMTP_HOST is set, else the Ethereal
   // test mailbox). Phone channels use the configured SMS provider.
-  let provider = channel === 'email' ? (configured().email ? 'smtp' : 'ethereal') : smsProvider();
+  let provider = channel === 'email' ? (placeholder ? 'dev' : configured().email ? 'smtp' : 'ethereal') : smsProvider();
   // Twilio Verify checks codes remotely per phone number (no purpose), so non-login codes go as plain SMS.
   if (provider === 'twilio_verify' && purpose !== 'login') {
     if (!configured().twilio) throw new OtpError('Approval codes need SMS sending (TWILIO_FROM) or email. Ask the patient to approve from their app.');
@@ -238,10 +249,10 @@ async function sendCode({ phone, dialCode, email, channel = 'sms', lang, ip, pur
   const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
   let result = {};
   try {
-    result = await sendViaProvider(channel === 'email' ? 'email' : provider, { target, channel, code, lang, purpose });
+    if (provider !== 'dev') result = await sendViaProvider(channel === 'email' ? 'email' : provider, { target, channel, code, lang, purpose });
   } catch (e) {
     console.error('[otp] delivery failed:', e.message);
-    throw new OtpError('We couldn\'t send the code just now. Please check the number and try again.', 502);
+    throw new OtpError(channel === 'email' ? 'We couldn\'t send the email just now. Please check the address and try again.' : 'We couldn\'t send the code just now. Please check the number and try again.', 502);
   }
   await adapter.otpPut({
     target: key, code_hash: provider === 'twilio_verify' ? 'remote' : hash(key, code), channel, provider, attempts: 0,
@@ -251,8 +262,9 @@ async function sendCode({ phone, dialCode, email, channel = 'sms', lang, ip, pur
     target, channel, provider,
     masked: channel === 'email' ? maskEmail(target) : maskPhone(target),
     expiresIn: Math.round(TTL / 1000), resendIn: Math.round(COOLDOWN / 1000),
-    // SMS/console dev shows the code; the Ethereal test mailbox shows a link to view the real email.
-    devCode: devMode() && provider !== 'twilio_verify' && provider !== 'ethereal' && provider !== 'smtp' ? code : undefined,
+    // Dev mode shows the code when nothing was really delivered (placeholder address, console SMS); the
+    // Ethereal test mailbox shows a link to view the real email instead.
+    devCode: devMode() && (provider === 'dev' || provider === 'console') ? code : undefined,
     emailPreview: result.previewUrl || undefined,
   };
 }
@@ -300,11 +312,12 @@ function publicConfig() {
   return {
     // Only channels that can actually deliver: SMS/WhatsApp need a gateway (or dev mode, where the code is shown on screen).
     channels: [...(smsOn(sms) ? ['sms'] : []), ...(whatsappOn(sms) ? ['whatsapp'] : []), ...(c.email || dev ? ['email'] : [])],
+    emailOnly: emailOnly(),
     provider: sms,
-    live: sms !== 'console',
+    live: !emailOnly() && sms !== 'console',
     emailLive: c.email,
     devMode: dev,
-    ...(smsOn(sms) ? {} : { smsReason: 'no_gateway' }),
+    ...(smsOn(sms) ? {} : { smsReason: emailOnly() ? 'email_only' : 'no_gateway' }),
     codeLength: 6,
     ttlSeconds: Math.round(TTL / 1000),
     resendSeconds: Math.round(COOLDOWN / 1000),

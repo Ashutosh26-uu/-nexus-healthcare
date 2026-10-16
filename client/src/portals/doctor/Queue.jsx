@@ -166,7 +166,7 @@ function OnboardingHome({ doctor }) {
   const submitted = doctor.profileComplete && !doctor.verificationNote;
   const steps = [
     { label: 'Account created', done: true, sub: 'Name, email and mobile number' },
-    { label: 'Complete your profile', done: !!doctor.profileComplete, sub: 'Age, Aadhaar, qualification, degree, experience, fee and photo' },
+    { label: 'Complete your profile', done: !!doctor.profileComplete, sub: 'Age, qualification, degree, experience, fee and photo' },
     { label: 'Verification by our team', done: false, now: submitted, sub: 'Registration checked with the medical council — usually within 48 hours' },
     { label: 'Start seeing patients', done: false, sub: 'Check in at an E-Clinic or consult by video, on your own hours' },
   ];

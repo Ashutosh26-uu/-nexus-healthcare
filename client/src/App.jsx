@@ -11,6 +11,7 @@ import NotFound from './pages/NotFound';
 
 // Kept out of the entry chunk (RxPrint/LabReportPrint pull in qrcode).
 const Signup = lazy(() => import('./pages/Signup'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const Join = lazy(() => import('./pages/Join'));
 const RxPrint = lazy(() => import('./pages/RxPrint'));
 const LabReportPrint = lazy(() => import('./pages/LabReportPrint'));
@@ -122,6 +123,7 @@ function AppRoutes() {
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Lazy><Signup /></Lazy>} />
+        <Route path="/forgot-password" element={<Lazy><ForgotPassword /></Lazy>} />
         <Route path="/join" element={<Lazy><Join /></Lazy>} />
         <Route path="/rx/:id" element={<RequireRole roles={['patient', 'caregiver', 'doctor', 'pharmacist', 'lab_tech', 'super_admin']}><Lazy><RxPrint /></Lazy></RequireRole>} />
         <Route path="/lab-report/:id" element={<RequireRole roles={['patient', 'caregiver', 'doctor', 'lab_tech', 'super_admin']}><Lazy><LabReportPrint /></Lazy></RequireRole>} />

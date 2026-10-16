@@ -5,8 +5,9 @@ import Logo from './Logo';
 import LanguagePicker from './LanguagePicker';
 import { LocationChip, openCookieSettings, openLocationSettings } from '../consent';
 import { useAuth, ROLE_LABEL } from '../auth';
-import { api, subscribe, session } from '../api';
+import { api, subscribe } from '../api';
 import { Avatar, timeAgo, cx, Modal, Field, Button, useToast } from './ui';
+import ResetPassword from './ResetPassword';
 import './portal.css';
 
 /**
@@ -145,30 +146,46 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
   );
 }
 
+// Change password: by default with a 6-digit code sent to the account's email (works even if the current
+// password is forgotten, and sets one for accounts that never had it). "I know my current password" is the
+// quick alternative. Either way the server signs out every other device and this one gets a fresh token.
 function PasswordModal({ open, onClose }) {
   const toast = useToast();
+  const { user, signIn } = useAuth();
+  const [mode, setMode] = useState('code');
   const [form, setForm] = useState({ current: '', next: '' });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  useEffect(() => { if (open) { setMode('code'); setErr(''); setForm({ current: '', next: '' }); } }, [open]);
+  const finish = async (token) => {
+    if (token) await signIn(token);
+    toast('Password changed. You stay signed in here; other devices were signed out.');
+    onClose();
+  };
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true); setErr('');
     try {
       const r = await api.post('/auth/password', form);
-      if (r.token) session.token = r.token; // other devices are signed out; keep this one
-      toast('Password updated');
-      setForm({ current: '', next: '' });
-      onClose();
+      await finish(r.token);
     } catch (e2) { setErr(e2.message); } finally { setBusy(false); }
   };
   return (
-    <Modal open={open} onClose={onClose} title="Change password">
-      <form className="stack" onSubmit={submit}>
-        {err && <div className="form-error">{err}</div>}
-        <Field label="Current password"><input className="input" type="password" autoComplete="current-password" value={form.current} onChange={(e) => setForm({ ...form, current: e.target.value })} required /></Field>
-        <Field label="New password" hint="At least 8 characters"><input className="input" type="password" autoComplete="new-password" minLength={8} value={form.next} onChange={(e) => setForm({ ...form, next: e.target.value })} required /></Field>
-        <Button loading={busy} type="submit">Update password</Button>
-      </form>
+    <Modal open={open} onClose={onClose} title="Change password" subtitle={mode === 'code' ? 'We\'ll email you a 6-digit code, then you choose a new password.' : undefined}>
+      {mode === 'code' ? (
+        <div className="stack">
+          {open && <ResetPassword accountEmail={user?.email || ''} onDone={(r) => finish(r.token)} />}
+          <button type="button" className="link-btn small" onClick={() => { setMode('current'); setErr(''); }}>I know my current password</button>
+        </div>
+      ) : (
+        <form className="stack" onSubmit={submit}>
+          {err && <div className="form-error">{err}</div>}
+          <Field label="Current password"><input className="input" type="password" autoComplete="current-password" value={form.current} onChange={(e) => setForm({ ...form, current: e.target.value })} required /></Field>
+          <Field label="New password" hint="At least 8 characters"><input className="input" type="password" autoComplete="new-password" minLength={8} value={form.next} onChange={(e) => setForm({ ...form, next: e.target.value })} required /></Field>
+          <Button loading={busy} type="submit">Update password</Button>
+          <button type="button" className="link-btn small" onClick={() => { setMode('code'); setErr(''); }}>Forgot it? Change with an email code</button>
+        </form>
+      )}
     </Modal>
   );
 }

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowRight, Check, HeartHandshake, Mail, MessageSquare, ShieldCheck, UserRound } from 'lucide-react';
+import { ArrowRight, Check, HeartHandshake, ShieldCheck, UserRound } from 'lucide-react';
 import Logo from '../components/Logo';
 import { api } from '../api';
 import { useAuth, ROLE_HOME } from '../auth';
-import { Button, Field, cx } from '../components/ui';
-import { OtpInput, PhoneField } from '../components/OtpFlow';
+import { Button, Field } from '../components/ui';
+import { OtpInput, PhoneField, DevCode } from '../components/OtpFlow';
 import LanguagePicker from '../components/LanguagePicker';
 import { useI18n, LANGUAGES as APP_LANGS } from '../i18n';
 import { COUNTRIES, guessCountry } from '../i18n/countries';
@@ -20,39 +20,26 @@ export default function Signup() {
   const navigate = useNavigate();
   const location = useLocation();
   const { lang } = useI18n();
-  // Arriving from the sign-in screen after verifying a new number/email: skip the code step.
+  // Arriving from the sign-in screen after verifying a new email: skip the code step.
   const preTicket = location.state?.ticket || null;
   const [ticket] = useState(preTicket);
-  const [config, setConfig] = useState(null);
   const [country, setCountry] = useState(() => COUNTRIES.find((c) => c.iso === location.state?.country) || guessCountry());
-  const [form, setForm] = useState({ name: '', email: location.state?.email || '', phone: (location.state?.phone || '').replace(/^\+\d{1,3}/, '') });
-  const [channel, setChannel] = useState('sms');
+  const [form, setForm] = useState({ name: '', email: location.state?.email || '', phone: '' });
   const [sent, setSent] = useState(null);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
-  useEffect(() => {
-    api.get('/auth/otp/config').then((c) => {
-      setConfig(c);
-      const list = c.channels?.length ? c.channels : ['sms'];
-      // Only channels the server lists deliver; prefer email while SMS isn't live (older servers still list sms).
-      setChannel((cur) => (!c.live && c.emailLive && list.includes('email') ? 'email' : list.includes(cur) ? cur : list[0]));
-    }).catch(() => setConfig({ channels: ['sms'] }));
-  }, []);
   useEffect(() => { if (user && !busy) navigate(ROLE_HOME[user.role], { replace: true }); }, [user, busy, navigate]);
 
-  const channels = config?.channels?.length ? config.channels : ['sms'];
-  const emailOnly = channels.length === 1 && channels[0] === 'email';
   const digits = form.phone.replace(/\D/g, '');
-  const lockedPhone = !!(preTicket && location.state?.phone);
   const lockedEmail = !!(preTicket && location.state?.email);
 
   const validate = () => {
     if (form.name.trim().length < 2) return 'Please tell us your name.';
     if (!EMAIL_RE.test(form.email.trim())) return 'Please enter a valid email address.';
-    if (!lockedPhone && digits.length < 6) return 'Please enter your mobile number.';
+    if (digits.length < 6) return 'Please enter your mobile number.';
     return '';
   };
 
@@ -72,13 +59,10 @@ export default function Signup() {
     setBusy(true); setError('');
     try {
       if (ticket) { await create(ticket); return; }
-      const r = await api.post('/auth/otp/request', { phone: digits, dialCode: country.dial, email: form.email.trim(), channel, lang });
+      // One-time codes go by email only; the mobile number is saved as a contact detail.
+      const r = await api.post('/auth/otp/request', { email: form.email.trim(), channel: 'email', lang });
       setSent(r); setCode('');
-    } catch (err) {
-      setError(err.message);
-      // 503 = no gateway behind this channel; fall back to email so the person can still get a code.
-      if (err.status === 503 && channel !== 'email' && channels.includes('email')) setChannel('email');
-    } finally { setBusy(false); }
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
 
   const verify = async (e) => {
@@ -106,31 +90,19 @@ export default function Signup() {
               <Field label="Email">
                 <input className="input" type="email" dir="ltr" value={form.email} onChange={(e) => set('email', e.target.value.trim())} placeholder="you@example.com" readOnly={lockedEmail} autoComplete="email" />
               </Field>
-              <Field label="Mobile number">
-                {lockedPhone
-                  ? <div className="input readonly-line" dir="ltr">{location.state.phone} <Check size={15} color="var(--green-2)" /></div>
-                  : <PhoneField country={country} onCountry={setCountry} value={form.phone} onChange={(v) => set('phone', v)} />}
+              <Field label="Mobile number" hint="So your doctor and pharmacy can reach you.">
+                <PhoneField country={country} onCountry={setCountry} value={form.phone} onChange={(v) => set('phone', v)} />
               </Field>
-              {!ticket && channels.length > 1 && (
-                <Field label="Send my 6-digit code by">
-                  <div className="channel-row" role="radiogroup">
-                    {channels.includes('sms') && <button type="button" role="radio" aria-checked={channel === 'sms'} className={cx('chip', channel === 'sms' && 'on')} onClick={() => setChannel('sms')}><MessageSquare size={14} /> SMS</button>}
-                    {channels.includes('whatsapp') && <button type="button" role="radio" aria-checked={channel === 'whatsapp'} className={cx('chip', channel === 'whatsapp' && 'on')} onClick={() => setChannel('whatsapp')}>WhatsApp</button>}
-                    {channels.includes('email') && <button type="button" role="radio" aria-checked={channel === 'email'} className={cx('chip', channel === 'email' && 'on')} onClick={() => setChannel('email')}><Mail size={14} /> Email</button>}
-                  </div>
-                </Field>
-              )}
               {error && <div className="form-error">{error} {/sign in/i.test(error) && <Link to="/login">Sign in →</Link>}</div>}
               <Button type="submit" size="lg" variant="clay" block loading={busy}>{ticket ? <>Create my account <ArrowRight /></> : <>Send code <ArrowRight /></>}</Button>
-              <p className="tiny muted center mb-0"><ShieldCheck size={13} style={{ display: 'inline', verticalAlign: '-2px' }} /> {emailOnly ? 'We send a one-time code to make sure your email is really yours. No password needed — SMS codes are coming soon.' : 'We send a one-time code to make sure the number or email is really yours. No password needed.'}</p>
+              <p className="tiny muted center mb-0"><ShieldCheck size={13} style={{ display: 'inline', verticalAlign: '-2px' }} /> We email you a one-time code to make sure the address is really yours. No password needed.</p>
             </form>
           ) : (
             <form className="stack" onSubmit={verify}>
               <span className="eyebrow">Almost there</span>
               <h1 className="auth-title mb-0">Enter the 6-digit code</h1>
               <p className="mb-0">{sent.message}. <button type="button" className="link-btn" onClick={() => { setSent(null); setError(''); }}>Change</button></p>
-              {sent.devCode && <div className="dev-otp">Demo mode — no SMS gateway connected yet. Your code is <strong className="mono notranslate" translate="no">{sent.devCode}</strong></div>}
-              {sent.emailPreview && <div className="dev-otp">Demo email sent. <a href={sent.emailPreview} target="_blank" rel="noopener noreferrer"><strong>Open the email to see your code →</strong></a></div>}
+              <DevCode sent={sent} />
               {error && <div className="form-error">{error}</div>}
               <OtpInput value={code} onChange={setCode} autoFocus />
               <Button type="submit" size="lg" block loading={busy} disabled={code.length !== 6}>Verify & create my account</Button>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, MessageSquare, Mail, ShieldCheck, ChevronDown, Search } from 'lucide-react';
+import { ArrowRight, ShieldCheck, ChevronDown, Search } from 'lucide-react';
 import { api } from '../api';
 import { useI18n } from '../i18n';
 import { COUNTRIES, guessCountry } from '../i18n/countries';
@@ -77,15 +77,11 @@ export function PhoneField({ country, onCountry, value, onChange, autoFocus }) {
 }
 
 /**
- * Full "send code → enter code" flow.
+ * Full "send code → enter code" flow. One-time codes go by email only.
  * onDone receives the verify response: { token } for existing users or { newUser, ticket, target, channel }.
  */
-export default function OtpFlow({ mode = 'login', onDone, initialPhone = '' }) {
+export default function OtpFlow({ onDone }) {
   const { lang } = useI18n();
-  const [config, setConfig] = useState(null);
-  const [channel, setChannel] = useState('sms');
-  const [country, setCountry] = useState(guessCountry);
-  const [phone, setPhone] = useState(initialPhone);
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(null);
   const [code, setCode] = useState('');
@@ -94,38 +90,23 @@ export default function OtpFlow({ mode = 'login', onDone, initialPhone = '' }) {
   const [timer, setTimer] = useState(0);
 
   useEffect(() => {
-    api.get('/auth/otp/config').then((c) => {
-      setConfig(c);
-      const list = c.channels?.length ? c.channels : ['sms'];
-      // The server lists only channels that really deliver. Never stay on one it doesn't offer, and
-      // while SMS isn't live prefer email (older servers still list sms without a gateway).
-      setChannel((cur) => (!c.live && c.emailLive && list.includes('email') ? 'email' : list.includes(cur) ? cur : list[0]));
-    }).catch(() => setConfig({ channels: ['sms'], devMode: true }));
-  }, []);
-  useEffect(() => {
     if (timer <= 0) return undefined;
     const t = setTimeout(() => setTimer((s) => s - 1), 1000);
     return () => clearTimeout(t);
   }, [timer]);
 
-  const digits = phone.replace(/\D/g, '');
-  const canSend = channel === 'email' ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) : digits.length >= 6;
-  const channels = config?.channels?.length ? config.channels : ['sms'];
-  const smsLive = !config || config.live || config.devMode; // devMode prints the code on screen, so SMS "arrives" there
+  const canSend = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
   const request = async (e) => {
     e?.preventDefault();
     setBusy(true); setError('');
     try {
-      const r = await api.post('/auth/otp/request', { phone: digits, dialCode: country.dial, email, channel, lang });
-      if (mode === 'signup' && r.exists) { setError('This number already has an account. Please sign in instead.'); return; }
+      const r = await api.post('/auth/otp/request', { email, channel: 'email', lang });
       setSent(r);
       setCode('');
       setTimer(r.resendIn || 30);
     } catch (err) {
       setError(err.message);
-      // 503 = no gateway behind this channel; fall back to email so the person can still get a code.
-      if (err.status === 503 && channel !== 'email' && channels.includes('email')) setChannel('email');
     } finally { setBusy(false); }
   };
 
@@ -135,7 +116,7 @@ export default function OtpFlow({ mode = 'login', onDone, initialPhone = '' }) {
     setBusy(true); setError('');
     try {
       const r = await api.post('/auth/otp/verify', { target: sent.target, code });
-      await onDone(r, { phone: sent.channel === 'email' ? '' : sent.target, email: sent.channel === 'email' ? sent.target : '', country });
+      await onDone(r, { phone: '', email: sent.target, country: guessCountry() });
     } catch (err) {
       setError(err.message);
       setCode('');
@@ -148,47 +129,35 @@ export default function OtpFlow({ mode = 'login', onDone, initialPhone = '' }) {
         <p className="mb-0">
           {sent.message}. <button type="button" className="link-btn" onClick={() => { setSent(null); setError(''); }}>Change</button>
         </p>
-        {sent.devCode && <div className="dev-otp">Demo mode — no SMS gateway connected yet. Your code is <strong className="mono notranslate" translate="no">{sent.devCode}</strong></div>}
-        {sent.emailPreview && <div className="dev-otp">Demo email sent. <a href={sent.emailPreview} target="_blank" rel="noopener noreferrer" className="notranslate" translate="no"><strong>Open the email to see your code →</strong></a><br /><span className="tiny">Connect your SMTP in <span className="mono">server/.env</span> to deliver to real inboxes.</span></div>}
+        <DevCode sent={sent} />
         {error && <div className="form-error">{error}</div>}
         <OtpInput value={code} onChange={setCode} autoFocus />
-        <Button type="submit" size="lg" block loading={busy} disabled={code.length !== 6}>{sent.exists ? 'Verify & sign in' : 'Verify & continue'}</Button>
+        <Button type="submit" size="lg" block loading={busy} disabled={code.length !== 6}>Verify & continue</Button>
         <p className="small muted center mb-0">
-          Didn&apos;t get it? {timer > 0 ? <>Resend in {timer}s</> : <button type="button" className="link-btn" onClick={request}>Send a new code</button>}
-          {timer <= 0 && channels.length > 1 && <> · <button type="button" className="link-btn" onClick={() => { setSent(null); setChannel(channels.find((c) => c !== channel) || channel); }}>Try another way</button></>}
+          Didn&apos;t get it? Check your spam folder, or {timer > 0 ? <>resend in {timer}s</> : <button type="button" className="link-btn" onClick={request}>send a new code</button>}
         </p>
       </form>
     );
   }
 
-  // Wait for the config before showing a field: on live only email delivers, and swapping the phone
-  // box for an email box a moment after it appeared would be jarring (and lose what was typed).
-  if (!config) return <div className="row" style={{ justifyContent: 'center', padding: 24 }} aria-busy="true"><span className="spinner" /></div>;
-
   return (
     <form className="stack" onSubmit={request}>
-      {channels.length > 1 && (
-        <div className="channel-row" role="radiogroup" aria-label="How should we send your code?">
-          {channels.includes('sms') && <button type="button" role="radio" aria-checked={channel === 'sms'} className={cx('chip', channel === 'sms' && 'on')} onClick={() => setChannel('sms')}><MessageSquare size={14} /> SMS</button>}
-          {channels.includes('whatsapp') && <button type="button" role="radio" aria-checked={channel === 'whatsapp'} className={cx('chip', channel === 'whatsapp' && 'on')} onClick={() => setChannel('whatsapp')}>WhatsApp</button>}
-          {channels.includes('email') && <button type="button" role="radio" aria-checked={channel === 'email'} className={cx('chip', channel === 'email' && 'on')} onClick={() => setChannel('email')}><Mail size={14} /> Email</button>}
-        </div>
-      )}
       {error && <div className="form-error">{error}</div>}
-      {channel === 'email' ? (
-        <Field label="Email address" hint="We'll email you a 6-digit code.">
-          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value.trim())} placeholder="you@example.com" autoFocus required />
-        </Field>
-      ) : (
-        <Field label="Mobile number" hint={channel === 'whatsapp' ? "We'll send a 6-digit code on WhatsApp." : smsLive ? "We'll text you a 6-digit code. No password needed." : channels.includes('email') ? 'SMS is coming soon — choose Email to get your code.' : 'SMS is coming soon.'}>
-          <PhoneField country={country} onCountry={setCountry} value={phone} onChange={setPhone} autoFocus />
-        </Field>
-      )}
+      <Field label="Email address" hint="We'll email you a 6-digit code. No password needed.">
+        <input className="input" type="email" dir="ltr" value={email} onChange={(e) => setEmail(e.target.value.trim())} placeholder="you@example.com" autoComplete="email" autoFocus required />
+      </Field>
       <Button type="submit" size="lg" block loading={busy} disabled={!canSend}>Send code <ArrowRight /></Button>
       <p className="tiny muted center mb-0">
-        <ShieldCheck size={13} style={{ display: 'inline', verticalAlign: '-2px' }} />{' '}
-        {config.live ? 'Codes expire in 5 minutes and work only once.' : config.devMode ? 'Demo mode: codes appear on screen until an SMS provider is connected.' : 'Codes are sent by email for now — SMS is coming soon.'}
+        <ShieldCheck size={13} style={{ display: 'inline', verticalAlign: '-2px' }} /> Codes expire in 5 minutes and work only once.
       </p>
     </form>
   );
+}
+
+// Local development only: the server shows the code when nothing was really emailed (demo addresses),
+// or links to the test mailbox when no real mail server is configured.
+export function DevCode({ sent }) {
+  if (sent?.devCode) return <div className="dev-otp">Demo mode — this address can&apos;t receive email, so here is the code: <strong className="mono notranslate" translate="no">{sent.devCode}</strong></div>;
+  if (sent?.emailPreview) return <div className="dev-otp">Demo email sent. <a href={sent.emailPreview} target="_blank" rel="noopener noreferrer" className="notranslate" translate="no"><strong>Open the email to see your code →</strong></a></div>;
+  return null;
 }
