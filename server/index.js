@@ -876,6 +876,15 @@ const GOV_ID_TYPES = ['Ayushman Bharat (PM-JAY) card', 'ABHA health ID', 'State 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const round3 = (n) => Math.round(Number(n) * 1000) / 1000; // ~100 m — enough to rank doctors, not to pinpoint a home
 const countryOf = (x) => String(x?.country || 'IN').toUpperCase();
+function patientPoint(p) {
+  const c = p?.currentLocation;
+  if (c && Date.now() - Date.parse(c.at) < 7 * 86400000) {
+    if (geo.validCoord(c.lat, c.lng)) return { lat: c.lat, lng: c.lng };
+    const d = c.district && geo.byDistrict(c.district, c.state);
+    if (d) return { lat: d.lat, lng: d.lng };
+  }
+  return geo.pointOf(p);
+}
 
 // What a patient must have on file before booking a consultation. Sign-up needs only name, email and
 // mobile; booking needs age, permanent address and an identity document (Aadhaar or another
@@ -981,7 +990,7 @@ app.get('/api/doctors/recommend', auth, role('patient', 'caregiver', 'kiosk_oper
   // A preferred location the patient picked (another city, a relative's town…) wins over device/home.
   const chosen = req.query.district ? geo.byDistrict(String(req.query.district), String(req.query.state || '')) : null;
   const device = !chosen && req.query.lat != null && geo.validCoord(lat, lng);
-  const origin = chosen ? { lat: chosen.lat, lng: chosen.lng } : device ? { lat, lng } : geo.pointOf(p);
+  const origin = chosen ? { lat: chosen.lat, lng: chosen.lng } : device ? { lat, lng } : patientPoint(p);
   const wanted = department || (t.specialty === 'Emergency' ? 'General Medicine' : t.specialty);
   // Index once per request instead of scanning facilities / beds / doctors for every row.
   const facMap = new Map(d.facilities.map((f) => [f.id, f]));
@@ -1257,7 +1266,7 @@ function quoteShop(d, r, f, origin) {
 }
 const originFor = (req, p) => {
   const lat = Number(req.query.lat ?? req.body?.lat); const lng = Number(req.query.lng ?? req.body?.lng);
-  return (req.query.lat ?? req.body?.lat) != null && geo.validCoord(lat, lng) ? { lat, lng } : geo.pointOf(p);
+  return (req.query.lat ?? req.body?.lat) != null && geo.validCoord(lat, lng) ? { lat, lng } : patientPoint(p);
 };
 
 // ---- where to buy: chemists within 50 km that have the medicines, and what each will cost ----
@@ -1544,7 +1553,7 @@ app.get('/api/patient/tests', auth, role('patient', 'caregiver'), (req, res) => 
   const d = db();
   const p = activePatient(req);
   const lat = Number(req.query.lat); const lng = Number(req.query.lng);
-  const origin = req.query.lat != null && geo.validCoord(lat, lng) ? { lat, lng } : geo.pointOf(p);
+  const origin = req.query.lat != null && geo.validCoord(lat, lng) ? { lat, lng } : patientPoint(p);
   const orders = d.labOrders.filter((o) => o.patientId === p.id).map((o) => {
     const lab = d.facilities.find((f) => f.id === o.labId);
     return {
@@ -1563,7 +1572,7 @@ app.get('/api/lab-orders/:id/labs', auth, role('patient', 'caregiver'), (req, re
   if (!ownsPatient(req.user, o.patientId)) return res.status(403).json({ error: 'This test isn\'t on your account.' });
   const p = d.patients.find((x) => x.id === o.patientId);
   const lat = Number(req.query.lat); const lng = Number(req.query.lng);
-  const origin = req.query.lat != null && geo.validCoord(lat, lng) ? { lat, lng } : geo.pointOf(p);
+  const origin = req.query.lat != null && geo.validCoord(lat, lng) ? { lat, lng } : patientPoint(p);
   const labs = d.facilities.filter((f) => f.type === 'lab' && f.verified).map((f) => labQuote(f, o.tests, origin))
     .filter((l) => l.lines.length).sort((a, b) => Number(b.offersAll) - Number(a.offersAll) || (a.distanceKm ?? 1e9) - (b.distanceKm ?? 1e9));
   const full = labs.filter((l) => l.offersAll);
@@ -1977,6 +1986,21 @@ app.post('/api/doctor/transfers/:id/seen', auth, role('doctor'), (req, res) => {
   t.seenByNew = nowIso();
   store.save();
   res.json({ ok: true });
+});
+
+const locationLimiter = security.rateLimit({ windowMs: 10 * 60000, max: 60, key: (r) => r.headers.authorization || r.ip, message: 'Too many location updates.' });
+app.post('/api/patient/location', auth, role('patient', 'caregiver'), locationLimiter, (req, res) => {
+  const self = profilesFor(req.user).find((x) => x.userId === req.user.id);
+  if (!self) return res.json({ ok: true, saved: false });
+  const b = req.body || {};
+  const lat = Number(b.lat); const lng = Number(b.lng);
+  if (b.lat != null && geo.validCoord(lat, lng)) {
+    self.currentLocation = { lat: round3(lat), lng: round3(lng), accuracy: Math.max(0, Math.min(100000, parseInt(b.accuracy, 10) || 0)), source: 'live', at: nowIso() };
+  } else if (clean(b.district).length >= 2) {
+    self.currentLocation = { district: clean(b.district, 80), state: clean(b.state, 80), country: /^[A-Z]{2}$/.test(String(b.country || '')) ? b.country : countryOf(self), pincode: clean(b.pincode, 12), source: 'manual', at: nowIso() };
+  } else return res.status(400).json({ error: 'Share your location or type your city.' });
+  store.save();
+  res.json({ ok: true, saved: true, source: self.currentLocation.source });
 });
 
 app.get('/api/geo/districts', (_req, res) => res.json(geo.DISTRICTS.map(({ district, state }) => ({ district, state }))));

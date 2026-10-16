@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { openCookieSettings } from '../consent';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight, ShieldCheck, Languages, MapPin, Stethoscope, Pill, Building2, FlaskConical, Landmark,
@@ -326,7 +327,7 @@ export default function Landing() {
           </div>
           <div>
             <h4>Product</h4>
-            <a href="#how">How it works</a><a href="#kiosk">E-Clinics</a><a href="#privacy">Privacy &amp; consent</a>
+            <a href="#how">How it works</a><a href="#kiosk">E-Clinics</a><a href="#privacy">Privacy &amp; consent</a><button type="button" className="l-footer-link" onClick={openCookieSettings}>Cookie preferences</button>
           </div>
           <div>
             <h4>Partners</h4>

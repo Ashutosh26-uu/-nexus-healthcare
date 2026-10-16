@@ -4,6 +4,7 @@ import { AuthProvider, useAuth, ROLE_HOME } from './auth';
 import { ToastProvider, Loading } from './components/ui';
 import { I18nProvider } from './i18n';
 import InstallPrompt from './components/InstallPrompt';
+import { ConsentProvider } from './consent';
 import Landing from './pages/Landing';
 import Login from './pages/Login';
 import NotFound from './pages/NotFound';
@@ -120,7 +121,9 @@ export default function App() {
       <I18nProvider>
         <AuthProvider>
           <ToastProvider>
-            <AppRoutes />
+            <ConsentProvider>
+              <AppRoutes />
+            </ConsentProvider>
           </ToastProvider>
         </AuthProvider>
       </I18nProvider>

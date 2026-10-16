@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useConsent, openLocationSettings } from '../../consent';
 import { LocateFixed, MapPin, Star, Languages, Video, Stethoscope, Ambulance, Phone, Building2, Loader2, CalendarClock, BedDouble, Clock, X, Smile, Users, Briefcase, Globe2, Radar, MonitorSmartphone, Home as HomeIcon } from 'lucide-react';
 import { api } from '../../api';
 import { Avatar, Button, Empty, Field, fmtMoney, cx } from '../../components/ui';
@@ -9,7 +10,6 @@ import { getLocale } from '../../i18n';
 import DoctorProfile, { TodayTimings } from './DoctorProfile';
 import BookingFlow from './BookingFlow';
 
-const LOC_KEY = 'oc_device_loc';
 const PRACTICE = {
   own_clinic: { icon: HomeIcon, label: 'Own clinic' },
   clinic: { icon: Building2, label: 'Clinic' },
@@ -18,26 +18,13 @@ const PRACTICE = {
   independent: { icon: Stethoscope, label: 'Independent' },
 };
 
-// Device location (phone GPS or laptop Wi-Fi positioning) — asked only when the person taps the button.
-// Coordinates go only to our own server, rounded, to rank doctors by distance.
+// The person's location from the app-wide consent manager: live (while the app is open, after they
+// agree) or a place they typed. Coordinates go only to our own server, rounded to ~100 m.
 export function useDeviceLocation() {
-  const [loc, setLoc] = useState(() => { try { return JSON.parse(sessionStorage.getItem(LOC_KEY) || 'null'); } catch { return null; } });
-  const [state, setState] = useState(loc ? 'ok' : 'idle'); // idle | asking | ok | denied | unsupported | error
-  const request = useCallback(() => new Promise((resolve) => {
-    if (!('geolocation' in navigator)) { setState('unsupported'); resolve(null); return; }
-    setState('asking');
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const v = { lat: Math.round(pos.coords.latitude * 1000) / 1000, lng: Math.round(pos.coords.longitude * 1000) / 1000, accuracy: Math.round(pos.coords.accuracy) };
-        setLoc(v); setState('ok');
-        try { sessionStorage.setItem(LOC_KEY, JSON.stringify(v)); } catch { /* ignore */ }
-        resolve(v);
-      },
-      (err) => { setState(err.code === 1 ? 'denied' : 'error'); resolve(null); },
-      { enableHighAccuracy: false, timeout: 12000, maximumAge: 5 * 60000 },
-    );
-  }), []);
-  return { loc, state, request };
+  const ctx = useConsent();
+  const live = ctx?.loc?.source === 'live' ? ctx.loc : null;
+  const state = { live: 'ok', asking: 'asking', denied: 'denied', unsupported: 'unsupported', error: 'error' }[ctx?.status] || 'idle';
+  return { loc: live, manual: ctx?.loc?.source === 'manual' ? ctx.loc : null, state, request: () => ctx?.requestLive() };
 }
 
 export function LocationButton({ device, size = 'sm' }) {
@@ -46,7 +33,8 @@ export function LocationButton({ device, size = 'sm' }) {
   return (
     <span className="pt-loc">
       <Button size={size} variant={state === 'ok' ? 'soft' : 'secondary'} icon={state === 'asking' ? Loader2 : LocateFixed} onClick={request} disabled={state === 'asking'}>{label}</Button>
-      {state === 'denied' && <span className="tiny muted">Allow location for this site in your browser settings, or we&apos;ll use your address.</span>}
+      {state !== 'ok' && <button type="button" className="link-btn tiny" onClick={openLocationSettings}>or type your place</button>}
+      {state === 'denied' && <span className="tiny muted">Location is blocked in your browser — type your place instead.</span>}
       {state === 'ok' && loc?.accuracy > 3000 && <span className="tiny muted">Approximate (±{Math.round(loc.accuracy / 1000)} km)</span>}
     </span>
   );
@@ -102,10 +90,10 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
     const params = new URLSearchParams({ symptoms: q, scope });
     if (dept) params.set('department', dept);
     if (excludeId) params.set('exclude', excludeId);
-    if (place) { params.set('district', place.district); params.set('state', place.state); } else if (device.loc) { params.set('lat', device.loc.lat); params.set('lng', device.loc.lng); }
+    if (place) { params.set('district', place.district); params.set('state', place.state); } else if (device.loc) { params.set('lat', device.loc.lat); params.set('lng', device.loc.lng); } else if (device.manual?.district) { params.set('district', device.manual.district); params.set('state', device.manual.state || ''); }
     api.get(`/doctors/recommend?${params}`).then((r) => alive && setData(r)).catch(() => alive && setData(null)).finally(() => alive && setLoading(false));
     return () => { alive = false; };
-  }, [q, dept, scope, device.loc, place, active, excludeId]);
+  }, [q, dept, scope, device.loc, device.manual, place, active, excludeId]);
 
   const [booking, setBooking] = useState(null);
   const pick = (doc) => (onPick ? onPick(doc) : setBooking(doc));

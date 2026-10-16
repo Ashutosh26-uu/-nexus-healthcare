@@ -1,0 +1,24 @@
+.nx-cookie {
+  position: fixed; z-index: 900; left: 16px; right: 16px; bottom: 16px; max-width: 760px; margin: 0 auto;
+  display: flex; gap: 16px; align-items: center; padding: 16px 18px; border-radius: 18px;
+  background: #fff; border: 1px solid var(--line); box-shadow: var(--shadow-lg); animation: fadeUp 0.35s var(--ease);
+}
+.nx-cookie-text { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.nx-cookie-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 720px) {
+  .nx-cookie { flex-direction: column; align-items: stretch; left: 10px; right: 10px; bottom: 10px; padding: 14px; padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
+  .nx-cookie-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .nx-cookie-actions > :first-child { grid-column: 1 / -1; order: 3; }
+  .nx-cookie-actions .btn { min-height: 44px; }
+}
+.nx-pref-list { display: grid; gap: 10px; }
+.nx-pref { display: flex; gap: 14px; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--line-2); border-radius: 14px; background: var(--paper); }
+.nx-loc-status { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; background: var(--paper-2); color: var(--ink-2); }
+.nx-loc-status.on { background: var(--green-soft); color: var(--green-ink); }
+.nx-loc-or { display: flex; align-items: center; gap: 6px; justify-content: center; }
+.nx-loc-chip { display: inline-flex; align-items: center; gap: 5px; height: 34px; padding: 0 11px; border-radius: 99px; border: 1px solid var(--line); background: #fff; font: 600 0.8rem var(--sans); color: var(--ink-2); cursor: pointer; max-width: 160px; }
+.nx-loc-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nx-loc-chip.on { border-color: var(--green-2); color: var(--green); background: var(--green-soft); }
+.nx-loc-chip svg { flex-shrink: 0; }
+/* Phone headers are full — location lives in the account menu there. */
+@media (max-width: 760px) { .nx-loc-chip { display: none; } }

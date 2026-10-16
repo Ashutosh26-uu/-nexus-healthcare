@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Globe, Check, Search, Loader2 } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Globe, Check, Search, Loader2, X } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { cx } from './ui';
 import './language.css';
@@ -15,17 +16,29 @@ export default function LanguagePicker({ compact, variant, align = 'end', onChan
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const wrapRef = useRef(null);
+  const popRef = useRef(null);
   const searchRef = useRef(null);
+  // Phones get a full-width bottom sheet (rendered on <body>, so drawers/overflow can't clip it).
+  const [sheet, setSheet] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const on = () => setSheet(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
 
   useEffect(() => {
     if (!open) return undefined;
-    setTimeout(() => searchRef.current?.focus(), 30);
-    const onDoc = (e) => { if (!wrapRef.current?.contains(e.target)) setOpen(false); };
+    // Don't auto-focus on phones — it pops the keyboard over half the list.
+    if (!sheet) setTimeout(() => searchRef.current?.focus(), 30);
+    const onDoc = (e) => { if (!wrapRef.current?.contains(e.target) && !popRef.current?.contains(e.target)) setOpen(false); };
     const onKey = (e) => e.key === 'Escape' && setOpen(false);
-    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('pointerdown', onDoc);
     document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey); };
-  }, [open]);
+    const prevOverflow = document.body.style.overflow;
+    if (sheet) document.body.style.overflow = 'hidden';
+    return () => { document.removeEventListener('pointerdown', onDoc); document.removeEventListener('keydown', onKey); document.body.style.overflow = prevOverflow; };
+  }, [open, sheet]);
 
   const groups = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -46,8 +59,10 @@ export default function LanguagePicker({ compact, variant, align = 'end', onChan
         {loading || pending ? <Loader2 className="spin" /> : <Globe />}
         <span translate="no" className="notranslate">{compact ? info.code.split('-')[0].toUpperCase() : info.native}</span>
       </button>
-      {open && (
-        <div className={cx('lang-pop', align === 'start' && 'start')} role="dialog" aria-label="Choose your language">
+      {open && (() => {
+        const pop = (
+        <div ref={popRef} className={cx('lang-pop', align === 'start' && 'start', sheet && 'sheet')} role="dialog" aria-label="Choose your language">
+          {sheet && <div className="lang-sheet-head"><strong>Choose your language</strong><button type="button" className="lang-close" onClick={() => setOpen(false)} aria-label="Close"><X size={20} /></button></div>}
           <div className="lang-search">
             <Search size={16} />
             <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search languages" aria-label="Search languages" />
@@ -69,7 +84,9 @@ export default function LanguagePicker({ compact, variant, align = 'end', onChan
             {groups.length === 0 && <div className="lang-note">No language matches “{q}”.</div>}
           </div>
         </div>
-      )}
+        );
+        return sheet ? createPortal(<><div className="lang-backdrop" onClick={() => setOpen(false)} />{pop}</>, document.body) : pop;
+      })()}
     </div>
   );
 }

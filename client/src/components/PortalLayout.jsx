@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Bell, LogOut, Menu, X, ChevronDown, KeyRound } from 'lucide-react';
+import { Bell, LogOut, Menu, X, ChevronDown, KeyRound, Cookie, MapPin } from 'lucide-react';
 import Logo from './Logo';
 import LanguagePicker from './LanguagePicker';
+import { LocationChip, openCookieSettings, openLocationSettings } from '../consent';
 import { useAuth, ROLE_LABEL } from '../auth';
 import { api, subscribe, session } from '../api';
 import { Avatar, timeAgo, cx, Modal, Field, Button, useToast } from './ui';
@@ -81,6 +82,7 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
         <header className="topbar">
           <button className="icon-btn only-mobile" onClick={() => setOpen(true)} aria-label="Open menu"><Menu /></button>
           <div className="grow topbar-extra">{headerExtra}</div>
+          {['patient', 'caregiver'].includes(user?.role) && <LocationChip />}
           <LanguagePicker compact />
           <div className="pop-wrap">
             <button className="icon-btn" onClick={openBell} aria-label="Notifications">
@@ -116,6 +118,8 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
               <div className="popover menu-pop">
                 <div className="pop-head"><div><strong className="small">{user?.name}</strong><div className="tiny muted">{user?.email}</div></div></div>
                 <button className="menu-item" onClick={() => { setPwOpen(true); setMenuOpen(false); }}><KeyRound size={16} /> Change password</button>
+                {['patient', 'caregiver'].includes(user?.role) && <button className="menu-item" onClick={() => { openLocationSettings(); setMenuOpen(false); }}><MapPin size={16} /> My location</button>}
+                <button className="menu-item" onClick={() => { openCookieSettings(); setMenuOpen(false); }}><Cookie size={16} /> Cookie preferences</button>
                 <button className="menu-item" onClick={() => { signOut(); navigate('/'); }}><LogOut size={16} /> Sign out</button>
               </div>
             )}
