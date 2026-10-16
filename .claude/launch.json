@@ -2,6 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     { "name": "api", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev", "--prefix", "server"], "port": 4000 },
-    { "name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev", "--prefix", "client"], "port": 5173 }
+    { "name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev", "--prefix", "client"], "port": 5173 },
+    { "name": "preview", "runtimeExecutable": "npx", "runtimeArgs": ["--prefix", "client", "vite", "preview", "client", "--port", "4173", "--strictPort"], "port": 4173 }
   ]
 }
