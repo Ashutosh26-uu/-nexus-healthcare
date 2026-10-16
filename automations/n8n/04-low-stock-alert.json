@@ -1,0 +1,180 @@
+{
+  "name": "Nexus · Low stock & expiry alert (email)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "7c123fc5-2438-4019-ad02-eeaf20a6cb7a",
+      "name": "Every day 9:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9d7785ec-b0fc-475f-bb0f-051548aa756d",
+              "name": "baseUrl",
+              "value": "https://nexus-healthcare-50042935756.development.catalystappsail.in",
+              "type": "string"
+            },
+            {
+              "id": "c176945e-b4dc-42d2-a649-42c2368758d4",
+              "name": "alertEmail",
+              "value": "you@yourdomain.com",
+              "type": "string"
+            },
+            {
+              "id": "cbc97da8-7ece-461c-b39e-1c6e4811a5da",
+              "name": "fromEmail",
+              "value": "Nexus Automations <no-reply@yourdomain.com>",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2967185d-4dcc-47e7-b37f-e1c38ddbd800",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ],
+      "notes": "Edit these once: your Nexus URL, who gets alerts, and the sender address."
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').first().json.baseUrl }}/api/automation/low-stock",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "bba11324-7ba7-4376-921b-5d423807357b",
+      "name": "Low stock",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "nexusAutomationKey",
+          "name": "Nexus automation key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const { stores } = $input.first().json;\nif (!stores.length) return [];\nconst text = stores.map((s) => [\n  `${s.name}${s.district ? `, ${s.district}` : ''}${s.phone ? ` · ${s.phone}` : ''}`,\n  ...s.low.map((i) => `   LOW  ${i.drug}: ${i.qty} left (keep ${i.safetyStock})`),\n  ...s.expiringSoon.map((i) => `   EXPIRES ${i.expiry}  ${i.drug} · ${i.qty} units · batch ${i.batch}`),\n].join('\\n')).join('\\n\\n');\nreturn [{ json: { subject: `Stock alert — ${stores.length} chemist${stores.length > 1 ? 's' : ''} need attention`, text } }];"
+      },
+      "id": "d4292600-3e97-445d-bf8b-8c8f60ad2ac0",
+      "name": "Write alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ],
+      "notes": "Returns nothing when every store is fine, so no email goes out."
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $('Config').first().json.fromEmail }}",
+        "toEmail": "={{ $('Config').first().json.alertEmail }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.text }}",
+        "options": {}
+      },
+      "id": "f81de5e7-a218-4cdf-8442-7ded53139cb7",
+      "name": "Email alert",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        880,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "nexusSmtp",
+          "name": "SMTP (alerts)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every day 9:00": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Low stock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Low stock": {
+      "main": [
+        [
+          {
+            "node": "Write alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write alert": {
+      "main": [
+        [
+          {
+            "node": "Email alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Kolkata",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "description": "Every day at 9:00 IST: chemists running below safety stock or holding stock that expires within 30 days."
+  },
+  "tags": []
+}

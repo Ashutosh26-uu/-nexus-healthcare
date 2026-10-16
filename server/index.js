@@ -20,6 +20,7 @@ const { availabilityOf, isEClinicDoctor, timingsOf, DAYS: WEEK_DAYS } = require(
 const catalog = require('./catalog');
 const payments = require('./payments');
 const geo = require('./geo');
+const automation = require('./automation');
 
 const { OtpError, normalizePhone, samePhone } = otp;
 
@@ -544,6 +545,7 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
   }
   notify(user.id, 'Welcome to Nexus Healthcare 💚', `Your Health Passport ${patient.id} is ready. Add a family member or check your symptoms any time.`);
   audit(user, 'created_passport', patient.id, 'passport', phone ? 'Mobile verified by OTP' : 'Email verified by OTP');
+  automation.emit('patient.registered', { patientId: patient.id, via: 'app', district: patient.district || null }, { contact: autoContact(patient) });
   store.save();
   broadcast('patients', 'admin');
   res.json({ token: sign(user), user: publicUser(user), patient, linkedExisting: Boolean(dup) });
@@ -584,6 +586,7 @@ app.post('/api/auth/register/quick', registerLimiter, async (req, res) => {
   d.patients.push(patient);
   notify(user.id, 'Welcome to Nexus Healthcare 💚', `Your Health Passport ${patient.id} is ready. Complete your profile so doctors near you can help faster.`);
   audit(user, 'created_passport', patient.id, 'passport', verified.phone ? 'Quick sign-up · mobile verified by OTP' : 'Quick sign-up · email verified by OTP');
+  automation.emit('patient.registered', { patientId: patient.id, via: 'app', district: patient.district || null }, { contact: autoContact(patient) });
   store.save();
   broadcast('patients', 'admin');
   res.json({ token: sign(user), user: publicUser(user), patient });
@@ -679,6 +682,7 @@ app.post('/api/public/join/facility', joinLimiter, async (req, res) => {
   };
   d.users.push(user);
   audit(user, 'applied_facility', null, kind.type, `${f.name} (${kind.label})`);
+  automation.emit('onboarding.submitted', { kind: kind.type, stage: 'applied', id: f.id, name: f.name, district: f.district || null });
   d.users.filter((u) => u.role === 'super_admin').forEach((a) => notify(a.id, 'New facility application', `${f.name}, ${f.district} wants to join the network. Review it in Onboarding.`));
   store.save();
   broadcast('admin', 'doctors');
@@ -724,6 +728,7 @@ app.post('/api/public/join/doctor', joinLimiter, async (req, res) => {
     Object.assign(doc, { facilityId: f.id, ownsFacilityId: f.id, engagement: 'own_clinic' });
   }
   audit(user, 'doctor_signed_up', null, 'doctor', `${doc.name}${doc.ownsFacilityId ? ` · owns ${clinicName}` : listed ? ' · asks to claim a clinic listing' : ''}`);
+  automation.emit('onboarding.submitted', { kind: 'doctor', stage: 'signed_up', id: doc.id, name: doc.name, specialty: doc.specialty || null, clinic: clinicName || null });
   store.save();
   broadcast('admin', 'doctors');
   res.json({ ok: true, ref, kind: 'doctor', name: doc.name, token: sign(user), user: publicUser(user) });
@@ -749,6 +754,7 @@ app.post('/api/public/join/pharmacy', joinLimiter, async (req, res) => {
   };
   d.users.push(user);
   audit(user, 'pharmacy_signed_up', null, 'pharmacy', storeName);
+  automation.emit('onboarding.submitted', { kind: 'pharmacy', stage: 'signed_up', id: f.id, name: storeName });
   store.save();
   broadcast('admin');
   res.json({ ok: true, ref, kind: 'pharmacy', name: storeName, token: sign(user), user: publicUser(user) });
@@ -1435,6 +1441,7 @@ function announceMedOrder(d, o) {
   const what = o.items.map((i) => `${i.drug} ×${i.qty}`).join(', ');
   const targets = o.pharmacyId ? [o.pharmacyId] : o.candidates;
   targets.forEach((fid) => pharmacistsOf(d, fid).forEach((u) => notify(u.id, o.pharmacyId ? 'New medicine order' : 'Medicine wanted nearby', `${p?.name || 'A patient'} · ${what} · ${o.fulfilment === 'delivery' ? `home delivery (₹${o.advance} advance paid)` : 'pickup'}`, 'demand')));
+  automation.emit('medicine_order.placed', { orderId: o.id, orderNo: o.orderNo, patientId: o.patientId, pharmacyId: o.pharmacyId || null, pharmacyName: o.pharmacyId ? facilityName(o.pharmacyId) : null, openRequest: !o.pharmacyId, chemistsAsked: targets.length, fulfilment: o.fulfilment, itemsCount: o.items.length, total: o.total ?? null, advancePaid: o.advancePaid || 0 }, { contact: autoContact(p) });
 }
 
 app.get('/api/patient/medicine-orders', auth, role('patient', 'caregiver'), (req, res) => {
@@ -1492,6 +1499,7 @@ app.post('/api/medicine-orders/:id/respond', auth, role('pharmacist'), (req, res
     patientOwnerUserIds(p).forEach((u) => notify(u, 'Order accepted ✅', `${o.orderNo}: ${how}`));
   }
   audit(req.user, `medorder_${o.status}`, o.patientId, 'medicine', o.orderNo);
+  automation.emit('medicine_order.updated', { orderId: o.id, orderNo: o.orderNo, patientId: o.patientId, status: o.status, pharmacyId: fid, pharmacyName: f?.name || null, fulfilment: o.fulfilment, deliveryBy: o.deliveryBy || null, refundDue: o.refundDue || 0 }, { contact: autoContact(p) });
   store.save();
   broadcast('pharmacy', 'medorders');
   res.json({ ...enrichMedOrder(o), otp: undefined });
@@ -1527,6 +1535,7 @@ app.post('/api/medicine-orders/:id/status', auth, role('pharmacist'), (req, res)
   if (['collected', 'delivered'].includes(next)) o.balancePaid = o.balance;
   const msg = { packed: o.fulfilment === 'pickup' ? `Packed and ready at ${f.name}. Show code ${o.otp} at the counter.` : 'Packed — on its way soon.', out_for_delivery: `On the way from ${f.name}. Share code ${o.otp} with the delivery person.`, delivered: 'Delivered. Get well soon!', collected: 'Collected. Get well soon!' }[next];
   patientOwnerUserIds(p).forEach((u) => notify(u, `Medicines · ${o.orderNo}`, msg));
+  automation.emit(next === 'delivered' ? 'medicine_order.delivered' : 'medicine_order.updated', { orderId: o.id, orderNo: o.orderNo, patientId: o.patientId, status: next, pharmacyId: fid, pharmacyName: f.name, fulfilment: o.fulfilment, deliveryBy: o.deliveryBy || null, by: 'store' }, { contact: autoContact(p) });
   store.save();
   broadcast('pharmacy', 'medorders', 'dispatch');
   res.json({ ...enrichMedOrder(o), otp: undefined });
@@ -1819,6 +1828,7 @@ function finalizePayment(d, pay, user) {
     doctorInbox(d, doc).forEach((uid) => notify(uid, 'New paid booking', `${doc.userId ? '' : `For ${doc.name}: `}${p.name} · ${c.triage.symptoms.slice(0, 80)}${where}${c.scheduledAt ? ` · ${new Date(c.scheduledAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}` : ' · now'}`));
     patientOwnerUserIds(p).forEach((u) => notify(u, 'Booking confirmed', `${doc.name}${where}. ${c.mode === 'in_person' ? 'Show your visit QR at the reception.' : 'We\'ll alert you when the doctor joins.'}`));
     audit(user, 'paid_booking', p.id, 'consult', `${c.id} · ₹${pay.amount}`);
+    automation.emit('booking.confirmed', { consultId: c.id, patientId: p.id, doctorId: doc.id, doctorName: doc.name, mode: c.mode, location: c.location?.name || null, scheduledAt: c.scheduledAt || null, amount: pay.amount }, { contact: autoContact(p) });
   } else if (pay.purpose === 'lab_advance') {
     const o = d.labOrders.find((x) => x.id === pay.refId);
     if (!o || o.booking?.paymentId !== pay.id) return;
@@ -1829,6 +1839,7 @@ function finalizePayment(d, pay, user) {
     d.users.filter((u) => u.role === 'lab_tech' && u.facilityId === o.labId).forEach((u) => notify(u.id, 'New paid test booking', `${p?.name} · ${o.tests.map((t) => t.name).join(', ')} · ${o.booking.homeCollection ? 'home collection' : 'walk-in'}${when} · ₹${pay.amount} advance paid, collect ₹${o.booking.balance}`));
     patientOwnerUserIds(p).forEach((u) => notify(u, 'Test booked ✅', `${facilityName(o.labId)}${when}. ₹${pay.amount} paid — pay ₹${o.booking.balance} at the lab. Report in about ${o.booking.reportInHours} hours after the sample.`));
     audit(user, 'paid_lab_advance', o.patientId, 'lab', `${o.id} · ₹${pay.amount}`);
+    automation.emit('lab.booked', { labOrderId: o.id, patientId: o.patientId, labId: o.labId, labName: facilityName(o.labId), testsCount: o.tests.length, homeCollection: !!o.booking.homeCollection, slot: o.booking.slot || null, advancePaid: pay.amount, balance: o.booking.balance, reportInHours: o.booking.reportInHours }, { contact: autoContact(p) });
   } else if (pay.purpose === 'med_order_advance') {
     const o = d.medOrders.find((x) => x.id === pay.refId);
     if (!o || o.status !== 'awaiting_payment') return;
@@ -1885,6 +1896,7 @@ app.post('/api/payments/:id/confirm', auth, (req, res) => {
     // Real money was captured for something that's no longer payable: record it for refund.
     pay.status = 'refund_pending'; pay.paidAt = nowIso(); pay.refundReason = problem;
     audit(req.user, 'payment_refund_due', pay.patientId, 'payment', `${pay.id} · ₹${pay.amount} · ${problem}`);
+    automation.emit('payment.refund_due', { paymentId: pay.id, purpose: pay.purpose, amount: pay.amount, method: pay.method, gatewayPaymentId: pay.gatewayPaymentId || null, reason: problem, patientId: pay.patientId || null });
     store.save();
     return res.status(409).json({ error: `${problem} Your ₹${pay.amount} will be refunded automatically.` });
   }
@@ -2054,6 +2066,7 @@ app.post('/api/patient/transfers', auth, role('patient', 'caregiver'), (req, res
   if (from) notify(from.userId, 'Patient moved their care', `${p.name} has moved to another doctor. You keep a read-only copy of their records up to today.`);
   patientOwnerUserIds(p).forEach((u) => notify(u, 'Records transferred', `A copy of your full record is now with ${to.name}${toFac ? ` (${toFac.name})` : ''}.`));
   audit(req.user, 'care_transfer', p.id, 'consent', `${from?.name || '—'} → ${to.name}`);
+  automation.emit('care.transferred', { transferId: t.id, patientId: p.id, fromDoctorId: from?.id || null, fromDoctorName: from?.name || null, toDoctorId: to.id, toDoctorName: to.name, toFacility: toFac?.name || null });
   store.save();
   broadcast('consents', 'doctors', 'consults');
   res.json({ ok: true, transfer: t, doctor: { id: to.id, name: to.name, facility: toFac?.name || null } });
@@ -2280,6 +2293,7 @@ app.put('/api/doctor/profile', auth, role('doctor'), async (req, res) => {
   // Identity: we keep only the last 4 Aadhaar digits (full number is never stored).
   doc.kyc = { age, aadhaarLast4: aadhaar ? aadhaar.slice(-4) : (doc.kyc?.aadhaarLast4 || null), aadhaarChecksumOk: Boolean(aadhaar || doc.kyc?.aadhaarLast4), latestDegree: clean(b.latestDegree), degreeNumber: clean(b.degreeNumber, 40), degreeFileId: b.degreeFileId || null, photoFileId: b.photoFileId };
   audit(req.user, 'doctor_profile_submitted', null, 'doctor', `${doc.name} · ${doc.specialty}`);
+  automation.emit('onboarding.submitted', { kind: 'doctor', stage: 'ready_for_review', id: doc.id, name: doc.name, specialty: doc.specialty || null });
   d.users.filter((u) => u.role === 'super_admin').forEach((a) => notify(a.id, 'Doctor profile ready for review', `${doc.name} (${doc.specialty}) completed onboarding.`));
   store.save();
   broadcast('admin', 'doctors');
@@ -2507,6 +2521,12 @@ function contactOf(p) {
   const email = u?.email && !DEMO_EMAIL.test(u.email) ? u.email : null;
   return { mobile, email };
 }
+// Contact details for automation reminders — only when the operator switched on N8N_SHARE_CONTACT.
+function autoContact(p) {
+  if (!p || !automation.shareContact()) return undefined;
+  const { mobile, email } = contactOf(p);
+  return { firstName: String(p.name || '').split(' ')[0], mobile, email, language: p.language || 'English' };
+}
 // Prefer whatever actually reaches the patient: real SMS if a gateway is connected, else email over SMTP.
 function pickChannel(c, wanted) {
   if (wanted === 'email' && c.email) return 'email';
@@ -2654,6 +2674,7 @@ function createFollowUp(d, { p, doc, days, diagnosis, from }) {
   d.consents.push({ id: store.id('cst'), patientId: p.id, granteeType: 'doctor', granteeId: doc.id, granteeName: doc.name, scope: ['history', 'prescriptions', 'labs', 'allergies'], purpose: 'Follow-up visit', start: nowIso(), expiry: new Date(Date.parse(c.scheduledAt) + 3 * 86400000).toISOString(), status: 'active' });
   const when = new Date(c.scheduledAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
   patientOwnerUserIds(p).forEach((u) => notify(u, 'Follow-up booked', `${doc.name} wants to see you again on ${when}${inPerson ? ` at ${location.name}` : ' (video)'}.`));
+  automation.emit('followup.scheduled', { consultId: c.id, followUpOf: c.followUpOf, patientId: p.id, doctorId: doc.id, doctorName: doc.name, mode: c.mode, location: c.location?.name || null, scheduledAt: c.scheduledAt }, { contact: autoContact(p) });
   return c;
 }
 
@@ -2696,6 +2717,7 @@ app.post('/api/doctor/prescriptions', auth, role('doctor'), async (req, res) => 
   if (pharmacy) d.users.filter((u) => u.role === 'pharmacist' && u.facilityId === pharmacy.id).forEach((u) => notify(u.id, 'New e-prescription', `${p.name} · ${items.length} medicine${items.length === 1 ? '' : 's'} · from ${doc.name}`));
   patientOwnerUserIds(p).forEach((u) => notify(u, 'New prescription from your doctor', `${doc.name} sent you a digital prescription${pharmacy ? ` (shared with ${pharmacy.name})` : ''}${orders.length ? ` and ${labTests.length} test${labTests.length > 1 ? 's' : ''}` : ''}.`));
   audit(req.user, 'issued_prescription', p.id, 'prescription', `${rxSaved ? rx.id : 'tests only'} · ${rx.source}${pharmacy ? ` → ${pharmacy.name}` : ''}${orders.length ? ` · ${orders.length} lab order(s)` : ''}`);
+  automation.emit('prescription.issued', { prescriptionId: rxSaved ? rx.id : null, patientId: p.id, doctorId: doc.id, doctorName: doc.name, itemsCount: items.length, labOrders: orders.length, pharmacy: pharmacy?.name || null, followUpOn: rx.followUpOn || null }, { contact: autoContact(p) });
   store.save();
   broadcast('prescriptions', 'pharmacy', 'lab', 'records');
   res.json({ prescription: rxSaved ? enrichRx(rx) : null, labOrders: orders, followUp: followUp ? { scheduledAt: followUp.scheduledAt, where: followUp.location?.name || 'Video' } : null, sharedWith: { patient: true, pharmacy: pharmacy?.name || null, labs: orders.map((o) => o.labName) } });
@@ -2780,6 +2802,7 @@ app.post('/api/consults/:id/complete', auth, role('doctor'), (req, res) => {
     }
     d.prescriptions.push(rx);
     audit(req.user, 'created_prescription', p.id, 'prescription', rx.id);
+    automation.emit('prescription.issued', { prescriptionId: rx.id, consultId: c.id, patientId: p.id, doctorId: doc.id, doctorName: doc.name, itemsCount: validItems.length, pharmacyId: rx.pharmacyId || null }, { contact: autoContact(p) });
     // Flow D: anything not stockable nearby triggers an inter-region transfer request.
     for (const it of validItems) {
       const stock = engines.findStock(d, it.drug, { district: p.district, state: p.state });
@@ -2804,6 +2827,7 @@ app.post('/api/consults/:id/complete', auth, role('doctor'), (req, res) => {
   }
   patientOwnerUserIds(p).forEach((u) => notify(u, 'Consult summary ready', `${doc.name} has completed your consult${rx ? ' and sent an e-prescription' : ''}.`));
   audit(req.user, 'completed_consult', p.id, 'consult', c.id);
+  automation.emit('consult.completed', { consultId: c.id, patientId: p.id, doctorId: doc.id, doctorName: doc.name, prescriptionId: rx?.id || null }, { contact: autoContact(p) });
   store.save();
   broadcast('consults', 'queue', 'prescriptions', 'pharmacy', 'lab', 'referrals', 'supply', `consult:${c.id}`);
   res.json({ consult: enrichConsult(c), prescription: rx });
@@ -2862,6 +2886,7 @@ app.post('/api/kiosk/register', auth, role('kiosk_operator'), (req, res) => {
   };
   db().patients.push(p);
   audit(req.user, 'registered_patient', p.id, 'passport', `Walk-in at ${kiosk.name}`);
+  automation.emit('patient.registered', { patientId: p.id, via: 'kiosk', kiosk: kiosk.name, district: p.district || null }, { contact: autoContact(p) });
   store.save();
   broadcast('patients', 'admin');
   res.json({ ...p, age: ageOf(p.dob) });
@@ -3002,6 +3027,7 @@ app.put('/api/pharmacy/profile', auth, role('pharmacist'), async (req, res) => {
   });
   req.user.region = { ...req.user.region, district: f.district, state: f.state };
   audit(req.user, 'pharmacy_profile_submitted', null, 'pharmacy', f.name);
+  automation.emit('onboarding.submitted', { kind: 'pharmacy', stage: 'ready_for_review', id: f.id, name: f.name, district: f.district || null });
   d.users.filter((u) => u.role === 'super_admin').forEach((a) => notify(a.id, 'Medical store ready for review', `${f.name}, ${f.district} completed its profile.`));
   store.save();
   broadcast('admin');
@@ -3070,6 +3096,7 @@ app.put('/api/lab-orders/:id/status', auth, role('lab_tech'), (req, res) => {
     const p = db().patients.find((x) => x.id === o.patientId);
     const by = new Date(o.reportDueAt).toLocaleString('en-IN', { timeZone: APP_TZ, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
     patientOwnerUserIds(p).forEach((u) => notify(u, 'Your test is done ✅', `${o.tests.map((t) => t.name).join(', ')} at ${facilityName(o.labId)}. Your report will be ready by ${by} — we'll notify you.`));
+    automation.emit('lab.sample_collected', { labOrderId: o.id, patientId: o.patientId, labId: o.labId, labName: facilityName(o.labId), reportDueAt: o.reportDueAt }, { contact: autoContact(p) });
   }
   o.status = req.body.status;
   o[`${req.body.status}At`] = nowIso();
@@ -3102,6 +3129,7 @@ app.post('/api/lab-orders/:id/report', auth, role('lab_tech'), (req, res) => {
   // Anonymised feed → outbreak engine (test, result, pin, date only).
   const newAlerts = engines.outbreakCheck(d, o);
   audit(req.user, 'uploaded_report', p.id, 'lab', o.id);
+  automation.emit('lab.report_ready', { labOrderId: o.id, patientId: p.id, labId: o.labId, labName: facilityName(o.labId), doctorId: o.doctorId, doctorName: doc?.name || null, critical: !!o.critical }, { contact: autoContact(p) });
   store.save();
   broadcast('lab', 'records', 'alerts', 'gov');
   res.json({ order: enrichLab(o), newAlerts });
@@ -3295,7 +3323,7 @@ app.post('/api/deliveries/:id/status', auth, role('delivery'), (req, res) => {
     const o = d.medOrders.find((x) => x.id === del.refId);
     const p = o && d.patients.find((x) => x.id === o.patientId);
     if (o && status === 'picked' && o.status === 'packed') { o.status = 'out_for_delivery'; o.out_for_deliveryAt = nowIso(); patientOwnerUserIds(p).forEach((u) => notify(u, `Medicines · ${o.orderNo}`, `On the way with ${req.user.name}. Share code ${o.otp} when it arrives${o.balance ? ` and pay ₹${o.balance}` : ''}.`)); }
-    if (o && status === 'delivered') { o.status = 'delivered'; o.deliveredAt = nowIso(); o.balancePaid = o.balance; patientOwnerUserIds(p).forEach((u) => notify(u, 'Delivered ✅', 'Your medicines have been delivered. Get well soon!')); pharmacistsOf(d, o.pharmacyId).forEach((u) => notify(u.id, 'Order delivered', `${o.orderNo} delivered by ${req.user.name}.`)); }
+    if (o && status === 'delivered') { o.status = 'delivered'; o.deliveredAt = nowIso(); o.balancePaid = o.balance; patientOwnerUserIds(p).forEach((u) => notify(u, 'Delivered ✅', 'Your medicines have been delivered. Get well soon!')); pharmacistsOf(d, o.pharmacyId).forEach((u) => notify(u.id, 'Order delivered', `${o.orderNo} delivered by ${req.user.name}.`)); automation.emit('medicine_order.delivered', { orderId: o.id, orderNo: o.orderNo, patientId: o.patientId, status: 'delivered', pharmacyId: o.pharmacyId, pharmacyName: facilityName(o.pharmacyId), by: 'nexus_rider', collected: o.balance || 0 }, { contact: autoContact(p) }); }
   }
   if (status === 'delivered') {
     if (del.kind === 'med_order') { /* handled above */ } else if (del.kind === 'prescription') {
@@ -3752,6 +3780,108 @@ if (fs.existsSync(dist)) {
   app.get(/^\/(?!api).*/, (_req, res) => { res.setHeader('Cache-Control', 'no-cache'); res.sendFile(path.join(dist, 'index.html')); });
 }
 // Unknown API routes get a JSON 404 (not the HTML shell).
+// ---- n8n automations: a narrow API for workflows, guarded by N8N_API_KEY (see automation.js) ----
+const automationLimiter = security.rateLimit({ windowMs: 60000, max: 120, key: () => 'automation', message: 'Too many automation calls — slow the workflow down.' });
+const autoApi = [automationLimiter, automation.apiAuth];
+const istWhen = (iso) => new Date(iso).toLocaleString('en-IN', { timeZone: APP_TZ, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+
+app.get('/api/automation/ping', autoApi, (_req, res) => res.json({ ok: true, mode: DATA_MODE, time: nowIso(), timezone: APP_TZ, shareContact: automation.shareContact(), events: Object.keys(automation.EVENTS) }));
+
+// One day's numbers for a daily report. ?date=YYYY-MM-DD | today (default: yesterday, in APP_TZ).
+app.get('/api/automation/summary', autoApi, (req, res) => {
+  const d = db();
+  const q = String(req.query.date || '');
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(q) ? q : istDay(Date.now() - (q === 'today' ? 0 : 86400000));
+  const on = (iso) => Boolean(iso) && istDay(iso) === day;
+  const paid = d.payments.filter((x) => x.status === 'paid' && on(x.paidAt));
+  const byPurpose = {};
+  for (const x of paid) byPurpose[x.purpose] = (byPurpose[x.purpose] || 0) + (Number(x.amount) || 0);
+  const reported = d.labOrders.filter((o) => on(o.reportedAt));
+  res.json({
+    date: day, timezone: APP_TZ, mode: DATA_MODE,
+    patients: { new: d.patients.filter((x) => on(x.createdAt)).length, total: d.patients.length },
+    consults: { booked: d.consults.filter((c) => !c.followUp && on(c.paidAt)).length, completed: d.consults.filter((c) => c.status === 'completed' && on(c.completedAt)).length, followUpsBooked: d.consults.filter((c) => c.followUp && on(c.createdAt)).length },
+    prescriptions: d.prescriptions.filter((r) => on(r.createdAt)).length,
+    labs: { advised: d.labOrders.filter((o) => on(o.createdAt)).length, booked: d.labOrders.filter((o) => on(o.booking?.paidAt)).length, reported: reported.length, critical: reported.filter((o) => o.critical).length },
+    medicineOrders: { placed: d.medOrders.filter((o) => on(o.createdAt)).length, delivered: d.medOrders.filter((o) => on(o.deliveredAt) || on(o.collectedAt)).length, declined: d.medOrders.filter((o) => on(o.declinedAt)).length, cancelled: d.medOrders.filter((o) => on(o.cancelledAt)).length },
+    payments: { count: paid.length, amount: paid.reduce((t, x) => t + (Number(x.amount) || 0), 0), byPurpose },
+    refundsPending: d.payments.filter((x) => x.status === 'refund_pending').length,
+    awaitingVerification: { doctors: d.doctors.filter((x) => !x.verified).length, facilities: d.facilities.filter((f) => f.verified === false).length },
+  });
+});
+
+// Appointments and lab slots coming up — for reminder workflows. ?hours=24 (1–168) &include=all
+app.get('/api/automation/upcoming', autoApi, (req, res) => {
+  const d = db();
+  const hours = Math.min(168, Math.max(1, Number(req.query.hours) || 24));
+  const from = Date.now(); const to = from + hours * 3600000;
+  const all = req.query.include === 'all';
+  const inWindow = (iso) => { const t = Date.parse(iso); return t >= from && t <= to; };
+  const patientOf = (id) => d.patients.find((x) => x.id === id);
+  const consults = d.consults.filter((c) => c.status === 'scheduled' && c.scheduledAt && inWindow(c.scheduledAt) && (all || !c.reminderSentAt)).map((c) => ({
+    kind: 'consult', id: c.id, patientId: c.patientId, doctorName: d.doctors.find((x) => x.id === c.doctorId)?.name || null, mode: c.mode,
+    location: c.location?.name || null, address: c.location?.address || null, followUp: Boolean(c.followUp), scheduledAt: c.scheduledAt, when: istWhen(c.scheduledAt),
+    reminderSentAt: c.reminderSentAt || null, contact: autoContact(patientOf(c.patientId)),
+  }));
+  const labs = d.labOrders.filter((o) => o.status === 'ordered' && o.booking?.paidAt && o.booking.slot && inWindow(o.booking.slot) && (all || !o.reminderSentAt)).map((o) => ({
+    kind: 'lab', id: o.id, patientId: o.patientId, labName: facilityName(o.labId), homeCollection: Boolean(o.booking.homeCollection), balance: o.booking.balance,
+    fastingNeeded: o.tests.some((t) => /fasting/i.test(testInfo(t).prep || '') && !/no fasting/i.test(testInfo(t).prep || '')),
+    scheduledAt: o.booking.slot, when: istWhen(o.booking.slot), reminderSentAt: o.reminderSentAt || null, contact: autoContact(patientOf(o.patientId)),
+  }));
+  const items = [...consults, ...labs].sort((a, b) => (a.scheduledAt < b.scheduledAt ? -1 : 1));
+  res.json({ hours, mode: DATA_MODE, count: items.length, contactShared: automation.shareContact(), items });
+});
+
+// Mark a reminder as sent so the next run doesn't send it again. Body: { kind: 'consult'|'lab', id, channel? }
+app.post('/api/automation/reminded', autoApi, (req, res) => {
+  const d = db();
+  const { kind, id } = req.body || {};
+  const item = kind === 'lab' ? d.labOrders.find((o) => o.id === id) : kind === 'consult' ? d.consults.find((c) => c.id === id) : null;
+  if (!item) return res.status(404).json({ error: 'Not found.' });
+  item.reminderSentAt = nowIso();
+  item.reminderChannel = clean(req.body?.channel, 30) || null;
+  store.save();
+  res.json({ ok: true, id, reminderSentAt: item.reminderSentAt });
+});
+
+// Verified chemists running low on stock (and stock expiring within 30 days).
+app.get('/api/automation/low-stock', autoApi, (_req, res) => {
+  const d = db();
+  const soon = Date.now() + 30 * 86400000;
+  const stores = d.facilities.filter((f) => f.type === 'pharmacy' && f.verified !== false).map((f) => {
+    const inv = d.inventory.filter((i) => i.facilityId === f.id);
+    return {
+      facilityId: f.id, name: f.name, district: f.district || null, phone: f.phone || null,
+      low: inv.filter((i) => i.qty <= i.safetyStock).map((i) => ({ drug: i.drug, qty: i.qty, safetyStock: i.safetyStock })),
+      expiringSoon: inv.filter((i) => i.expiry && Date.parse(i.expiry) <= soon).map((i) => ({ drug: i.drug, qty: i.qty, expiry: i.expiry, batch: i.batch })),
+    };
+  }).filter((x) => x.low.length || x.expiringSoon.length);
+  res.json({ mode: DATA_MODE, count: stores.length, stores });
+});
+
+// Post an in-app notification (e.g. after sending a WhatsApp reminder). Body: { patientId | userId, title, body }
+app.post('/api/automation/notify', autoApi, (req, res) => {
+  const d = db();
+  const b = req.body || {};
+  const title = clean(b.title, 80); const text = clean(b.body, 300);
+  if (!title || !text) return res.status(400).json({ error: 'title and body are required.' });
+  const p = b.patientId ? d.patients.find((x) => x.id === b.patientId) : null;
+  const ids = p ? patientOwnerUserIds(p) : b.userId && d.users.some((u) => u.id === b.userId) ? [b.userId] : [];
+  if (!ids.length) return res.status(404).json({ error: 'No such patient or user.' });
+  ids.forEach((u) => notify(u, title, text, 'automation'));
+  audit(req.user, 'automation_notice', p?.id || null, 'notification', title);
+  store.save();
+  broadcast('notifications');
+  res.json({ ok: true, delivered: ids.length });
+});
+
+app.get('/api/admin/automation', auth, role('super_admin'), (_req, res) => res.json(automation.status()));
+app.post('/api/admin/automation/test', auth, role('super_admin'), async (req, res) => {
+  const r = await automation.sendTest(req.user.name);
+  audit(req.user, 'automation_test', null, 'automation', r.ok ? 'test event delivered' : `test failed: ${r.error}`);
+  res.status(r.ok ? 200 : 502).json(r);
+});
+
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.' }));
 
 app.use((err, _req, res, _next) => {
@@ -3781,6 +3911,7 @@ function expireUnpaid() {
 
 (async () => {
   await store.init();
+  automation.init({ dataMode: DATA_MODE });
   expireUnpaid();
   setInterval(expireUnpaid, 5 * 60000).unref();
   await i18n.init({ broadcast });

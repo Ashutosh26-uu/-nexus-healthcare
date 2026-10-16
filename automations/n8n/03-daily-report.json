@@ -1,0 +1,179 @@
+{
+  "name": "Nexus · Daily report (email)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "id": "c8a98387-a08f-4db5-a39e-19954e873881",
+      "name": "Every morning 8:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "64d8ced9-68f7-4563-9ee9-51f6914ae26e",
+              "name": "baseUrl",
+              "value": "https://nexus-healthcare-50042935756.development.catalystappsail.in",
+              "type": "string"
+            },
+            {
+              "id": "6cfdb7ae-441f-4e58-b6a2-588fb45f6135",
+              "name": "alertEmail",
+              "value": "you@yourdomain.com",
+              "type": "string"
+            },
+            {
+              "id": "a7e42378-a052-4c45-83de-6e2e2f009474",
+              "name": "fromEmail",
+              "value": "Nexus Automations <no-reply@yourdomain.com>",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b965fd6c-7433-4d50-9f7d-b52b802d5eb5",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ],
+      "notes": "Edit these once: your Nexus URL, who gets alerts, and the sender address."
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').first().json.baseUrl }}/api/automation/summary",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "9c689e7b-3d8f-4e6c-9f85-12a66b7d5ead",
+      "name": "Yesterday's numbers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "nexusAutomationKey",
+          "name": "Nexus automation key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $input.first().json;\nconst rupee = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');\nconst lines = [\n  `Nexus Healthcare — ${s.date}${s.mode !== 'live' ? ' (demo data)' : ''}`,\n  '',\n  `New patients: ${s.patients.new}  (total ${s.patients.total})`,\n  `Doctor bookings: ${s.consults.booked} · consults done: ${s.consults.completed} · follow-ups booked: ${s.consults.followUpsBooked}`,\n  `Prescriptions: ${s.prescriptions}`,\n  `Lab tests: ${s.labs.advised} advised · ${s.labs.booked} booked · ${s.labs.reported} reported${s.labs.critical ? ` · ${s.labs.critical} CRITICAL` : ''}`,\n  `Medicine orders: ${s.medicineOrders.placed} placed · ${s.medicineOrders.delivered} delivered/collected · ${s.medicineOrders.declined} declined · ${s.medicineOrders.cancelled} cancelled`,\n  `Payments: ${s.payments.count} · ${rupee(s.payments.amount)}`,\n  ...Object.entries(s.payments.byPurpose || {}).map(([k, v]) => `   ${k}: ${rupee(v)}`),\n  '',\n  `Refunds waiting: ${s.refundsPending}`,\n  `Waiting for verification: ${s.awaitingVerification.doctors} doctors, ${s.awaitingVerification.facilities} facilities`,\n];\nreturn [{ json: { subject: `Nexus daily report — ${s.date}: ${s.consults.booked} bookings, ${rupee(s.payments.amount)}`, text: lines.join('\\n') } }];"
+      },
+      "id": "8ff4a451-97f3-4b1a-82bc-b31e615cd682",
+      "name": "Write report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $('Config').first().json.fromEmail }}",
+        "toEmail": "={{ $('Config').first().json.alertEmail }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.text }}",
+        "options": {}
+      },
+      "id": "8cbc6807-a90e-4d2e-85fc-f0b83760c62f",
+      "name": "Email report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        880,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "nexusSmtp",
+          "name": "SMTP (alerts)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every morning 8:00": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Yesterday's numbers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Yesterday's numbers": {
+      "main": [
+        [
+          {
+            "node": "Write report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write report": {
+      "main": [
+        [
+          {
+            "node": "Email report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Kolkata",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "description": "Every morning at 8:00 IST: yesterday's bookings, tests, medicine orders, payments, refunds and pending verifications by email."
+  },
+  "tags": []
+}
