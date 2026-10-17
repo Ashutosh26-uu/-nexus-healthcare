@@ -62,3 +62,17 @@
 }
 @media (max-width: 420px) { .otp { gap: 6px; } .otp input { height: 54px; font-size: 1.3rem; } }
 .input.readonly-line { display: flex; align-items: center; justify-content: space-between; background: var(--paper-2); color: var(--ink-2); }
+
+/* Sign-in footer: divider, a clear secondary button and a partner link card */
+.auth-divider { display: flex; align-items: center; gap: 12px; margin: 26px 0 14px; color: var(--ink-3); font-size: 0.86rem; }
+.auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.auth-alt { gap: 8px; }
+.auth-join { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: #fff; color: var(--ink-2); font-size: 0.9rem; text-decoration: none; }
+.auth-join span { flex: 1; min-width: 0; }
+.auth-join strong { color: var(--green); }
+.auth-join > svg:first-child { color: var(--green); flex: none; }
+.auth-join:hover { border-color: var(--green-2); }
+@media (max-width: 960px) {
+  /* keep the last link clear of the floating chat button */
+  .auth-form-side { padding-bottom: 96px; }
+}

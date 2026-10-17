@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Mail, ArrowRight, ArrowLeft, Lock, ShieldCheck, ChevronRight, Eye, EyeOff } from 'lucide-react';
+import { Mail, ArrowRight, ArrowLeft, Lock, ShieldCheck, ChevronRight, Eye, EyeOff, UserPlus, Stethoscope } from 'lucide-react';
 import Logo from '../components/Logo';
 import LanguagePicker from '../components/LanguagePicker';
 import OtpFlow from '../components/OtpFlow';
@@ -80,7 +80,7 @@ export default function Login() {
 
           <div className="pills auth-pills" role="tablist">
             <button type="button" role="tab" aria-selected={mode === 'patient'} className={cx('pill', mode === 'patient' && 'active')} onClick={() => { setMode('patient'); setError(''); }}><Mail size={15} /> Email code</button>
-            <button type="button" role="tab" aria-selected={mode === 'staff'} className={cx('pill', mode === 'staff' && 'active')} onClick={() => { setMode('staff'); setError(''); }}><Lock size={15} /> Email & password</button>
+            <button type="button" role="tab" aria-selected={mode === 'staff'} className={cx('pill', mode === 'staff' && 'active')} onClick={() => { setMode('staff'); setError(''); }}><Lock size={15} /> Password</button>
           </div>
 
           {error && <div className="form-error mb-2">{error}</div>}
@@ -108,12 +108,13 @@ export default function Login() {
           {mode === 'patient' && (
             <>
               <OtpFlow onDone={onOtp} />
-              <p className="small muted center mt-2 mb-0">New here? Enter your email — we&apos;ll help you create a Health Passport.</p>
             </>
           )}
 
-          <p className="small center mt-3 mb-0">New to Nexus Healthcare? <Link to="/signup">Create your Health Passport</Link></p>
-          <p className="small center mt-1 mb-0 muted">Doctor or facility? <Link to="/join">Join the network</Link></p>
+          {/* One calm "new here?" block instead of three crowded lines. */}
+          <div className="auth-divider" role="separator"><span>New to Nexus Healthcare?</span></div>
+          <Link to="/signup" className="btn secondary lg block auth-alt"><UserPlus size={17} /> Create your free Health Passport</Link>
+          <Link to="/join" className="auth-join"><Stethoscope size={16} /><span>Doctor, clinic, lab or pharmacy? <strong>Join the network</strong></span><ChevronRight size={16} /></Link>
         </div>
       </div>
 
