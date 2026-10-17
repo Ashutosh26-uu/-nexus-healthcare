@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Bell, LogOut, Menu, X, ChevronDown, KeyRound, Cookie, MapPin } from 'lucide-react';
 import Logo from './Logo';
@@ -7,8 +7,10 @@ import { LocationChip, openCookieSettings, openLocationSettings } from '../conse
 import { useAuth, ROLE_LABEL } from '../auth';
 import { api, subscribe } from '../api';
 import { Avatar, timeAgo, cx, Modal, Field, Button, useToast } from './ui';
-import ResetPassword from './ResetPassword';
 import './portal.css';
+
+// Only needed once someone opens "Change password".
+const ResetPassword = lazy(() => import('./ResetPassword'));
 
 /**
  * Shared shell for every portal.
@@ -174,7 +176,7 @@ function PasswordModal({ open, onClose }) {
     <Modal open={open} onClose={onClose} title="Change password" subtitle={mode === 'code' ? 'We\'ll email you a 6-digit code, then you choose a new password.' : undefined}>
       {mode === 'code' ? (
         <div className="stack">
-          {open && <ResetPassword accountEmail={user?.email || ''} onDone={(r) => finish(r.token)} />}
+          {open && <Suspense fallback={<div className="spinner" />}><ResetPassword accountEmail={user?.email || ''} onDone={(r) => finish(r.token)} /></Suspense>}
           <button type="button" className="link-btn small" onClick={() => { setMode('current'); setErr(''); }}>I know my current password</button>
         </div>
       ) : (

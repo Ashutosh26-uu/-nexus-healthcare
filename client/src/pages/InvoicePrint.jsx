@@ -28,8 +28,8 @@ export default function InvoicePrint() {
   if (error) return <div className="rxp-wrap"><div className="rxp-error">{error}</div></div>;
   if (!inv) return <Loading />;
 
-  const s = inv.store;
-  const t = inv.totals;
+  const s = inv.store || {};
+  const t = inv.totals || {};
   const print = () => window.print();
 
   return (
@@ -73,7 +73,7 @@ export default function InvoicePrint() {
               <tr><th>#</th><th>Item</th><th>Batch</th><th>Exp.</th><th className="r">Qty</th><th className="r">MRP</th><th className="r">Disc.</th><th className="r">Taxable</th><th className="r">GST</th><th className="r">Amount</th></tr>
             </thead>
             <tbody>
-              {inv.lines.map((l, i) => (
+              {(inv.lines || []).map((l, i) => (
                 <tr key={`${l.drug}-${i}`}>
                   <td>{i + 1}</td>
                   <td><span translate="no">{l.drug}</span>{l.switchedFrom && <div className="inv-sub">Same-salt option chosen by patient · Rx: <span translate="no">{l.switchedFrom}</span></div>}</td>
@@ -94,7 +94,7 @@ export default function InvoicePrint() {
         <div className="inv-bottom">
           <table className="rxp-table inv-slabs">
             <thead><tr><th>GST %</th><th className="r">Taxable</th><th className="r">CGST</th><th className="r">SGST</th></tr></thead>
-            <tbody>{inv.slabs.map((g) => <tr key={g.rate}><td>{g.rate}%</td><td className="r">{inr(g.taxable)}</td><td className="r">{inr(g.cgst)}</td><td className="r">{inr(g.sgst)}</td></tr>)}</tbody>
+            <tbody>{(inv.slabs || []).map((g) => <tr key={g.rate}><td>{g.rate}%</td><td className="r">{inr(g.taxable)}</td><td className="r">{inr(g.cgst)}</td><td className="r">{inr(g.sgst)}</td></tr>)}</tbody>
           </table>
           <dl className="inv-totals">
             <dt>Total at MRP</dt><dd>{inr(t.gross)}</dd>

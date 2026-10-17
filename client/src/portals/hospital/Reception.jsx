@@ -29,9 +29,12 @@ function printSlip(s) {
     ${s.ahead != null ? `<div class="r"><span>Ahead of you</span><b>${esc(s.ahead)}</b></div>` : ''}
     ${s.feeCollected ? `<div class="r"><span>Fee paid</span><b>₹${esc(s.feeCollected)}</b></div>` : ''}
     <hr><div class="t">Please wait until your number shows on the screen.<br>कृपया स्क्रीन पर अपना नंबर आने तक प्रतीक्षा करें।</div>
-    <script>window.onload = () => { window.print(); setTimeout(() => window.close(), 300); };</script>
   </body></html>`);
   w.document.close();
+  // Printed from the opener — no inline <script> in the slip, so a strict Content-Security-Policy still allows it.
+  w.addEventListener('afterprint', () => w.close());
+  w.focus();
+  w.print();
   return true;
 }
 
@@ -78,7 +81,8 @@ function NewToken({ desk, defaultFee, onIssued }) {
   const search = async (e) => {
     e.preventDefault();
     const r = await run('find', () => api.get(`/hospital/reception/lookup?q=${encodeURIComponent(q.trim())}`));
-    if (r) { setResults(r); if (r.length === 1) setPatient(r[0]); }
+    // A new search drops the previous pick, so a token can't go to someone no longer on screen.
+    if (r) { setResults(r); setPatient(r.length === 1 ? r[0] : null); }
   };
   const register = async (e) => {
     e.preventDefault();

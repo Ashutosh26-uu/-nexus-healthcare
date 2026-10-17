@@ -49,7 +49,8 @@ export function StockMoveModal({ open, onClose, drug: initialDrug = '' }) {
         </div>
         <div className="grid two" style={{ gap: 12 }}>
           <Field label="From (source)">
-            <select className="select" value={form.from} onChange={set('from')} required>
+            {/* Not `required`: "Nearest with stock" (empty value) is a valid choice. */}
+            <select className="select" value={form.from} onChange={set('from')}>
               <option value="">Nearest with stock</option>
               {opts.map((o) => <option key={o.label}>{o.label}</option>)}
             </select>

@@ -82,6 +82,11 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
   };
   const clearPlace = () => { setPlace(null); try { sessionStorage.removeItem('oc_pref_place'); } catch { /* ignore */ } };
   const active = full || q || dept;
+  // Primitives, not the location objects: a fresh GPS fix at the same spot must not refetch the list.
+  const lat = device.loc?.lat;
+  const lng = device.loc?.lng;
+  const manualDistrict = device.manual?.district || '';
+  const manualState = device.manual?.state || '';
 
   useEffect(() => {
     if (!active) { setData(null); return undefined; }
@@ -90,10 +95,10 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
     const params = new URLSearchParams({ symptoms: q, scope });
     if (dept) params.set('department', dept);
     if (excludeId) params.set('exclude', excludeId);
-    if (place) { params.set('district', place.district); params.set('state', place.state); } else if (device.loc) { params.set('lat', device.loc.lat); params.set('lng', device.loc.lng); } else if (device.manual?.district) { params.set('district', device.manual.district); params.set('state', device.manual.state || ''); }
+    if (place) { params.set('district', place.district); params.set('state', place.state); } else if (lat != null && lng != null) { params.set('lat', lat); params.set('lng', lng); } else if (manualDistrict) { params.set('district', manualDistrict); params.set('state', manualState); }
     api.get(`/doctors/recommend?${params}`).then((r) => alive && setData(r)).catch((e) => { if (alive) { setData(null); setError(e.message); } }).finally(() => alive && setLoading(false));
     return () => { alive = false; };
-  }, [q, dept, scope, device.loc, device.manual, place, active, excludeId]);
+  }, [q, dept, scope, lat, lng, manualDistrict, manualState, place, active, excludeId]);
 
   const [booking, setBooking] = useState(null);
   const pick = (doc) => (onPick ? onPick(doc) : setBooking(doc));

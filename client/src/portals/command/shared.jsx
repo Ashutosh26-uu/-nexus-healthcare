@@ -84,8 +84,9 @@ export function toCsv(rows) {
   if (!rows.length) return '';
   const cols = Object.keys(rows[0]);
   const esc = (v) => {
-    const s = v === null || v === undefined ? '' : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    let s = v === null || v === undefined ? '' : String(v);
+    if (typeof v !== 'number' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`; // no formula injection in Excel/Sheets
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   return [cols.join(','), ...rows.map((r) => cols.map((c) => esc(r[c])).join(','))].join('\n');
 }

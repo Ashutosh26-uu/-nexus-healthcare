@@ -6,7 +6,7 @@ import { LogoMark } from '../../components/Logo';
 import { useAuth } from '../../auth';
 import { useLive } from '../../live';
 import { cx } from '../../components/ui';
-import { KioskCtx, initialFlow, loadFlow, saveFlow, speak, stopSpeaking, voiceFor } from './context';
+import { KioskCtx, FLOW_KEY, initialFlow, loadFlow, saveFlow, speak, stopSpeaking, voiceFor } from './context';
 import { LANGS, langOf, makeT, hasFullCopy } from './i18n';
 import Flow from './Flow';
 import Operator from './Operator';
@@ -74,6 +74,49 @@ function DoctorHerePopup({ doctors }) {
         <span>{show.specialty} · at this E-Clinic now</span>
       </div>
       <button type="button" onClick={() => setShow(null)} aria-label="Close"><X size={15} /></button>
+    </div>
+  );
+}
+
+// Shared device: a visit left half-way (patient walked off) must not stay on screen for the next person.
+// After 3 min with no touch or key press — once someone is identified, and not during a consult — ask
+// "Still there?" for 15 s, then wipe the saved visit and go back to the welcome screen.
+const IDLE_MS = 165000;
+const WARN_S = 15;
+function IdleReset({ armed, onReset }) {
+  const [left, setLeft] = useState(null); // seconds left on the prompt, or null when not showing
+  const resetRef = useRef(onReset);
+  resetRef.current = onReset;
+  useEffect(() => {
+    if (!armed) { setLeft(null); return undefined; }
+    let idle; let tick;
+    const arm = () => {
+      clearTimeout(idle); clearInterval(tick); setLeft(null);
+      idle = setTimeout(() => {
+        let n = WARN_S;
+        setLeft(n);
+        tick = setInterval(() => {
+          n -= 1;
+          if (n > 0) { setLeft(n); return; }
+          clearInterval(tick); setLeft(null);
+          resetRef.current();
+        }, 1000);
+      }, IDLE_MS);
+    };
+    const events = ['pointerdown', 'keydown', 'touchstart', 'wheel'];
+    events.forEach((e) => window.addEventListener(e, arm, { passive: true }));
+    arm();
+    return () => { clearTimeout(idle); clearInterval(tick); events.forEach((e) => window.removeEventListener(e, arm)); };
+  }, [armed]);
+  if (left == null) return null;
+  // Any tap (handled by the window listener above) dismisses the prompt and restarts the 3-minute wait.
+  return (
+    <div className="k-idle" role="alertdialog" aria-modal="true" aria-labelledby="k-idle-title">
+      <div className="k-idle-box">
+        <h2 id="k-idle-title">Still there?</h2>
+        <p>For your privacy this visit will close in <strong>{left}</strong> seconds.</p>
+        <button type="button" className="k-btn primary xl"><span>I&apos;m still here</span></button>
+      </div>
     </div>
   );
 }
@@ -172,6 +215,10 @@ export default function KioskApp() {
         </header>
         {offline && <div className="k-offline">{t('offline')}</div>}
         <DoctorHerePopup doctors={home.data?.doctors} />
+        <IdleReset
+          armed={!onOperator && flow.step >= 2 && !(flow.step === 4 && flow.consultId)}
+          onReset={() => { try { sessionStorage.removeItem(FLOW_KEY); } catch { /* ignore */ } reset(); navigate('/kiosk'); }}
+        />
         <main className="k-main">
           <Routes>
             <Route index element={<Flow />} />

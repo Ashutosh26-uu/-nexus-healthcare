@@ -218,7 +218,7 @@ export default function CompleteProfile() {
           <textarea className="textarea" rows={3} value={form.symptoms} onChange={(e) => { set('symptoms', e.target.value); setVia('text'); }} placeholder="e.g. fever and cough, body pain at night" />
         </Field>
         <div className="row wrap between" style={{ gap: 8 }}>
-          <VoiceInput label="Speak your symptoms" onStart={() => setVia('voice')} onText={(t) => set('symptoms', [form.symptoms.trim(), t].filter(Boolean).join(form.symptoms.trim() ? ', ' : ''))} />
+          <VoiceInput label="Speak your symptoms" onStart={() => setVia('voice')} onText={(t) => setForm((f) => ({ ...f, symptoms: [f.symptoms.trim(), t].filter(Boolean).join(', ') }))} />
           <div className="chip-select">
             {QUICK_SYMPTOMS.map((s) => <button type="button" key={s} className={cx('chip', form.symptoms.toLowerCase().includes(s.toLowerCase()) && 'on')} onClick={() => toggleSymptom(s)}>{s}</button>)}
           </div>

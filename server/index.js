@@ -55,6 +55,19 @@ app.use((req, _res, next) => requestCtx.run({ affected: new Set(), userId: null 
 
 // Throttle credential and code endpoints against brute force (OTP has its own per-target limits too).
 const loginLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 10, key: (r) => String(r.body?.identifier ?? '').slice(0, 160).toLowerCase(), message: 'Too many sign-in attempts. Please wait a few minutes and try again.' });
+// The per-account limit alone lets one address spray a password across thousands of accounts (a new key per
+// identifier). Cap sign-ins per network too — generous enough for a clinic of staff behind one NAT.
+const loginIpLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 100, message: 'Too many sign-in attempts from this network. Please wait a few minutes and try again.' });
+// Distributed guessing (a botnet: few tries per ip) still hits one account — count FAILED sign-ins per identifier
+// regardless of ip: 30 per hour, then that account's password sign-in pauses (OTP / email-code reset still work).
+const LOGIN_FAIL_MAX = 30;
+const LOGIN_FAIL_WINDOW_MS = 60 * 60000;
+const loginFails = new Map(); // identifier → failure timestamps (ms)
+const loginFailKey = (id) => String(id || '').slice(0, 160).toLowerCase();
+const recentFails = (k) => (loginFails.get(k) || []).filter((t) => Date.now() - t < LOGIN_FAIL_WINDOW_MS);
+setInterval(() => { for (const k of loginFails.keys()) { const r = recentFails(k); if (r.length) loginFails.set(k, r); else loginFails.delete(k); } }, 10 * 60000).unref();
+// Unauthenticated, computed-per-call public endpoints (landing stats) — live numbers, but not a free CPU tap.
+const publicLimiter = security.rateLimit({ windowMs: 60000, max: 120, message: 'Too many requests. Please wait a moment.' });
 const otpLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 20, message: 'Too many code requests. Please wait a while and try again.' });
 // Defence in depth on code checks (otp.js also caps wrong attempts per code): per ip + target / patient.
 const otpVerifyLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 20, key: (r) => String(r.body?.target ?? r.body?.patientId ?? '').slice(0, 160).toLowerCase(), message: 'Too many attempts. Please wait a few minutes and request a new code.' });
@@ -65,25 +78,40 @@ const nowIso = () => new Date().toISOString();
 const APP_TZ = process.env.APP_TZ || 'Asia/Kolkata';
 const istDay = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: APP_TZ }); // YYYY-MM-DD in the network's time zone
 const ageOf = (dob) => (dob ? Math.floor((Date.now() - new Date(dob)) / (365.25 * 86400000)) : null);
-const publicUser = ({ passwordHash, ...u }) => u;
+// tokenVersion is session-revocation state — never part of what a screen (or the admin list) sees.
+const publicUser = ({ passwordHash: _h, tokenVersion: _tv, ...u }) => u;
 
 function sign(user) {
-  return jwt.sign({ sub: user.id, role: user.role, tv: user.tokenVersion || 0 }, JWT_SECRET, { expiresIn: '7d' });
+  return jwt.sign({ sub: user.id, role: user.role, tv: user.tokenVersion || 0 }, JWT_SECRET, { algorithm: 'HS256', expiresIn: '7d' });
 }
+// Every verify pins the one algorithm we sign with — a token can't pick its own ('none', or an asymmetric alg).
+const JWT_VERIFY = { algorithms: ['HS256'] };
 
 const UNVERIFIED_DOCTOR_PATHS = ['/api/auth/', '/api/doctor/home', '/api/doctor/me', '/api/doctor/profile', '/api/doctor/medicines', '/api/files', '/api/notifications', '/api/events', '/api/i18n', '/api/drugs', '/api/geo/'];
 const UNVERIFIED_PHARMACY_PATHS = ['/api/auth/', '/api/pharmacy/home', '/api/pharmacy/profile', '/api/files', '/api/notifications', '/api/events', '/api/i18n', '/api/geo/'];
 
-// Every authenticated request looks its user up — keep an id index instead of scanning the array.
-const userIndex = { arr: null, len: -1, map: new Map() };
-function userById(id) {
-  const users = db().users;
-  const rebuild = () => { userIndex.arr = users; userIndex.len = users.length; userIndex.map = new Map(users.map((u) => [u.id, u])); };
-  if (userIndex.arr !== users || userIndex.len !== users.length) rebuild();
-  let u = userIndex.map.get(id);
-  if (!u || u.id !== id) { rebuild(); u = userIndex.map.get(id); }
-  return u || null;
+// Id indexes for the hot lookups (every request finds its user; every consult / prescription / lab row on a
+// screen finds its patient and doctor) — O(1) instead of a scan of the whole collection per row. Each entry
+// remembers its array position: a hit is trusted only while arr[pos] is still that object, so a splice (doctor
+// removed, listing merged) or a reset can never serve a stale record. A miss falls back to a scan (always correct).
+function idIndex(collection) {
+  const ix = { arr: null, len: -1, map: new Map() };
+  const rebuild = (arr) => { ix.arr = arr; ix.len = arr.length; ix.map = new Map(); arr.forEach((x, i) => { if (x && !ix.map.has(x.id)) ix.map.set(x.id, i); }); };
+  return (id) => {
+    if (id == null || id === '') return null; // e.g. a prescription with no pharmacy yet — no scan for nothing
+    const arr = db()[collection] || [];
+    if (ix.arr !== arr || ix.len !== arr.length) rebuild(arr);
+    const pos = ix.map.get(id);
+    if (pos !== undefined && arr[pos]?.id === id) return arr[pos];
+    const hit = arr.find((x) => x.id === id);
+    if (hit) rebuild(arr); // the array changed in place (splice + push): re-index once
+    return hit || null;
+  };
 }
+const userById = idIndex('users');
+const patientById = idIndex('patients');
+const doctorById = idIndex('doctors');
+const facilityById = idIndex('facilities');
 
 function auth(req, res, next) {
   const header = req.headers.authorization || '';
@@ -92,7 +120,7 @@ function auth(req, res, next) {
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Please sign in to continue.' });
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET, JWT_VERIFY);
     const user = userById(payload.sub);
     if (!user) return res.status(401).json({ error: 'Account not found.' });
     if (user.status === 'suspended') return res.status(403).json({ error: 'This account is suspended. Contact support.' });
@@ -128,7 +156,7 @@ function optionalAuth(req, _res, next) {
   const header = req.headers.authorization || '';
   if (header.startsWith('Bearer ')) {
     try {
-      const payload = jwt.verify(header.slice(7), JWT_SECRET);
+      const payload = jwt.verify(header.slice(7), JWT_SECRET, JWT_VERIFY);
       const u = userById(payload.sub);
       if (u && u.status !== 'suspended' && (payload.tv || 0) === (u.tokenVersion || 0)) req.user = u;
     } catch { /* anonymous */ }
@@ -149,6 +177,8 @@ const sseClients = new Set(); // { res, userId, role, pending: Set }
 const sseByUser = new Map(); // userId → that person's connections (personal portals are addressed by whom a request touched)
 const sseOps = new Set(); // admins, officials, kiosks, distributors… hear every topic
 const sseDirty = new Set(); // connections with something to send at the next flush
+const sseConns = new Map(); // userId → that account's open streams, oldest first (every role) — for the per-user cap
+const SSE_MAX_PER_USER = 10;
 const PERSONAL_ROLES = new Set(['patient', 'caregiver', 'doctor', 'pharmacist', 'lab_tech', 'hospital_admin', 'delivery']);
 const PUBLIC_TOPICS = new Set(['all', 'advisories']);
 const requestCtx = new AsyncLocalStorage();
@@ -222,20 +252,20 @@ function canAccessConsult(user, c) {
   if (user.role === 'super_admin') return true;
   if (user.role === 'doctor') return doctorFor(user)?.id === c.doctorId;
   if (user.role === 'kiosk_operator') return user.facilityId && c.kioskId === user.facilityId;
-  const p = db().patients.find((x) => x.id === c.patientId);
+  const p = patientById(c.patientId);
   return Boolean(p && patientOwnerUserIds(p).includes(user.id));
 }
 
 // Everyone whose screen shows this consult — the doctor and the patient (or guardian). Personal portals
 // only hear about people a request touched, so a message or cancellation from one side must touch the other.
 function touchConsultParties(c) {
-  const p = db().patients.find((x) => x.id === c.patientId);
-  touch(db().doctors.find((x) => x.id === c.doctorId)?.userId, p ? patientOwnerUserIds(p) : []);
+  const p = patientById(c.patientId);
+  touch(doctorById(c.doctorId)?.userId, p ? patientOwnerUserIds(p) : []);
 }
 
 // Patient-side: does this user own the patient record behind a prescription / consult / lab order?
 function ownsPatient(user, patientId) {
-  const p = db().patients.find((x) => x.id === patientId);
+  const p = patientById(patientId);
   return Boolean(p && patientOwnerUserIds(p).includes(user.id));
 }
 
@@ -281,12 +311,12 @@ function publicDoctor(doc) {
   const out = Object.fromEntries(PUBLIC_DOCTOR_FIELDS.filter((k) => full[k] !== undefined).map((k) => [k, full[k]]));
   return { ...out, online: full.online, availability: full.availability, timings: full.timings, eClinicPartner: full.eClinicPartner, affiliation: full.affiliation };
 }
-const facilityName = (id) => db().facilities.find((f) => f.id === id)?.name;
+const facilityName = (id) => facilityById(id)?.name;
 
 // `visitSecret` seeds the rotating visit-pass code — it never leaves the server.
 function enrichConsult({ visitSecret: _secret, ...c }) {
-  const p = db().patients.find((x) => x.id === c.patientId) || {};
-  const d = db().doctors.find((x) => x.id === c.doctorId) || {};
+  const p = patientById(c.patientId) || {};
+  const d = doctorById(c.doctorId) || {};
   return {
     ...c,
     patientName: p.name, patientAge: ageOf(p.dob), patientGender: p.gender, patientLanguage: p.language,
@@ -295,15 +325,22 @@ function enrichConsult({ visitSecret: _secret, ...c }) {
   };
 }
 
+// A consult as a row on a home / queue list: everything except the chat thread (up to 500 × 2000 chars per
+// visit, which bloated home payloads to ~1 MB). Screens read messages only from GET /api/consults/:id.
+function consultCard(c) {
+  const { messages, ...rest } = enrichConsult(c);
+  return { ...rest, messageCount: (messages || []).length };
+}
+
 function enrichRx(r) {
-  const p = db().patients.find((x) => x.id === r.patientId) || {};
-  const d = db().doctors.find((x) => x.id === r.doctorId) || {};
-  return { ...r, patientName: p.name, patientPhone: db().users.find((u) => u.id === p.userId)?.phone, doctorName: d.name, pharmacyName: facilityName(r.pharmacyId) };
+  const p = patientById(r.patientId) || {};
+  const d = doctorById(r.doctorId) || {};
+  return { ...r, patientName: p.name, patientPhone: userById(p.userId)?.phone, doctorName: d.name, pharmacyName: facilityName(r.pharmacyId) };
 }
 
 function enrichLab(o) {
-  const p = db().patients.find((x) => x.id === o.patientId) || {};
-  const d = db().doctors.find((x) => x.id === o.doctorId) || {};
+  const p = patientById(o.patientId) || {};
+  const d = doctorById(o.doctorId) || {};
   const { draftReport, ...rest } = o; // unsigned results stay inside the lab (see labView)
   return { ...rest, patientName: p.name, patientAge: ageOf(p.dob), patientGender: p.gender, doctorName: d.name, labName: facilityName(o.labId), reportFileId: o.reportFileId || null, reportFileUrl: o.reportFileId ? `/api/files/${o.reportFileId}` : null };
 }
@@ -374,13 +411,23 @@ app.get('/api/events', sseAuth, (req, res) => {
   res.flushHeaders?.();
   res.write(`data: ${JSON.stringify({ topics: ['hello'] })}\n\n`);
   const client = { res, userId: req.user.id, role: req.user.role, pending: new Set() };
+  // One account can't pin unlimited sockets/timers on this single process: past the cap its oldest stream
+  // closes (a reconnecting tab simply replaces its dead one; EventSource on that tab reconnects if still open).
+  const conns = sseConns.get(client.userId) || [];
+  while (conns.length >= SSE_MAX_PER_USER) { const old = conns.shift(); old.drop(); old.res.end(); }
+  sseConns.set(client.userId, conns);
+  conns.push(client);
   sseClients.add(client);
   if (PERSONAL_ROLES.has(client.role)) { if (!sseByUser.has(client.userId)) sseByUser.set(client.userId, new Set()); sseByUser.get(client.userId).add(client); } else sseOps.add(client);
   const ping = setInterval(() => { if (!res.destroyed) res.write(': ping\n\n'); }, 25000);
-  req.on('close', () => {
+  let dropped = false;
+  client.drop = () => {
+    if (dropped) return; dropped = true;
     clearInterval(ping); sseClients.delete(client); sseDirty.delete(client); sseOps.delete(client);
     const mine = sseByUser.get(client.userId); if (mine) { mine.delete(client); if (!mine.size) sseByUser.delete(client.userId); }
-  });
+    const list = sseConns.get(client.userId); if (list) { const i = list.indexOf(client); if (i >= 0) list.splice(i, 1); if (!list.length) sseConns.delete(client.userId); }
+  };
+  req.on('close', client.drop);
 });
 
 const DATA_MODE = require('./seed').dataMode();
@@ -390,12 +437,13 @@ app.get('/api/public/config', (_req, res) => {
   res.json({ appName: 'Nexus Healthcare', demo: DATA_MODE === 'demo', smsLive: o.live, emailLive: o.emailLive, version: require('../package.json').version });
 });
 
-app.get('/api/public/stats', (_req, res) => {
+app.get('/api/public/stats', publicLimiter, (_req, res) => {
   const d = db();
   // Real counts only, in every mode — no padded or illustrative figures on the public page.
   res.set('Cache-Control', 'no-store');
   res.json({
-    doctorsOnline: d.doctors.filter((x) => x.verified && withAvail(x).online).length,
+    // availabilityOf directly — withAvail also builds timings/affiliation per doctor, which a count never reads.
+    doctorsOnline: d.doctors.filter((x) => x.verified && availabilityOf(x, { facilities: d.facilities }).available).length,
     kiosks: d.facilities.filter((f) => f.type === 'kiosk' && f.verified).length,
     passports: d.patients.length,
     states: new Set([...d.facilities.map((f) => f.state), ...d.patients.map((p) => p.state)].filter(Boolean)).size,
@@ -467,7 +515,9 @@ function canSeeFile(user, f) {
   return false;
 }
 
-app.post('/api/files', auth, role('patient', 'caregiver', 'lab_tech', 'doctor', 'pharmacist', 'hospital_admin'), upload.single('file'), async (req, res) => {
+// Each upload is up to 10 MB held in memory and then stored for good — cap per account so one login can't fill the disk/DB.
+const uploadLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 60, key: (r) => r.user?.id || '', message: 'Too many uploads. Please wait a while and try again.' });
+app.post('/api/files', auth, role('patient', 'caregiver', 'lab_tech', 'doctor', 'pharmacist', 'hospital_admin'), uploadLimiter, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Please attach a PDF or photo (PNG, JPG, WEBP) up to 10 MB.' });
   if (!sniffType(req.file.buffer, req.file.mimetype)) return res.status(415).json({ error: 'That file does not look like a real PDF or image. Please upload a valid file.' });
   let patientId = ['patient', 'caregiver'].includes(req.user.role) ? activePatient(req)?.id : null;
@@ -528,11 +578,20 @@ app.post('/api/dev/run-reminders', auth, role('super_admin'), (_req, res) => {
 const findUserByPhone = (phone) => db().users.find((u) => u.phone && samePhone(u.phone, phone));
 const findUserByEmail = (email) => db().users.find((u) => u.email && u.email.toLowerCase() === String(email).toLowerCase());
 
-app.post('/api/auth/login', loginLimiter, async (req, res) => {
+app.post('/api/auth/login', loginIpLimiter, loginLimiter, async (req, res) => {
   const { identifier, password, dialCode } = req.body || {};
   const id = clean(identifier, 160);
+  const fk = loginFailKey(id);
+  const fails = recentFails(fk);
+  if (fails.length >= LOGIN_FAIL_MAX) {
+    const retry = Math.ceil((LOGIN_FAIL_WINDOW_MS - (Date.now() - fails[0])) / 1000);
+    res.setHeader('Retry-After', String(retry));
+    return res.status(429).json({ error: 'Too many wrong passwords for this account. Please wait, or reset your password with an email code.', retryAfter: retry });
+  }
   const user = id.includes('@') ? findUserByEmail(id) : findUserByPhone(normalizePhone(id, dialCode));
-  if (!user || typeof password !== 'string' || !(await bcrypt.compare(password, user.passwordHash))) {
+  if (!user || typeof password !== 'string' || !user.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
+    loginFails.delete(fk); loginFails.set(fk, [...fails, Date.now()]); // re-insert = newest last
+    if (loginFails.size > 50000) loginFails.delete(loginFails.keys().next().value); // bounded memory under a spray
     return res.status(401).json({ error: 'That email/phone and password don\'t match. Please try again.' });
   }
   if (user.status === 'suspended') return res.status(403).json({ error: 'This account is suspended. Contact support.' });
@@ -572,7 +631,7 @@ app.post('/api/auth/otp/verify', otpVerifyLimiter, async (req, res) => {
       return res.json({ token: sign(user), user: publicUser(user) });
     }
     // New person — a short-lived ticket proves they own this number/email while they fill in the passport.
-    const ticket = jwt.sign({ [ok.channel === 'email' ? 'email' : 'phone']: ok.target, purpose: 'signup' }, JWT_SECRET, { expiresIn: '30m' });
+    const ticket = jwt.sign({ [ok.channel === 'email' ? 'email' : 'phone']: ok.target, purpose: 'signup' }, JWT_SECRET, { algorithm: 'HS256', expiresIn: '30m' });
     res.json({ newUser: true, ticket, target: ok.target, channel: ok.channel });
   } catch (e) {
     if (e instanceof OtpError) return res.status(e.status).json({ error: e.message });
@@ -585,7 +644,7 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
   const { ticket, name, email, password, dob, gender, language, bloodGroup, allergies, conditions, emergencyName, emergencyPhone, emergencyRelation, abha, pincode, district, state, country } = req.body || {};
   let verified;
   try {
-    verified = jwt.verify(ticket, JWT_SECRET);
+    verified = jwt.verify(ticket, JWT_SECRET, JWT_VERIFY);
     if (verified.purpose !== 'signup') throw new Error();
   } catch {
     return res.status(400).json({ error: 'Your verification expired. Please verify your mobile number again.' });
@@ -640,7 +699,7 @@ app.post('/api/auth/register/quick', registerLimiter, async (req, res) => {
   const { ticket, name, email, phone, dialCode, country, language } = req.body || {};
   let verified;
   try {
-    verified = jwt.verify(ticket, JWT_SECRET);
+    verified = jwt.verify(ticket, JWT_SECRET, JWT_VERIFY);
     if (verified.purpose !== 'signup') throw new Error();
   } catch {
     return res.status(400).json({ error: 'Your verification expired. Please request a new code.' });
@@ -768,7 +827,8 @@ function validateApplicant(b) {
   if (clean(b.name).length < 3) return 'Please enter the full name.';
   if (!EMAIL_RE.test(clean(b.email, 160))) return 'Please enter a valid email address.';
   if (!/^\+?[\d\s-]{7,18}$/.test(clean(b.phone, 20))) return 'Please enter a valid mobile number.';
-  if (!b.password || String(b.password).length < 8) return 'Choose a password of at least 8 characters.';
+  // A string only: an object would become the password "[object Object]".
+  if (typeof b.password !== 'string' || b.password.length < 8 || b.password.length > 200) return 'Choose a password of at least 8 characters.';
   if (findUserByEmail(clean(b.email, 160))) return 'This email is already registered. Sign in instead, or use a different email.';
   if (findUserByPhone(normalizePhone(clean(b.phone, 20)))) return 'This mobile number is already registered.';
   return '';
@@ -946,7 +1006,7 @@ app.get('/api/drugs', auth, (req, res) => {
 });
 
 app.get('/api/stock', auth, (req, res) => {
-  const { drug } = req.query;
+  const drug = clean(req.query.drug, 80); // ?drug=a&drug=b arrives as an array
   const district = clean(req.query.district) || req.user.region?.district || '';
   const state = clean(req.query.state) || req.user.region?.state || '';
   if (!drug) return res.json([]);
@@ -975,7 +1035,7 @@ app.get('/api/patient/home', auth, role('patient', 'caregiver'), (req, res) => {
   const d = db();
   const p = activePatient(req, { optional: true });
   if (!p) return res.json({ patient: null, profiles: [] });
-  const consults = d.consults.filter((c) => c.patientId === p.id).map(enrichConsult);
+  const consults = d.consults.filter((c) => c.patientId === p.id).map(consultCard);
   const myRx = d.prescriptions.filter((r) => r.patientId === p.id);
   // One pass over deliveries for this patient's open prescription deliveries (first match wins, as before).
   const rxIds = new Set(myRx.map((r) => r.id));
@@ -1262,6 +1322,11 @@ app.post('/api/patient/records/upload', auth, role('patient', 'caregiver'), asyn
 });
 
 const TRIAGE_LEVELS = ['emergency', 'doctor_now', 'routine', 'self_care'];
+const CONSULT_MESSAGES_MAX = 500;
+// Follow-up "in N days": a whole number of days within a year. Unbounded values made istAt() build an Invalid
+// Date whose toISOString() threw *after* the consult / prescription was already changed in memory.
+const followUpDaysOf = (v) => { const n = Number(v); return Number.isInteger(n) && n >= 1 && n <= 365 ? n : null; };
+const wantsFollowUp = (v) => v !== undefined && v !== null && v !== '' && v !== false && Number(v) !== 0; // "none" is fine; garbage is a 400
 // Kiosk walk-in consults only (patients book and pay through /api/bookings). The kiosk must have
 // identified or registered this patient in the last 30 minutes — it can't pick an arbitrary passport.
 app.post('/api/consults', auth, role('kiosk_operator'), (req, res) => {
@@ -1387,6 +1452,10 @@ app.post('/api/consults/:id/messages', auth, (req, res) => {
   if (!canAccessConsult(req.user, c)) return res.status(403).json({ error: 'You don\'t have access to this consult.' });
   const text = String(req.body?.text || '').slice(0, 2000).trim();
   if (!text) return res.status(400).json({ error: 'Message is empty.' });
+  // The whole thread is stored on the consult and returned on every post/poll — a cap keeps one visit from
+  // growing without limit (≈1 MB of text at most).
+  c.messages = c.messages || [];
+  if (c.messages.length >= CONSULT_MESSAGES_MAX) return res.status(409).json({ error: 'This chat is full. Please continue on a call, or book a follow-up.' });
   c.messages.push({ id: store.id('m'), from: req.user.role === 'doctor' ? 'doctor' : 'patient', name: req.user.name, text, at: nowIso() });
   touchConsultParties(c);
   store.save();
@@ -1544,11 +1613,31 @@ const MEDICINE_RADIUS_KM = 50;
 const DELIVERY_FEE = 40;
 const normDrug = (s) => String(s).toLowerCase().replace(/\s+/g, '');
 // What this chemist has of the prescription, and what it costs there.
+// Stock row of a medicine at one store, by either of its names — via a facility → normalised-name index instead of
+// scanning (and regex-normalising) the whole inventory per line per store. The index holds the live row objects, so
+// quantities are always current; it is rebuilt when rows are added or the data is reset (new array / new length).
+const invIx = { arr: null, len: -1, map: new Map() };
+function stockRow(d, fid, ...names) {
+  const inv = d.inventory;
+  if (invIx.arr !== inv || invIx.len !== inv.length) {
+    invIx.arr = inv; invIx.len = inv.length; invIx.map = new Map();
+    inv.forEach((row, i) => {
+      if (!invIx.map.has(row.facilityId)) invIx.map.set(row.facilityId, new Map());
+      const m = invIx.map.get(row.facilityId); const k = normDrug(row.drug);
+      if (!m.has(k)) m.set(k, i);
+    });
+  }
+  const m = invIx.map.get(fid);
+  if (!m) return undefined;
+  // Same answer as inventory.find(any name matches): the earliest row among the names' first rows.
+  const at = names.filter(Boolean).map((n) => m.get(normDrug(n))).filter((i) => i !== undefined);
+  return at.length ? inv[Math.min(...at)] : undefined;
+}
 function quoteShop(d, r, f, origin) {
   const items = r.items.map((it) => {
     const units = catalog.unitsFor(it);
     const pr = catalog.priceOf(it.drug);
-    const row = d.inventory.find((i) => i.facilityId === f.id && (normDrug(i.drug) === normDrug(it.drug) || normDrug(i.drug) === normDrug(pr?.name || '')));
+    const row = stockRow(d, f.id, it.drug, pr?.name);
     const free = row ? Math.max(0, row.qty - (row.safetyStock || 0)) : 0;
     const unitPrice = pr ? Math.round(pr.mrp * (f.priceFactor || 1) * 100) / 100 : null;
     return { drug: it.drug, units, unit: pr?.unit || 'unit', inStock: free >= units, partial: free > 0 && free < units, available: free, unitPrice, lineTotal: unitPrice !== null ? catalog.round(unitPrice * units) : null };
@@ -1604,7 +1693,7 @@ function cleanOrderItems(list, trusted = false) {
 function quoteItems(d, items, f, origin) {
   const lines = items.map((it) => {
     const pr = catalog.priceOf(it.drug);
-    const row = d.inventory.find((i) => i.facilityId === f.id && (normDrug(i.drug) === normDrug(it.drug) || (pr && normDrug(i.drug) === normDrug(pr.name))));
+    const row = stockRow(d, f.id, it.drug, pr?.name);
     const free = row ? Math.max(0, row.qty - (row.safetyStock || 0)) : 0;
     const unitPrice = pr ? Math.round(pr.mrp * (f.priceFactor || 1) * 100) / 100 : null;
     return { drug: it.drug, qty: it.qty, ...(it.switchedFrom ? { switchedFrom: it.switchedFrom } : {}), unit: pr?.unit || 'unit', inStock: free >= it.qty, partial: free > 0 && free < it.qty, available: free, unitPrice, lineTotal: unitPrice !== null ? catalog.round(unitPrice * it.qty) : null };
@@ -1872,13 +1961,19 @@ function latestRxByDrug(d, patientId) {
 }
 // Run-out = last time the medicines were bought (dispensed, collected or a medicine order on this prescription),
 // else the prescription date, plus the longest regular course on it.
-function refillInfo(d, rx, latest) {
+// medicine orders grouped by prescription, built once per sweep/request (was a full medOrders scan per prescription).
+function medOrdersByRx(d) {
+  const m = new Map();
+  for (const o of d.medOrders) if (o.rxId) { if (!m.has(o.rxId)) m.set(o.rxId, []); m.get(o.rxId).push(o); }
+  return m;
+}
+function refillInfo(d, rx, latest, byRx) {
   const all = chronicItems(rx);
   if (!all.length) return null;
   // Lines re-prescribed on a newer prescription belong to that one; the rest still run out from here.
   const items = all.filter((it) => !(latest.get(`${rx.patientId}|${normDrug(it.drug)}`) > rx.createdAt));
   if (!items.length) return { superseded: true };
-  const orders = d.medOrders.filter((o) => o.rxId === rx.id && !['cancelled', 'declined', 'awaiting_payment'].includes(o.status));
+  const orders = (byRx ? byRx.get(rx.id) || [] : d.medOrders.filter((o) => o.rxId === rx.id)).filter((o) => !['cancelled', 'declined', 'awaiting_payment'].includes(o.status));
   const fills = [rx.collectedAt, rx.deliveredAt, rx.dispensedAt, ...orders.map((o) => o.collectedAt || o.deliveredAt || o.packedAt || o.createdAt)].map((x) => Date.parse(x || '')).filter(Number.isFinite);
   const from = fills.length ? Math.max(...fills) : Date.parse(rx.createdAt);
   const runOut = from + Math.max(...items.map((it) => Number(it.days))) * 86400000;
@@ -1898,13 +1993,14 @@ const runOutText = (ms) => new Date(ms).toLocaleDateString('en-IN', { timeZone: 
 function sweepRefills(now = Date.now()) {
   const d = db();
   const latest = latestRxByDrug(d);
+  const byRx = medOrdersByRx(d);
   let sent = 0;
   for (const rx of d.prescriptions) {
-    const info = rx.items?.length && refillInfo(d, rx, latest);
+    const info = rx.items?.length && refillInfo(d, rx, latest, byRx);
     if (!info || info.superseded || rx.refill?.notifiedFor === info.runOutDay) continue;
     const left = info.runOut - now;
     if (left > REFILL_NOTICE_DAYS * 86400000 || left < -7 * 86400000) continue;
-    const p = d.patients.find((x) => x.id === rx.patientId);
+    const p = patientById(rx.patientId);
     if (!p) continue;
     rx.refill = { notifiedFor: info.runOutDay, at: new Date(now).toISOString() };
     const docName = d.doctors.find((x) => x.id === rx.doctorId)?.name;
@@ -1920,10 +2016,11 @@ app.get('/api/patient/refills', auth, role('patient', 'caregiver'), (req, res) =
   const p = activePatient(req);
   const now = Date.now();
   const latest = latestRxByDrug(d, p.id);
+  const byRx = medOrdersByRx(d);
   const out = [];
   for (const rx of d.prescriptions) {
     if (rx.patientId !== p.id) continue;
-    const info = refillInfo(d, rx, latest);
+    const info = refillInfo(d, rx, latest, byRx);
     if (!info || info.superseded) continue;
     const daysLeft = Math.ceil((info.runOut - now) / 86400000);
     if (daysLeft < -30 || !(daysLeft <= 7 || rx.refill?.notifiedFor === info.runOutDay)) continue;
@@ -2037,7 +2134,7 @@ app.get('/api/medicine-orders/:id/invoice', auth, role('pharmacist', 'patient', 
 
 // ---- lab tests: my ordered tests, where each can be done, cost and how reporting works ----
 function testInfo(t) {
-  const c = catalog.TESTS[t.code] || {};
+  const c = own(catalog.TESTS, t.code) || {}; // stored codes may be anything a client sent ('constructor'…)
   return { code: t.code, name: catalog.nameOfTest(t.code, t.name), sample: c.sample || 'As advised', prep: c.prep || 'Ask the lab', tatHours: c.tatHours || 24, base: c.base || null };
 }
 function labQuote(lab, tests, origin) {
@@ -2441,7 +2538,11 @@ app.post('/api/visits/check-in', auth, role('doctor', 'hospital_admin', 'kiosk_o
   audit(req.user, 'visit_check_in', p.id, 'consult', c.id);
   store.save();
   broadcast('consults', 'queue', `consult:${c.id}`);
-  res.json(enrichConsult(c));
+  // The treating doctor gets the full visit; a front desk / kiosk only what its check-in card shows —
+  // never symptoms, triage, vitals or the chat.
+  if (req.user.role === 'doctor') return res.json(enrichConsult(c));
+  const e = enrichConsult(c);
+  res.json({ id: c.id, token: c.token || null, tokenDay: c.tokenDay || null, status: c.status, doctorId: c.doctorId, doctorName: e.doctorName, patientName: e.patientName, checkedInAt: c.checkedInAt, scheduledAt: c.scheduledAt || null, bookingNo: c.bookingNo || null, ahead: tokenAhead(d, c) });
 });
 
 app.post('/api/consults/:id/ack', auth, role('doctor'), (req, res) => {
@@ -2493,10 +2594,12 @@ app.post('/api/lab-orders/:id/doctor-note', auth, role('doctor'), (req, res) => 
   if (o.status !== 'reported') return res.status(409).json({ error: 'The report isn\'t ready yet.' });
   const text = clean(req.body?.text, 800);
   if (text.length < 3) return res.status(400).json({ error: 'Please write your advice for the patient.' });
-  o.doctorNote = { text, by: doc.name, at: nowIso() };
-  const days = parseInt(req.body?.followUpDays, 10);
+  const days = followUpDaysOf(req.body?.followUpDays);
+  if (wantsFollowUp(req.body?.followUpDays) && !days) return res.status(400).json({ error: 'Choose a follow-up within 1 to 365 days.' });
   const p = d.patients.find((x) => x.id === o.patientId);
-  if (days > 0) createFollowUp(d, { p, doc, days, diagnosis: `review of ${o.tests.map((t) => t.name).join(', ')}` });
+  if (!p) return res.status(404).json({ error: 'Patient not found.' });
+  o.doctorNote = { text, by: doc.name, at: nowIso() };
+  if (days) createFollowUp(d, { p, doc, days, diagnosis: `review of ${o.tests.map((t) => t.name).join(', ')}` });
   patientOwnerUserIds(p).forEach((u) => notify(u, 'Your doctor reviewed your report', `${doc.name}: "${text.slice(0, 90)}${text.length > 90 ? '…' : ''}"`));
   audit(req.user, 'report_advice', p.id, 'lab', o.id);
   store.save();
@@ -2510,8 +2613,8 @@ app.get('/api/patient/follow-ups', auth, role('patient', 'caregiver'), (req, res
   const p = activePatient(req);
   const mine = d.consults.filter((c) => c.patientId === p.id);
   const upcoming = mine.filter((c) => ['scheduled', 'queued', 'in_progress', 'awaiting_payment'].includes(c.status))
-    .map(enrichConsult).sort((a, b) => ((a.scheduledAt || a.createdAt) < (b.scheduledAt || b.createdAt) ? -1 : 1));
-  const past = mine.filter((c) => c.status === 'completed').map(enrichConsult)
+    .map(consultCard).sort((a, b) => ((a.scheduledAt || a.createdAt) < (b.scheduledAt || b.createdAt) ? -1 : 1));
+  const past = mine.filter((c) => c.status === 'completed').map(consultCard)
     .sort((a, b) => (a.completedAt < b.completedAt ? 1 : -1)).slice(0, 6)
     .map((c) => ({ ...c, prescriptionId: d.prescriptions.find((r) => r.consultId === c.id)?.id || null, nextFollowUp: upcoming.find((u) => u.followUpOf === c.id)?.scheduledAt || null }));
   // Reports a doctor asked to review that are ready.
@@ -2545,6 +2648,9 @@ app.post('/api/patient/transfers', auth, role('patient', 'caregiver'), (req, res
   const to = d.doctors.find((x) => x.id === req.body?.toDoctorId && x.verified);
   if (!to) return res.status(404).json({ error: 'Choose the doctor you want to move to.' });
   const from = req.body?.fromDoctorId ? d.doctors.find((x) => x.id === req.body.fromDoctorId) : null;
+  // Only a doctor this patient actually has history with (a visit or a consent) — otherwise any doctor could be
+  // sent a "patient moved their care" notice, and consents archived for someone never involved.
+  if (from && !d.consults.some((c) => c.patientId === p.id && c.doctorId === from.id) && !d.consents.some((c) => c.patientId === p.id && c.granteeId === from.id)) return res.status(400).json({ error: 'Choose one of your current doctors.' });
   if (from && from.id === to.id) return res.status(400).json({ error: 'That is the same doctor.' });
   const toFac = to.facilityId ? d.facilities.find((f) => f.id === to.facilityId) : null;
   const at = nowIso();
@@ -2712,31 +2818,43 @@ app.get('/api/doctor/home', auth, role('doctor'), (req, res) => {
   }
   const mine = d.consults.filter((c) => c.doctorId === doc.id);
   const handled = handledDoctorIds(req.user);
-  const clinicVisits = handled.length > 1 ? d.consults.filter((c) => c.doctorId !== doc.id && handled.includes(c.doctorId) && ['scheduled', 'queued'].includes(c.status)).map(enrichConsult).sort((a, b) => ((a.scheduledAt || a.createdAt) < (b.scheduledAt || b.createdAt) ? -1 : 1)) : [];
+  const clinicVisits = handled.length > 1 ? d.consults.filter((c) => c.doctorId !== doc.id && handled.includes(c.doctorId) && ['scheduled', 'queued'].includes(c.status)).map(consultCard).sort((a, b) => ((a.scheduledAt || a.createdAt) < (b.scheduledAt || b.createdAt) ? -1 : 1)) : [];
   const order = { emergency: 0, doctor_now: 1, routine: 2, self_care: 3 };
-  const queue = mine.filter((c) => c.status === 'queued' || c.status === 'in_progress').map(enrichConsult)
+  const queue = mine.filter((c) => c.status === 'queued' || c.status === 'in_progress').map(consultCard)
     .sort((a, b) => (a.status === 'in_progress' ? -1 : b.status === 'in_progress' ? 1 : 0) || order[a.triage.level] - order[b.triage.level] || (a.createdAt < b.createdAt ? -1 : 1));
   const today = istDay(nowIso());
+  // The "new patient" pop-ups: their history is gathered in ONE pass per collection for just these patients,
+  // instead of four full scans (consults, prescriptions, records, lab orders) per pending booking.
+  const fresh = d.consults.filter((c) => handled.includes(c.doctorId) && c.paidAt && !c.doctorSeenAt && ['scheduled', 'queued'].includes(c.status));
+  const who = new Set(fresh.map((c) => c.patientId));
+  const hist = new Map([...who].map((id) => [id, { visits: [], rx: [], records: [], labs: [] }]));
+  if (who.size) {
+    for (const x of d.consults) if (x.status === 'completed' && who.has(x.patientId)) hist.get(x.patientId).visits.push(x);
+    for (const r of d.prescriptions) if (who.has(r.patientId)) hist.get(r.patientId).rx.push(r);
+    for (const r of d.records) if (who.has(r.patientId)) hist.get(r.patientId).records.push(r);
+    for (const o of d.labOrders) if (o.status === 'reported' && who.has(o.patientId)) hist.get(o.patientId).labs.push(o);
+  }
   res.json({
     doctor: withAvail(doc),
     eClinics: isEClinicDoctor(doc) ? d.facilities.filter((f) => f.type === 'kiosk' && f.verified && (!(doc.eClinicIds || []).length || doc.eClinicIds.includes(f.id))).map((f) => ({ id: f.id, name: f.name, district: f.district, status: f.status })) : [],
     queue,
-    scheduled: mine.filter((c) => c.status === 'scheduled').map(enrichConsult).sort((a, b) => (a.scheduledAt < b.scheduledAt ? -1 : 1)),
+    scheduled: mine.filter((c) => c.status === 'scheduled').map(consultCard).sort((a, b) => (a.scheduledAt < b.scheduledAt ? -1 : 1)),
     reportsToReview: d.labOrders.filter((o) => o.doctorId === doc.id && o.status === 'reported' && !o.doctorNote && Date.now() - Date.parse(o.reportedAt) < 30 * 86400000)
       .map((o) => ({ ...enrichLab(o), insights: o.insights || catalog.interpret(o.results || []) })).slice(0, 8),
     // Paid bookings the doctor hasn't acknowledged yet → the "new patient" pop-up.
-    newBookings: d.consults.filter((c) => handled.includes(c.doctorId) && c.paidAt && !c.doctorSeenAt && ['scheduled', 'queued'].includes(c.status)).map((c) => {
-      const pt = d.patients.find((x) => x.id === c.patientId) || {};
+    newBookings: fresh.map((c) => {
+      const pt = patientById(c.patientId) || {};
+      const h = hist.get(c.patientId);
       return {
-      ...enrichConsult(c), forDoctor: c.doctorId !== doc.id ? d.doctors.find((x) => x.id === c.doctorId)?.name : null,
+      ...consultCard(c), forDoctor: c.doctorId !== doc.id ? d.doctors.find((x) => x.id === c.doctorId)?.name : null,
       patient: { bloodGroup: pt.bloodGroup && pt.bloodGroup !== 'Unknown' ? pt.bloodGroup : null, allergies: pt.allergies || [], conditions: pt.conditions || [], currentMeds: pt.currentMeds || [], district: pt.district, country: countryOf(pt) },
       // Has this patient been seen before — by this doctor or anyone on Nexus?
-      previousVisits: d.consults.filter((x) => x.patientId === c.patientId && x.status === 'completed').sort((a, b) => (a.completedAt < b.completedAt ? 1 : -1)).slice(0, 5)
-        .map((x) => ({ date: x.completedAt, doctorName: d.doctors.find((y) => y.id === x.doctorId)?.name, withYou: x.doctorId === doc.id, diagnosis: x.diagnosis || x.triage?.symptoms })),
-      pastPrescriptions: d.prescriptions.filter((r) => r.patientId === c.patientId).slice(-3).reverse().map((r) => ({ date: r.createdAt, doctorName: d.doctors.find((y) => y.id === r.doctorId)?.name, items: r.items.map((i) => i.drug) })),
+      previousVisits: [...h.visits].sort((a, b) => (a.completedAt < b.completedAt ? 1 : -1)).slice(0, 5)
+        .map((x) => ({ date: x.completedAt, doctorName: doctorById(x.doctorId)?.name, withYou: x.doctorId === doc.id, diagnosis: x.diagnosis || x.triage?.symptoms })),
+      pastPrescriptions: h.rx.slice(-3).reverse().map((r) => ({ date: r.createdAt, doctorName: doctorById(r.doctorId)?.name, items: r.items.map((i) => i.drug) })),
       pastReports: [
-        ...d.records.filter((r) => r.patientId === c.patientId).map((r) => ({ title: r.title, date: r.date, fileId: r.fileId || null, kind: 'upload' })),
-        ...d.labOrders.filter((o) => o.patientId === c.patientId && o.status === 'reported').map((o) => ({ title: o.tests.map((t) => t.name).join(', '), date: o.reportedAt, kind: 'lab', flagged: (o.results || []).some((r) => r.flag && r.flag !== 'normal') })),
+        ...h.records.map((r) => ({ title: r.title, date: r.date, fileId: r.fileId || null, kind: 'upload' })),
+        ...h.labs.map((o) => ({ title: o.tests.map((t) => t.name).join(', '), date: o.reportedAt, kind: 'lab', flagged: (o.results || []).some((r) => r.flag && r.flag !== 'normal') })),
       ].slice(0, 8),
       };
     }),
@@ -2745,7 +2863,7 @@ app.get('/api/doctor/home', auth, role('doctor'), (req, res) => {
     clinic: doc.ownsFacilityId ? (() => { const f = d.facilities.find((x) => x.id === doc.ownsFacilityId); return f ? { id: f.id, name: f.name, verified: !!f.verified, doctors: d.doctors.filter((x) => x.facilityId === f.id && x.id !== doc.id).length } : null; })() : null,
     stats2: doctorStats(doc),
     clinicVisits, // upcoming visits for doctors listed at my clinic who have no login yet
-    completed: mine.filter((c) => c.status === 'completed').map(enrichConsult).sort((a, b) => (a.completedAt < b.completedAt ? 1 : -1)).slice(0, 20),
+    completed: mine.filter((c) => c.status === 'completed').map(consultCard).sort((a, b) => (a.completedAt < b.completedAt ? 1 : -1)).slice(0, 20),
     week: doctorWeek(mine, doc), // [{ date: 'YYYY-MM-DD', consults, earnings }] × 7, oldest first, today last
     stats: {
       today: mine.filter((c) => c.status === 'completed' && c.completedAt && istDay(c.completedAt) === today).length,
@@ -3144,7 +3262,14 @@ app.delete('/api/doctor/clinic/doctors/:id', auth, role('doctor'), (req, res) =>
 function recordAccess(user, doc, p) {
   const d = db();
   const consented = hasConsent(p.id, [doc.id]);
-  const bg = d.audit.find((a) => a.action === 'break_glass' && a.actorId === user.id && a.patientId === p.id && Date.now() - new Date(a.at) < 60 * 60000);
+  // The audit log is newest-first and only grows: stop at the first entry older than the 1-hour window instead
+  // of walking the whole trail on every record view (that walk happened whenever no break-glass existed).
+  let bg = null;
+  const since = Date.now() - 60 * 60000;
+  for (const a of d.audit) {
+    if (Date.parse(a.at) < since) break;
+    if (a.action === 'break_glass' && a.actorId === user.id && a.patientId === p.id) { bg = a; break; }
+  }
   const copy = !consented && !bg && d.consents.filter((c) => c.patientId === p.id && c.granteeId === doc.id && c.status === 'archived' && c.copyUntil).sort((a, b) => (a.copyUntil < b.copyUntil ? 1 : -1))[0];
   return { consented, bg, copy };
 }
@@ -3251,7 +3376,11 @@ app.post('/api/doctor/consent-request', auth, role('doctor'), (req, res) => {
   if (!scope.length) return res.status(400).json({ error: 'Choose what you need to see.' });
   const p = db().patients.find((x) => x.id === patientId);
   if (!p) return res.status(404).json({ error: 'Patient not found.' });
-  const c = { id: store.id('cst'), patientId, granteeType: 'doctor', granteeId: doc.id, granteeName: doc.name, scope, purpose, start: null, expiry: null, status: 'pending', requestedAt: nowIso() };
+  // One open request per doctor per patient: repeats return it instead of piling up requests and pinging the
+  // patient's phone again (any verified doctor can ask any passport id, so this was a notification spam vector).
+  const pending = db().consents.find((x) => x.patientId === p.id && x.granteeId === doc.id && x.status === 'pending');
+  if (pending) return res.json(pending);
+  const c = { id: store.id('cst'), patientId: p.id, granteeType: 'doctor', granteeId: doc.id, granteeName: doc.name, scope, purpose, start: null, expiry: null, status: 'pending', requestedAt: nowIso() };
   db().consents.push(c);
   patientOwnerUserIds(p).forEach((u) => notify(u, 'Record access request', `${doc.name} wants to see your ${scope.join(', ')} for "${purpose}".`, 'consent'));
   store.save();
@@ -3389,11 +3518,15 @@ app.get('/api/doctor/share-targets', auth, role('doctor'), (req, res) => {
   const doc = doctorFor(req.user);
   const p = d.patients.find((x) => x.id === req.query.patientId);
   const origin = geo.pointOf(p?.district ? p : (doc.facilityId ? d.facilities.find((f) => f.id === doc.facilityId) : doc)) || geo.pointOf(doc);
-  const drugs = String(req.query.drugs || '').split('|').map((s) => s.trim().toLowerCase().replace(/\s+/g, '')).filter(Boolean);
-  const codes = String(req.query.tests || '').split(',').filter(Boolean);
+  // Bounded like a prescription (≤25 medicines, ≤15 tests): each name is checked against every store's stock.
+  const drugs = [...new Set(clean(req.query.drugs, 4000).split('|').map((s) => s.trim().toLowerCase().replace(/\s+/g, '')).filter(Boolean))].slice(0, 25);
+  const codes = [...new Set(clean(req.query.tests, 1000).split(',').filter(Boolean))].slice(0, 15);
+  // One pass over inventory: facility → drug names with spare stock (instead of a scan per store × drug).
+  const spare = new Map();
+  for (const i of d.inventory) if (i.qty > (i.safetyStock || 0)) { const k = String(i.drug || '').toLowerCase().replace(/\s+/g, ''); if (!spare.has(i.facilityId)) spare.set(i.facilityId, new Set()); spare.get(i.facilityId).add(k); }
   const pharmacies = d.facilities.filter((f) => f.type === 'pharmacy' && f.verified).map((f) => ({
     id: f.id, name: f.name, district: f.district, hours: f.hours, distanceKm: geo.km(origin, geo.pointOf(f)),
-    inStock: drugs.filter((dr) => d.inventory.some((i) => i.facilityId === f.id && i.drug.toLowerCase().replace(/\s+/g, '') === dr && i.qty > (i.safetyStock || 0))).length, of: drugs.length,
+    inStock: drugs.filter((dr) => spare.get(f.id)?.has(dr)).length, of: drugs.length,
   })).sort((a, b) => b.inStock - a.inStock || (a.distanceKm ?? 1e9) - (b.distanceKm ?? 1e9)).slice(0, 8);
   const labs = d.facilities.filter((f) => f.type === 'lab' && f.verified).map((f) => ({
     id: f.id, name: f.name, kind: f.subtype === 'diagnostic' ? 'Diagnostic centre' : f.government ? 'Government lab' : 'Pathology lab', district: f.district, hours: f.hours,
@@ -3476,6 +3609,8 @@ app.post('/api/doctor/prescriptions', auth, role('doctor'), async (req, res) => 
   const lab = b.labId ? d.facilities.find((f) => f.id === b.labId && f.type === 'lab' && f.verified) : null;
   if (b.labId && !lab) return res.status(400).json({ error: 'Choose a lab from the list.' });
   if (lab && labTests.some((t) => lab.tests && !lab.tests.includes(t.code))) return res.status(400).json({ error: `${lab.name} doesn't do all of these tests. Pick another centre or split the order.` });
+  const followUpDays = followUpDaysOf(b.followUpDays);
+  if (wantsFollowUp(b.followUpDays) && !followUpDays) return res.status(400).json({ error: 'Choose a follow-up within 1 to 365 days.' });
   const fac = doc.facilityId ? d.facilities.find((f) => f.id === doc.facilityId) : null;
   const rx = {
     id: store.id('rx'), consultId: null, patientId: p.id, doctorId: doc.id, items, advice: clean(b.advice, 600), diagnosis: clean(b.diagnosis, 200),
@@ -3486,9 +3621,8 @@ app.post('/api/doctor/prescriptions', auth, role('doctor'), async (req, res) => 
   };
   const rxSaved = Boolean(items.length || paperFileId);
   if (rxSaved) d.prescriptions.push(rx);
-  const followUpDays = parseInt(b.followUpDays, 10);
   let followUp = null;
-  if (followUpDays > 0) { followUp = createFollowUp(d, { p, doc, days: followUpDays, diagnosis: rx.diagnosis }); rx.followUpOn = followUp.scheduledAt; }
+  if (followUpDays) { followUp = createFollowUp(d, { p, doc, days: followUpDays, diagnosis: rx.diagnosis }); rx.followUpOn = followUp.scheduledAt; }
   // Tests: one order at the chosen centre, or split automatically between the nearest centres that do them.
   const orders = createLabOrders(d, { p, doc, labTests, lab, rx: rxSaved ? rx : null, shareRx: b.shareRxWithLab !== false });
   if (pharmacy) d.users.filter((u) => u.role === 'pharmacist' && u.facilityId === pharmacy.id).forEach((u) => notify(u.id, 'New e-prescription', `${p.name} · ${items.length} medicine${items.length === 1 ? '' : 's'} · from ${doc.name}`));
@@ -3539,6 +3673,12 @@ app.post('/api/consults/:id/start', auth, role('doctor'), (req, res) => {
 app.post('/api/prescriptions/check', auth, role('doctor'), (req, res) => {
   const p = db().patients.find((x) => x.id === req.body?.patientId);
   if (!p) return res.status(404).json({ error: 'Patient not found.' });
+  // The warnings name the patient's allergies and current medicines — without access this was an oracle any
+  // doctor could query for any passport id ("is X allergic to …?"). Same rule as writing the prescription.
+  const doc = doctorFor(req.user);
+  const { consented, bg } = recordAccess(req.user, doc, p);
+  const treating = db().consults.some((c) => c.doctorId === doc.id && c.patientId === p.id && CALL_LIVE.includes(c.status));
+  if (!consented && !bg && !treating) return res.status(403).json({ error: 'The patient hasn\'t approved this visit yet.' });
   res.json(engines.checkPrescription(p, cleanRxItems(req.body.items)));
 });
 
@@ -3553,8 +3693,12 @@ app.post('/api/consults/:id/complete', auth, role('doctor'), (req, res) => {
   if (req.body?.items !== undefined && !Array.isArray(req.body.items)) return res.status(400).json({ error: 'Invalid medicines list.' });
   if (req.body?.labTests !== undefined && !Array.isArray(req.body.labTests)) return res.status(400).json({ error: 'Invalid tests list.' });
   if (req.body?.triageOverride && !TRIAGE_LEVELS.includes(req.body.triageOverride)) return res.status(400).json({ error: 'Invalid triage level.' });
-  const { notes, diagnosis, items = [], advice, labTests = [], referral, followUpDays, triageOverride } = req.body || {};
+  // Validate everything before the first change — a 400/500 half-way would leave a "completed" consult behind.
+  if (wantsFollowUp(req.body?.followUpDays) && !followUpDaysOf(req.body.followUpDays)) return res.status(400).json({ error: 'Choose a follow-up within 1 to 365 days.' });
+  const { notes, diagnosis, items = [], advice, labTests = [], referral, triageOverride } = req.body || {};
+  const followUpDays = followUpDaysOf(req.body?.followUpDays);
   const p = d.patients.find((x) => x.id === c.patientId);
+  if (!p) return res.status(404).json({ error: 'Patient not found.' });
   c.status = 'completed';
   c.completedAt = nowIso();
   c.notes = clean(notes, 4000);
@@ -3604,8 +3748,8 @@ app.post('/api/consults/:id/complete', auth, role('doctor'), (req, res) => {
     d.referrals.unshift({ id: store.id('ref'), patientId: p.id, patientName: p.name, age: ageOf(p.dob), fromDoctorId: doc.id, fromName: `${doc.name} (teleconsult)`, toFacilityId: refTo.id, bedType: bedType && d.beds.some((x) => x.facilityId === refTo.id && x.type === bedType) ? bedType : 'general', reason: clean(referral.reason, 300) || c.diagnosis, urgency: c.triage.level, status: 'pending', eta: '45 min', createdAt: nowIso() });
     d.users.filter((u) => u.role === 'hospital_admin' && u.facilityId === refTo.id).forEach((u) => touch(u.id));
   }
-  if (Number(followUpDays) > 0) {
-    const fu = createFollowUp(d, { p, doc, days: Number(followUpDays), diagnosis, from: c });
+  if (followUpDays) {
+    const fu = createFollowUp(d, { p, doc, days: followUpDays, diagnosis: c.diagnosis, from: c }); // the cleaned (≤200 chars) diagnosis, never the raw body
     if (rx) rx.followUpOn = fu.scheduledAt;
   }
   patientOwnerUserIds(p).forEach((u) => notify(u, 'Consult summary ready', `${doc.name} has completed your consult${rx ? ' and sent an e-prescription' : ''}.`));
@@ -3634,8 +3778,10 @@ app.get('/api/kiosk/home', auth, role('kiosk_operator'), (req, res) => {
   const today = istDay(nowIso());
   res.json({
     kiosk,
-    queue: d.consults.filter((c) => c.kioskId === kiosk.id && istDay(c.createdAt) === today).map(enrichConsult).reverse(),
-    pharmacies: d.facilities.filter((f) => f.type === 'pharmacy' && f.district === kiosk.district),
+    queue: d.consults.filter((c) => c.kioskId === kiosk.id && istDay(c.createdAt) === today).map(consultCard).reverse(),
+    // Only what the pickup screen shows, and only verified stores — never licence / owner / file ids / applicants.
+    pharmacies: d.facilities.filter((f) => f.type === 'pharmacy' && f.verified && f.district === kiosk.district)
+      .map((f) => ({ id: f.id, name: f.name, district: f.district, address: f.address || '', hours: f.hours || '', phone: f.phone || '', distanceKm: f.distanceKm ?? null, generic: !!f.generic, delivery: !!f.delivery })),
     // E-Clinic partner doctors who serve this clinic (or all clinics) — available ones first.
     doctors: d.doctors.filter((x) => x.verified && isEClinicDoctor(x) && (!(x.eClinicIds || []).length || x.eClinicIds.includes(kiosk.id) || x.presenceClinicId === kiosk.id))
       .map((x) => ({ ...publicDoctor(x), here: x.online && x.presenceClinicId === kiosk.id }))
@@ -3649,8 +3795,10 @@ app.post('/api/kiosk/identify', auth, role('kiosk_operator'), identifyLimiter, (
   const q = String(req.body?.query || '').trim();
   const users = db().users;
   const asPhone = q.replace(/\D/g, '').length >= 6 ? normalizePhone(q, req.body?.dialCode) : null;
+  // The phone's owner is looked up once — not a scan of every user for every patient.
+  const owner = asPhone ? users.find((u) => ['patient', 'caregiver'].includes(u.role) && u.phone && samePhone(u.phone, asPhone)) : null;
   const p = db().patients.find((x) => x.id.toLowerCase() === q.toLowerCase()
-    || (asPhone && samePhone(users.find((u) => u.id === x.userId)?.phone, asPhone))
+    || (owner && x.userId === owner.id)
     || (asPhone && x.emergencyContacts?.some((e) => e.relation === 'Mobile' && samePhone(e.phone, asPhone))));
   if (!p) return res.status(404).json({ error: 'No Health Passport found. You can register this patient now.' });
   p.kioskSeen = { kioskId: req.user.facilityId, at: nowIso() };
@@ -3717,8 +3865,15 @@ function assignToken(d, c) {
 }
 // Today's tokens for one doctor. "Now seeing" = the most recently called one (the doctor starting the
 // consult, or the desk pressing "Call next" for a doctor without a login); "next" = still waiting, in order.
-function tokenBoard(d, doctorId, day = istDay(nowIso())) {
-  const list = d.consults.filter((c) => c.doctorId === doctorId && c.tokenDay === day && c.token && !['cancelled', 'expired'].includes(c.status));
+// Today's token consults grouped by doctor in ONE pass — the desk, the TV display and call-next show several
+// doctors at once and used to scan every consult ever booked once per doctor (the display polls every few seconds).
+function tokensByDoctor(d, day) {
+  const m = new Map();
+  for (const c of d.consults) if (c.tokenDay === day && c.token) { if (!m.has(c.doctorId)) m.set(c.doctorId, []); m.get(c.doctorId).push(c); }
+  return m;
+}
+function tokenBoard(d, doctorId, day = istDay(nowIso()), byDoc = null) {
+  const list = (byDoc ? byDoc.get(doctorId) || [] : d.consults.filter((c) => c.doctorId === doctorId && c.tokenDay === day && c.token)).filter((c) => !['cancelled', 'expired'].includes(c.status));
   const called = list.filter((c) => c.calledAt).sort((a, b) => (a.calledAt < b.calledAt ? 1 : -1));
   const waiting = list.filter((c) => !c.calledAt && c.status === 'queued').sort((a, b) => a.token - b.token);
   const waits = called.filter((c) => c.checkedInAt).map((c) => Date.parse(c.calledAt) - Date.parse(c.checkedInAt)).filter((ms) => ms >= 0);
@@ -3733,7 +3888,7 @@ function tokenAhead(d, c) {
 // Doctors the desk can queue for: verified doctors at this facility (listed ones without a login too).
 const deskDoctorsOf = (d, fid) => d.doctors.filter((x) => x.facilityId === fid && x.verified);
 const maskPhone = (ph) => (ph ? `••••••${String(ph).replace(/\D/g, '').slice(-4)}` : null);
-const patientPhone = (d, p) => d.users.find((u) => u.id === p.userId)?.phone || p.emergencyContacts?.find((e) => e.relation === 'Mobile')?.phone || null;
+const patientPhone = (d, p) => userById(p.userId)?.phone || p.emergencyContacts?.find((e) => e.relation === 'Mobile')?.phone || null;
 // Reception sees who someone is — never their records: name, age, sex, masked mobile, passport id only.
 const deskPatient = (d, p) => ({ id: p.id, name: p.name, age: ageOf(p.dob), gender: p.gender, phone: maskPhone(patientPhone(d, p)) });
 const RECEPTION_SEEN_MS = 30 * 60000;
@@ -3742,14 +3897,15 @@ const receptionLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 150, ke
 function deskView(d, f) {
   const day = istDay(nowIso());
   const rooms = f.rooms || {};
+  const byDoc = tokensByDoctor(d, day);
   const doctors = deskDoctorsOf(d, f.id).map((x) => {
-    const b = tokenBoard(d, x.id, day);
+    const b = tokenBoard(d, x.id, day, byDoc);
     return { id: x.id, name: x.name, specialty: x.specialty, fee: x.fee || 0, hasAccount: !!x.userId, room: rooms[x.id] || '', available: availabilityOf(x, { facilities: d.facilities }).available,
       nowSeeing: b.nowSeeing?.token || null, waiting: b.waiting.length, next: b.waiting.slice(0, 3).map((c) => c.token), issued: b.list.length, avgWaitMin: b.avgWaitMin };
   });
   const ids = new Set(doctors.map((x) => x.id));
-  const tokens = d.consults.filter((c) => c.tokenDay === day && c.token && ids.has(c.doctorId)).map((c) => ({
-    consultId: c.id, token: c.token, doctorId: c.doctorId, doctorName: d.doctors.find((x) => x.id === c.doctorId)?.name, patientName: d.patients.find((p) => p.id === c.patientId)?.name || '',
+  const tokens = [...ids].flatMap((id) => byDoc.get(id) || []).map((c) => ({
+    consultId: c.id, token: c.token, doctorId: c.doctorId, doctorName: doctorById(c.doctorId)?.name, patientName: patientById(c.patientId)?.name || '',
     source: c.walkIn ? 'walk_in' : 'online', status: c.status, checkedInAt: c.checkedInAt || null, calledAt: c.calledAt || null, room: rooms[c.doctorId] || '',
   })).sort((a, b) => (a.checkedInAt < b.checkedInAt ? 1 : -1));
   return { facility: { id: f.id, name: f.name, address: f.address || '' }, day, displayCode: f.queueDisplayCode || null, doctors, tokens };
@@ -3885,8 +4041,9 @@ app.get('/api/public/queue-display/:code', displayLimiter, (req, res) => {
   if (!f) return res.status(404).json({ error: 'This display link is not valid. Ask the reception for the current link.' });
   const day = istDay(nowIso());
   const rooms = f.rooms || {};
+  const byDoc = tokensByDoctor(d, day);
   const doctors = deskDoctorsOf(d, f.id).map((x) => {
-    const b = tokenBoard(d, x.id, day);
+    const b = tokenBoard(d, x.id, day, byDoc);
     return { name: x.name, specialty: x.specialty, room: rooms[x.id] || null, nowSeeing: b.nowSeeing?.token || null, next: b.waiting.slice(0, 3).map((c) => c.token), waiting: b.waiting.length, avgWaitMin: b.avgWaitMin, issued: b.list.length };
   }).filter((x) => x.issued).map(({ issued: _i, ...x }) => x);
   res.setHeader('Cache-Control', 'no-store');
@@ -4114,6 +4271,8 @@ app.post('/api/referrals/:id/:action', auth, role('hospital_admin'), (req, res) 
   if (!r) return res.status(404).json({ error: 'Referral not found.' });
   const { action } = req.params;
   if (!['accept', 'reject'].includes(action)) return res.status(400).json({ error: 'Unknown action.' });
+  // Decided once: a repeated "accept" used to take another bed each time (and re-notify the doctor).
+  if (r.status !== 'pending') return res.status(409).json({ error: `This referral was already ${r.status}.` });
   r.status = action === 'accept' ? 'accepted' : 'rejected';
   r.decidedAt = nowIso();
   r.note = clean(req.body?.note, 300) || undefined;
@@ -4483,7 +4642,7 @@ app.put('/api/lab-orders/:id/collection', auth, role('lab_tech'), (req, res) => 
 function cleanPackage(lab, b) {
   const name = clean(b.name, 60);
   if (name.length < 3) return { error: 'Give the package a name, e.g. "Full body check-up".' };
-  const codes = [...new Set(cleanList(b.codes, 20))].filter((c) => catalog.TESTS[c]);
+  const codes = [...new Set(cleanList(b.codes, 20))].filter((c) => own(catalog.TESTS, c)); // never 'constructor' / '__proto__'
   if (!codes.length) return { error: 'Pick at least one test for the package.' };
   const missing = codes.filter((c) => lab.tests && !lab.tests.includes(c));
   if (missing.length) return { error: `Your lab doesn't list ${missing.map((c) => catalog.nameOfTest(c)).join(', ')}.` };
@@ -4599,7 +4758,7 @@ app.get('/api/pharmacy/home', auth, role('pharmacist'), (req, res) => {
     pharmacy: fac,
     // Medicine orders: this chemist's own, plus open "anyone nearby?" requests it can take.
     orders: d.medOrders.filter((o) => o.status !== 'awaiting_payment' && (o.pharmacyId === fid || (!o.pharmacyId && o.status === 'requested' && o.candidates.includes(fid))))
-      .slice(0, 60).map((o) => { const e = enrichMedOrder(o); const mineNow = o.pharmacyId === fid; return { ...e, otp: undefined, address: mineNow ? e.address : null, open: !o.pharmacyId, rxFileId: mineNow ? o.rxFileId : null, hasRxPhoto: !!o.rxFileId, patientPhone: mineNow ? userById(o.userId)?.phone : null }; }),
+      .slice(0, 60).map((o) => { const e = enrichMedOrder(o); const mineNow = o.pharmacyId === fid; return { ...e, otp: undefined, candidates: undefined, userId: undefined, paymentId: undefined, /* never which other chemists were asked, or the patient's account / payment ids */ address: mineNow ? e.address : null, open: !o.pharmacyId, rxFileId: mineNow ? o.rxFileId : null, hasRxPhoto: !!o.rxFileId, patientPhone: mineNow ? userById(o.userId)?.phone : null }; }),
     inbox: d.prescriptions.filter((r) => r.pharmacyId === fid).map(enrichRx).reverse(),
     inventory,
     lowStock: inventory.filter((i) => i.qty <= i.safetyStock),
@@ -4827,6 +4986,8 @@ app.post('/api/deliveries/:id/status', auth, role('delivery'), (req, res) => {
 });
 
 // ---------- government command center ----------
+// Corridor endpoints are free text like "Patna, Bihar" — the same "mentions my district" rule the screen used.
+const corridorTouches = (c, district) => Boolean(district) && (String(c.from || '').includes(district) || String(c.to || '').includes(district));
 app.get('/api/gov/overview', auth, role('official'), (req, res) => {
   const d = db();
   const scoped = req.user.scope !== 'national';
@@ -4847,15 +5008,16 @@ app.get('/api/gov/overview', auth, role('official'), (req, res) => {
       doctorsOnline: DATA_MODE !== 'demo' ? d.doctors.filter((x) => x.verified && availabilityOf(x, { facilities: d.facilities }).available && (!scoped || x.state === req.user.region.state)).length
         : scoped ? d.doctors.filter((x) => x.online && x.state === req.user.region.state).length + 38 : d.regions.reduce((s, r) => s + r.doctorsOnline, 0),
       kiosksOnline: d.facilities.filter((f) => f.type === 'kiosk' && f.status === 'online' && inScope(f)).length + (DATA_MODE !== 'demo' || scoped ? 0 : Math.max(0, d.regions.reduce((s, r) => s + r.kiosks, 0) - 4)),
-      consultsToday: DATA_MODE !== 'demo' ? d.consults.filter((c) => istDay(c.createdAt) === istDay(nowIso()) && (!scoped || inScope(d.patients.find((x) => x.id === c.patientId) || {}))).length : scoped ? 412 : 18640,
+      consultsToday: DATA_MODE !== 'demo' ? d.consults.filter((c) => istDay(c.createdAt) === istDay(nowIso()) && (!scoped || inScope(patientById(c.patientId) || {}))).length : scoped ? 412 : 18640,
       openAlerts: d.alerts.filter((a) => a.status === 'open' && inScope(a)).length,
     },
     regions: scoped ? null : d.regions,
     capacity,
     alerts: d.alerts.filter(inScope),
-    corridors: d.corridors,
+    // Scoped on the server (the browser used to receive every region's corridors and filter them itself).
+    corridors: scoped ? d.corridors.filter((c) => corridorTouches(c, req.user.region?.district)) : d.corridors,
     shortages: stockDays,
-    transfersInTransit: d.transfers.filter((t) => ['accepted', 'dispatched'].includes(t.status)).map((t) => ({ ...t, fromName: facilityName(t.fromId), toName: facilityName(t.toId) })),
+    transfersInTransit: d.transfers.filter((t) => ['accepted', 'dispatched'].includes(t.status) && (!scoped || inScope(facilityById(t.fromId) || {}) || inScope(facilityById(t.toId) || {}))).map((t) => ({ ...t, fromName: facilityName(t.fromId), toName: facilityName(t.toId) })),
     outbreakTrend: outbreakTrend(),
     advisories: d.advisories,
   });
@@ -4876,6 +5038,8 @@ app.post('/api/alerts/:id/:action', auth, role('official'), (req, res) => {
   const { action } = req.params;
   const map = { confirm: 'confirmed', dismiss: 'dismissed', resolve: 'resolved', acknowledge: 'acknowledged' };
   if (!own(map, action)) return res.status(400).json({ error: 'Unknown action.' });
+  // Confirming twice re-sent every clinical/stock notice and queued another pre-positioning transfer.
+  if (action === 'confirm' && a.status === 'confirmed') return res.status(409).json({ error: 'This alert is already confirmed.' });
   a.status = map[action];
   const note = { confirm: 'Confirmed — pharmacies advised, stock pre-positioning started, doctors notified', dismiss: 'Dismissed as false signal', resolve: 'Marked resolved', acknowledge: 'Acknowledged, under review' }[action];
   a.actions = a.actions || [];
@@ -4908,7 +5072,8 @@ app.post('/api/corridors', auth, role('official'), (req, res) => {
 
 app.post('/api/corridors/:id/close', auth, role('official'), (req, res) => {
   const c = db().corridors.find((x) => x.id === req.params.id);
-  if (!c) return res.status(404).json({ error: 'Corridor not found.' });
+  // A district officer acts only on corridors touching their district (same scope as what they're shown).
+  if (!c || (req.user.scope !== 'national' && !corridorTouches(c, req.user.region?.district))) return res.status(404).json({ error: 'Corridor not found.' });
   c.status = 'closed';
   c.closedAt = nowIso();
   store.save();
@@ -4969,8 +5134,8 @@ app.get('/api/admin/onboarding', auth, role('super_admin'), (_req, res) => {
   const d = db();
   res.json({
     doctors: d.doctors.map((x) => ({
-      ...x, email: d.users.find((u) => u.id === x.userId)?.email,
-      eClinicNames: (x.eClinicIds || []).map((id) => d.facilities.find((f) => f.id === id)?.name).filter(Boolean),
+      ...x, email: userById(x.userId)?.email,
+      eClinicNames: (x.eClinicIds || []).map((id) => facilityName(id)).filter(Boolean),
     })),
     facilities: d.facilities,
   });
@@ -5204,13 +5369,14 @@ app.get('/api/patient/capsule', auth, role('patient', 'caregiver'), (req, res) =
 });
 
 // A verified doctor opens a scanned capsule with its key (emergency, offline-capable). Logged.
-app.post('/api/capsule/open', auth, role('doctor', 'hospital_admin'), (req, res) => {
+const capsuleLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 30, key: (r) => r.headers.authorization || '', message: 'Too many capsule attempts. Please wait a few minutes.' });
+app.post('/api/capsule/open', auth, role('doctor', 'hospital_admin'), capsuleLimiter, (req, res) => {
   const { capsuleId, key, blob } = req.body || {};
   const p = db().patients.find((x) => x.id === capsuleId);
   if (!p) return res.status(404).json({ error: 'No patient for that capsule.' });
   const data = innovations.openCapsule(p, blob || innovations.buildCapsule(p).blob, String(key || '').toUpperCase());
   if (!data) return res.status(403).json({ error: 'Capsule key invalid or expired. Ask the patient to show a fresh QR.' });
-  db().audit.unshift({ id: store.id('aud'), actorId: req.user.id, actorName: req.user.name, role: req.user.role, action: 'capsule_open', patientId: p.id, recordType: 'critical', reason: req.body?.reason || 'Emergency capsule opened', at: nowIso(), reviewed: false });
+  db().audit.unshift({ id: store.id('aud'), actorId: req.user.id, actorName: req.user.name, role: req.user.role, action: 'capsule_open', patientId: p.id, recordType: 'critical', reason: clean(req.body?.reason, 300) || 'Emergency capsule opened', at: nowIso(), reviewed: false }); // text only, bounded — never an arbitrary JSON value in the audit trail
   patientOwnerUserIds(p).forEach((u) => notify(u, '🔓 Emergency capsule opened', `${req.user.name} opened your offline emergency capsule. This is logged for your review.`, 'alert'));
   store.save();
   broadcast('audit', 'admin');
@@ -5466,8 +5632,8 @@ function sweepReminders(now = Date.now()) {
     const at = Date.parse(c.scheduledAt); const left = at - now;
     if (!(left > 0) || left > 24 * H) continue;
     const r = remindersFor(c, c.scheduledAt);
-    const p = d.patients.find((x) => x.id === c.patientId);
-    const doc = d.doctors.find((x) => x.id === c.doctorId);
+    const p = patientById(c.patientId);
+    const doc = doctorById(c.doctorId);
     if (!p || !doc) continue;
     const band = dueReminder(CONSULT_REMINDERS, r, left, c.paidAt, now);
     if (band) {
@@ -5506,13 +5672,15 @@ function sweepReminders(now = Date.now()) {
   const today = istDay(now); const hour = istHour(now);
   for (const rx of d.prescriptions) {
     if (rx.medNudgeDay === today || !rx.items?.length) continue;
+    // Courses last ≤365 days (cleanRxItems): older prescriptions can't be active — skip before any parsing.
+    if (now - Date.parse(rx.createdAt) > 367 * 86400000) continue;
     const s = rxSchedule(rx);
     if (!s || hour < s.hour || hour >= 22) continue;
     const startDay = istDay(rx.createdAt);
     const dayNo = Math.round((Date.parse(today) - Date.parse(startDay)) / 86400000); // both are YYYY-MM-DD → UTC midnights
     if (dayNo < 0 || dayNo >= s.days) continue;
     if (dayNo === 0 && istHour(Date.parse(rx.createdAt)) >= s.hour) continue; // written after today's first dose — start tomorrow
-    const p = d.patients.find((x) => x.id === rx.patientId);
+    const p = patientById(rx.patientId);
     if (!p) continue;
     rx.medNudgeDay = today;
     const docName = d.doctors.find((x) => x.id === rx.doctorId)?.name;
@@ -5575,13 +5743,21 @@ function pruneNotifications() {
     console.log(`Nexus Healthcare API on http://localhost:${PORT}`);
     console.log(`  database: ${store.adapter().kind} · OTP: ${o.provider}${o.devMode ? ' (dev mode — codes shown on screen)' : ''}${o.emailLive ? ' + email' : ''} · Claude chat: ${aiEnabled() ? 'on' : 'offline fallback'}`);
   });
-  const shutdown = async () => {
-    server.close();
-    await store.close();
-    process.exit(0);
+  // Stop taking requests, let in-flight ones finish (SSE streams never do — cap the wait), flush the db, exit.
+  let stopping = false;
+  const shutdown = async (code = 0) => {
+    if (stopping) return; stopping = true;
+    for (const c of [...sseClients]) { try { c.res.end(); } catch { /* already gone */ } }
+    await Promise.race([new Promise((r) => server.close(r)), new Promise((r) => setTimeout(r, 8000).unref())]);
+    try { await store.close(); } catch (e) { console.error('[shutdown] db flush failed', e); }
+    process.exit(code);
   };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', () => shutdown(0));
+  process.on('SIGTERM', () => shutdown(0));
+  // A stray rejected promise is logged, never fatal. A thrown exception leaves the process in an unknown state:
+  // flush what we have and exit 1 so the platform restarts a clean instance.
+  process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', e));
+  process.on('uncaughtException', (e) => { console.error('[uncaughtException]', e); shutdown(1); });
 })().catch((e) => {
   console.error('Failed to start:', e);
   process.exit(1);

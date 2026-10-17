@@ -2,9 +2,10 @@ import { ArrowLeft } from 'lucide-react';
 import { cx } from '../../components/ui';
 import { useKiosk } from './context';
 
-export function KButton({ variant = 'primary', icon: Icon, children, loading, className, ...rest }) {
+export function KButton({ variant = 'primary', icon: Icon, children, loading, className, disabled, ...rest }) {
+  // `disabled` after the spread: a caller's disabled={false} must not re-enable a button mid-request (double submit).
   return (
-    <button className={cx('k-btn', variant, className)} disabled={loading || rest.disabled} {...rest}>
+    <button className={cx('k-btn', variant, className)} {...rest} disabled={loading || disabled}>
       {loading ? <span className="k-spin" /> : Icon ? <Icon /> : null}
       {children && <span>{children}</span>}
     </button>

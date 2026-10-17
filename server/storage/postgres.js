@@ -73,6 +73,11 @@ module.exports = function postgresAdapter(url) {
       await (ready ||= init());
       const client = await pool.connect();
       const created = [];
+      // A connection dropping between two queries of this transaction is emitted as an 'error' event on the
+      // checked-out client; with no listener that is an uncaught exception that kills the server.
+      let broken = null;
+      const onError = (e) => { broken = e; console.error('[pg] connection error during write:', e.message); };
+      client.on('error', onError);
       try {
         await client.query('BEGIN');
         // One round trip per collection (not per row) — matters with a database in another region.
@@ -93,10 +98,12 @@ module.exports = function postgresAdapter(url) {
         await client.query('COMMIT');
       } catch (e) {
         for (const t of created) tables.delete(t);
-        await client.query('ROLLBACK').catch(() => {}); // the connection itself may be gone
+        await client.query('ROLLBACK').catch((re) => { broken ||= re; }); // the connection itself may be gone
         throw e;
       } finally {
-        client.release();
+        client.off('error', onError);
+        // A dead connection must not go back into the pool, or the retry (and the next request) gets it again.
+        client.release(broken || undefined);
       }
     },
     async wipe() {

@@ -152,9 +152,10 @@ function routeDoctor(db, { specialty, language, district, state, urgency }) {
 // 6.3 Supply grid — widen the search step by step; prefer near-expiry; respect safety stock.
 function findStock(db, drug, { district, state }, qtyNeeded = 1) {
   const name = String(drug || '').toLowerCase(); // query input may be anything (array, number) — never crash
+  const facById = new Map(db.facilities.map((f) => [f.id, f])); // one map per call, not a facilities scan per stock row
   const rows = db.inventory
     .filter((i) => String(i.drug || '').toLowerCase().includes(name))
-    .map((i) => ({ ...i, facility: db.facilities.find((f) => f.id === i.facilityId) }))
+    .map((i) => ({ ...i, facility: facById.get(i.facilityId) }))
     .filter((i) => i.facility && i.qty - (i.safetyStock || 0) >= qtyNeeded);
 
   const tierOf = (f) => (f.district === district ? (f.distanceKm !== undefined && f.distanceKm <= 5 ? 0 : 1) : f.state === state ? 2 : 3);
@@ -183,7 +184,9 @@ function checkPrescription(patient, items) {
   // Items/allergies come straight from request bodies and profiles — tolerate a missing or non-string name.
   const drugs = (Array.isArray(items) ? items : []).map((i) => String(i?.drug || '').toLowerCase());
   for (const allergy of (patient.allergies || []).map((x) => String(x || '')).filter(Boolean)) {
-    const cls = ALLERGY_CLASSES[allergy.toLowerCase()] || [allergy.toLowerCase()];
+    // Own keys only: an allergy typed as "constructor" must not resolve to Object.prototype and crash every check.
+    const key = String(allergy || '').toLowerCase();
+    const cls = (Object.prototype.hasOwnProperty.call(ALLERGY_CLASSES, key) && ALLERGY_CLASSES[key]) || [key];
     drugs.forEach((d, idx) => { if (d && cls.some((c) => d.includes(c))) warnings.push({ type: 'allergy', severity: 'high', msg: `${patient.name} is allergic to ${allergy}. "${items[idx].drug}" may cause a reaction.` }); });
   }
   const all = [...drugs, ...(patient.currentMeds || []).map((m) => String(m || '').toLowerCase())];

@@ -86,7 +86,8 @@ export default function Profile() {
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   // Keep an unsent draft on this device (never the Aadhaar number) so "Finish later" loses nothing.
   useEffect(() => {
-    if (!form || !doctor || doctor.verified) return;
+    if (!form || !doctor) return;
+    if (doctor.verified || doctor.profileComplete) { try { localStorage.removeItem(`oc_dr_draft_${doctor.id}`); } catch { /* ignore */ } return; }
     try { localStorage.setItem(`oc_dr_draft_${doctor.id}`, JSON.stringify({ ...form, aadhaar: undefined })); } catch { /* ignore */ }
   }, [form, doctor]);
   const checks = useMemo(() => (form ? [
@@ -105,6 +106,8 @@ export default function Profile() {
       try {
         const doc = await api.put('/doctor/profile', { ...form, aadhaar: form.aadhaar.replace(/\D/g, '') });
         home.setData((d) => (d ? { ...d, doctor: doc } : d));
+        // Submitted: the server has it now, so don't leave address/age/reg. no. on a possibly shared clinic computer.
+        try { localStorage.removeItem(`oc_dr_draft_${doctor.id}`); } catch { /* ignore */ }
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } catch (e) { setError(e.message); throw e; }
     }, 'Profile submitted — our team will verify it shortly');

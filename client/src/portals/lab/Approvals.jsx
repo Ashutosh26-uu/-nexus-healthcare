@@ -46,7 +46,7 @@ function ApprovalCard({ order: o, home, signer, self, reload, onApproved }) {
   const approve = async () => {
     const body = self ? { sign: { confirm: true, name: sign.name.trim(), regNo: sign.regNo.trim() } } : { sign: { regNo: regNo.trim() } };
     const r = await run('ok', () => api.post(`/lab-orders/${o.id}/approve`, body), `Signed and sent to ${o.patientName}`);
-    if (r) { if (self) saveSigner({ name: sign.name.trim(), regNo: sign.regNo.trim() }); onApproved?.(r); reload(); }
+    if (r) { if (self) saveSigner({ name: sign.name.trim(), regNo: sign.regNo.trim() }); if (onApproved) onApproved(r); else reload(); } // onApproved already reloads
   };
   const sendBack = async () => {
     const r = await run('back', () => api.post(`/lab-orders/${o.id}/approve`, { decision: 'return', note }), 'Sent back to the bench');

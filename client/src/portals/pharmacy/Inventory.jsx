@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { Search, PackagePlus, ScanBarcode, Boxes, AlertTriangle, CalendarX } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Button, Pills, Stat, fmtNum } from '../../components/ui';
@@ -10,13 +10,18 @@ export default function Inventory({ home, reload }) {
   const [filter, setFilter] = useState('all');
   const [adding, setAdding] = useState(false);
   const [scanning, setScanning] = useState(false);
-  const lowIds = new Set(home.lowStock.map((i) => i.id));
-  const expIds = new Set(home.expiring.map((i) => i.id));
-
-  const items = home.inventory
-    .filter((i) => (filter === 'low' ? lowIds.has(i.id) : filter === 'expiring' ? expIds.has(i.id) : true))
-    .filter((i) => !q || `${i.drug} ${i.batch}`.toLowerCase().includes(q.toLowerCase()))
-    .sort((a, b) => (filter === 'expiring' ? new Date(a.expiry) - new Date(b.expiry) : a.drug.localeCompare(b.drug)));
+  // Typing stays instant on a big shelf: the table filters on a deferred copy of the search, and
+  // the list is only rebuilt when the stock, filter or search actually change.
+  const dq = useDeferredValue(q);
+  const items = useMemo(() => {
+    const lowIds = new Set(home.lowStock.map((i) => i.id));
+    const expIds = new Set(home.expiring.map((i) => i.id));
+    const needle = dq.trim().toLowerCase();
+    return home.inventory
+      .filter((i) => (filter === 'low' ? lowIds.has(i.id) : filter === 'expiring' ? expIds.has(i.id) : true))
+      .filter((i) => !needle || `${i.drug} ${i.batch}`.toLowerCase().includes(needle))
+      .sort((a, b) => (filter === 'expiring' ? new Date(a.expiry) - new Date(b.expiry) : a.drug.localeCompare(b.drug)));
+  }, [home.inventory, home.lowStock, home.expiring, filter, dq]);
 
   const units = home.inventory.reduce((s, i) => s + i.qty, 0);
 

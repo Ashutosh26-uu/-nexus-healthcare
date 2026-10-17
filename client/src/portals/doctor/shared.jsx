@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { HeartPulse, Activity, Thermometer, Droplet, Scale, Gauge } from 'lucide-react';
 import { cx } from '../../components/ui';
 
@@ -46,34 +46,6 @@ export function greeting() {
 }
 
 export const shortName = (name = '') => name.replace(/^Dr\.\s*/, '').split(' ')[0];
-
-/* Simulated live device feed: drifts gently around the last kiosk reading. */
-export function useLiveVitals(base, active = true) {
-  const [now, setNow] = useState(base);
-  const [history, setHistory] = useState({ pulse: [], spo2: [] });
-  const baseRef = useRef(base);
-  baseRef.current = base;
-  useEffect(() => {
-    setNow(base);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(base)]);
-  useEffect(() => {
-    if (!active || !base) return undefined;
-    const tick = () => {
-      const b = baseRef.current;
-      if (!b) return;
-      const j = (v, amp, dec = 0) => (v === undefined || v === null || v === '' ? v : +(Number(v) + (Math.random() - 0.5) * 2 * amp).toFixed(dec));
-      const next = { ...b, pulse: j(b.pulse, 3), spo2: b.spo2 ? Math.min(100, j(b.spo2, 1)) : b.spo2, temp: j(b.temp, 0.1, 1) };
-      setNow(next);
-      setHistory((h) => ({ pulse: [...h.pulse, next.pulse].filter((x) => x !== undefined).slice(-24), spo2: [...h.spo2, next.spo2].filter((x) => x !== undefined).slice(-24) }));
-    };
-    tick();
-    const t = setInterval(tick, 2500);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, !!base]);
-  return { vitals: now, history };
-}
 
 // Lives in ui.jsx now; re-exported so existing './shared' imports keep working.
 export { useDebounced } from '../../components/ui';

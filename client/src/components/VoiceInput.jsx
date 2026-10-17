@@ -16,6 +16,10 @@ export default function VoiceInput({ onText, onStart, className, label = 'Speak'
   const [on, setOn] = useState(false);
   const [error, setError] = useState('');
   const rec = useRef(null);
+  // Recognition is continuous: a later phrase must reach the *current* onText (callers build on their latest
+  // state), not the one captured when the mic was switched on — that dropped everything said before it.
+  const onTextRef = useRef(onText);
+  onTextRef.current = onText;
   useEffect(() => () => rec.current?.abort?.(), []);
   if (!Recognition) return null;
 
@@ -28,7 +32,7 @@ export default function VoiceInput({ onText, onStart, className, label = 'Speak'
     r.maxAlternatives = 1;
     r.onresult = (e) => {
       const said = [...e.results].slice(e.resultIndex).filter((x) => x.isFinal).map((x) => x[0].transcript).join(' ').trim();
-      if (said) onText(said);
+      if (said) onTextRef.current?.(said);
     };
     r.onerror = (e) => { setError(e.error === 'not-allowed' ? 'Allow the microphone for this site to speak.' : e.error === 'no-speech' ? 'We didn’t hear anything — try again.' : ''); setOn(false); };
     r.onend = () => setOn(false);

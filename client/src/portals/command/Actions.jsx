@@ -15,7 +15,7 @@ const LANGS = ['Hindi', 'English', 'Awadhi', 'Bhojpuri', 'Bengali', 'Tamil', 'Te
 function predictRelief(fromOpt, toOpt, alerts) {
   if (!fromOpt || !toOpt) return null;
   const overload = alerts.find((a) => a.type === 'overload' && a.district === fromOpt.district);
-  const m = overload?.message.match(/wait (\d+) min/);
+  const m = overload?.message?.match(/wait (\d+) min/);
   const wait = m ? Number(m[1]) : 38;
   const spare = Math.max(4, Math.round(toOpt.doctors * 0.22));
   const perHour = spare * 4;
@@ -131,8 +131,9 @@ function AdvisoryComposer({ prefill, onSaved }) {
       </Field>
       <label className="check small"><input type="checkbox" checked={reviewed} onChange={(e) => setReviewed(e.target.checked)} /> I have reviewed this advisory and confirm it can go to the public.</label>
       <div className="row wrap" style={{ gap: 8, justifyContent: 'flex-end' }}>
-        <Button variant="secondary" icon={Save} loading={busy === 'draft'} disabled={!valid} onClick={() => save(false)}>Save draft</Button>
-        <Button icon={Send} loading={busy === 'pub'} disabled={!valid || !reviewed} onClick={() => save(true)}>Publish now</Button>
+        {/* Either request in flight disables both — one advisory per click, never a draft and a published copy. */}
+        <Button variant="secondary" icon={Save} loading={busy === 'draft'} disabled={!valid || !!busy} onClick={() => save(false)}>Save draft</Button>
+        <Button icon={Send} loading={busy === 'pub'} disabled={!valid || !reviewed || !!busy} onClick={() => save(true)}>Publish now</Button>
       </div>
     </div>
   );

@@ -103,6 +103,12 @@
 .k-btn.ghost .k-spin, .k-btn.secondary .k-spin, .k-center .k-spin { border-color: var(--k-line); border-top-color: var(--green); }
 .k-spin.big { width: 44px; height: 44px; border-width: 4px; }
 .k-error { background: var(--rose-soft); color: #8f2a22; padding: 14px 18px; border-radius: 16px; font-size: 1rem; font-weight: 500; }
+/* "Still there?" before a left-behind visit is wiped (shared device) */
+.k-idle { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(20, 32, 30, 0.55); }
+.k-idle-box { width: min(440px, 100%); background: #fff; border-radius: 24px; padding: 28px 24px; text-align: center; display: flex; flex-direction: column; gap: 14px; align-items: center; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25); }
+.k-idle-box h2 { margin: 0; font-size: 1.7rem; }
+.k-idle-box p { margin: 0; font-size: 1.1rem; }
+.k-idle-box strong { font-size: 1.4rem; }
 .k-center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 30px; text-align: center; }
 @media (max-width: 640px) { .k-panel { padding: 22px 18px 18px; border-radius: 22px; } .k-btn.xl { padding: 0 26px; min-height: 68px; } .k-actions-right { width: 100%; } .k-actions-right .k-btn { flex: 1; } }
 

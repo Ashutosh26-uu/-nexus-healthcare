@@ -168,7 +168,9 @@ async function handleChat(req, res, ctx) {
 The person has chosen ${langName} for the app. Reply in ${langName} unless they clearly write in another language — then reply in the language they wrote in. Keep medical terms understandable for that language's speakers.`,
       messages: history,
     });
-    req.on('close', () => stream.abort());
+    // res, not req: since Node 16 req emits 'close' once its body has been read (express.json already did),
+    // so the request's 'close' either aborted every answer at once or never fired on a real disconnect.
+    res.on('close', () => { if (!res.writableEnded) stream.abort(); });
     for await (const event of stream) {
       if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
         res.write(`data: ${JSON.stringify({ delta: event.delta.text })}\n\n`);

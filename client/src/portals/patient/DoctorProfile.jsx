@@ -80,13 +80,16 @@ export default function DoctorProfile({ doc, onClose, onConsult, busy, consultLa
           <div>
             <h4 className="row mb-1" style={{ gap: 6 }}><Quote size={16} /> What patients say</h4>
             <div className="pt-dp-reviews">
-              {rev.reviews.slice(0, 4).map((r) => (
+              {rev.reviews.slice(0, 4).map((r) => {
+                const n = Math.max(0, Math.min(5, Math.round(Number(r.stars) || 0))); // repeat() throws on a negative/fractional count
+                return (
                 <div key={r.id} className="pt-dp-review">
-                  <span className="pt-stars" aria-label={`${r.stars} stars`}>{'★'.repeat(r.stars)}<span className="muted">{'★'.repeat(5 - r.stars)}</span></span>
+                  <span className="pt-stars" aria-label={`${n} stars`}>{'★'.repeat(n)}<span className="muted">{'★'.repeat(5 - n)}</span></span>
                   {r.text && <p className="small mb-0">“{r.text}”</p>}
                   <span className="tiny muted" translate="no">{r.name} · {timeAgo(r.at)}</span>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

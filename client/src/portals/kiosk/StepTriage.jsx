@@ -193,6 +193,7 @@ export default function StepTriage() {
   const canCheck = (picked.length > 0 && !(picked.length === 1 && picked[0] === 'other' && !text.trim())) || text.trim().length > 3;
 
   const check = async () => {
+    if (busy) return;
     setErr('');
     setBusy('triage');
     const symptoms = symptomsText();
@@ -211,7 +212,10 @@ export default function StepTriage() {
 
   const vitalsClean = () => { const v = { ...(flow.vitals || {}) }; delete v.deviceWarnings; return Object.keys(v).length ? v : null; };
 
+  // One request at a time: "Talk to a doctor now" and "Book this slot" sit side by side, and tapping both
+  // used to create two consults for the same patient.
   const connect = async () => {
+    if (busy) return;
     setBusy('connect');
     setErr('');
     try {
@@ -221,6 +225,7 @@ export default function StepTriage() {
   };
 
   const book = async (slot) => {
+    if (busy) return;
     setBusy('book');
     setErr('');
     try {

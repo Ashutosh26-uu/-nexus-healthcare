@@ -1,23 +1,26 @@
 import { DoctorCtx } from './context';
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ListChecks, Users, CalendarDays, Wallet, Award, Pill, UserRound, Clock, FilePen, Video, Building2, GraduationCap, MapPin, Camera } from 'lucide-react';
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import PortalLayout from '../../components/PortalLayout';
 import { useLive } from '../../live';
 import { api } from '../../api';
-import { Button, Modal, Switch, useAction, cx } from '../../components/ui';
+import { Button, Loading, Modal, Switch, useAction, cx } from '../../components/ui';
 import { useAuth } from '../../auth';
-import Clinic from './Clinic';
 import Queue from './Queue';
-import Score from './Score';
-import Consult from './Consult';
-import Patients from './Patients';
-import Schedule from './Schedule';
-import Earnings from './Earnings';
-import Medicines from './Medicines';
-import Profile from './Profile';
-import Prescribe from './Prescribe';
 import { NewBookingPopup } from './BookingAlerts';
+
+// The queue is the first screen; the consult room (WebRTC, prescription writer), records, schedule, profile
+// and the rest load when opened. Only code is cached — every screen still fetches live data.
+const Clinic = lazy(() => import('./Clinic'));
+const Score = lazy(() => import('./Score'));
+const Consult = lazy(() => import('./Consult'));
+const Patients = lazy(() => import('./Patients'));
+const Schedule = lazy(() => import('./Schedule'));
+const Earnings = lazy(() => import('./Earnings'));
+const Medicines = lazy(() => import('./Medicines'));
+const Profile = lazy(() => import('./Profile'));
+const Prescribe = lazy(() => import('./Prescribe'));
 import './doctor.css';
 
 // Keyed by id so state from one consult never carries into the next.
@@ -107,6 +110,7 @@ export default function DoctorApp() {
   return (
     <DoctorCtx.Provider value={home}>
       <PortalLayout portal="Doctor Portal" nav={nav} headerExtra={<PresenceControl home={home} />}>
+        <Suspense fallback={<Loading />}>
         <Routes>
           <Route index element={<Queue />} />
           <Route path="profile" element={<Profile />} />
@@ -121,6 +125,7 @@ export default function DoctorApp() {
           {verified && <Route path="score" element={<Score />} />}
           <Route path="*" element={<Navigate to="/doctor" replace />} />
         </Routes>
+        </Suspense>
         {verified && <NewBookingPopup home={home} />}
         <CompleteProfilePrompt doctor={doctor} />
       </PortalLayout>

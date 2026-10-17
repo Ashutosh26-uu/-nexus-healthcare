@@ -9,7 +9,12 @@ export default function FamilyGraph() {
   const { profileKey } = usePatient();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
-  useEffect(() => { setData(null); setError(''); api.get('/patient/family-graph').then(setData).catch((e) => setError(e.message)); }, [profileKey]);
+  useEffect(() => {
+    let alive = true; // a quick profile switch must not let the previous person's graph land on screen
+    setData(null); setError('');
+    api.get('/patient/family-graph').then((r) => alive && setData(r)).catch((e) => alive && setError(e.message));
+    return () => { alive = false; };
+  }, [profileKey]);
 
   if (error) return <Empty title="Couldn't load your family graph">{error}</Empty>;
   if (!data) return <PageSkeleton />;

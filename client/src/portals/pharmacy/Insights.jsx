@@ -8,7 +8,11 @@ import { api } from '../../api';
 
 // Purchase list for the distributor when a request can't go through the network (or for the paper file).
 function downloadCsv(rows, store) {
-  const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const esc = (v) => {
+    let s = String(v ?? '');
+    if (typeof v !== 'number' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`; // no formula injection in Excel/Sheets
+    return `"${s.replace(/"/g, '""')}"`;
+  };
   const lines = [['Medicine', 'In stock', 'Safety stock', 'Sold (30 days)', 'Order qty', 'Pack size', 'Unit'], ...rows.map((r) => [r.drug, r.stock, r.safetyStock, r.sold30d, r.suggest, r.pack, r.unit])];
   const blob = new Blob([`${lines.map((l) => l.map(esc).join(',')).join('\n')}\n`], { type: 'text/csv' });
   const a = document.createElement('a');

@@ -42,22 +42,31 @@ export function ConsentProvider({ children }) {
     setConsentState(v);
   }, []);
 
+  // A GPS watch fires every few seconds even when standing still. Keep the same object while the rounded
+  // position (and roughly the accuracy) is unchanged — every doctor/chemist search depends on `loc`.
+  const takeFix = useCallback((pos) => {
+    const v = { lat: round3(pos.coords.latitude), lng: round3(pos.coords.longitude), accuracy: Math.round(pos.coords.accuracy), at: Date.now(), source: 'live' };
+    setLoc((prev) => {
+      if (prev?.source === 'live' && prev.lat === v.lat && prev.lng === v.lng && Math.abs((prev.accuracy || 0) - v.accuracy) < 100) return prev;
+      write(LOC_KEY, v);
+      return v;
+    });
+    setStatus('live');
+  }, []);
+
   // Live location while the app is open (only with consent).
   useEffect(() => {
     if (!consent?.location) return undefined;
     if (!('geolocation' in navigator)) { setStatus('unsupported'); return undefined; }
     setStatus((s) => (s === 'live' ? s : 'asking'));
     watchId.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        const v = { lat: round3(pos.coords.latitude), lng: round3(pos.coords.longitude), accuracy: Math.round(pos.coords.accuracy), at: Date.now(), source: 'live' };
-        setLoc(v); write(LOC_KEY, v); setStatus('live');
-      },
+      takeFix,
       // A watch keeps running; a later timeout (weak GPS indoors) must not undo a fix we already have.
       (err) => setStatus((s) => (err.code === 1 ? 'denied' : s === 'live' && err.code === 3 ? s : 'error')),
       { enableHighAccuracy: true, maximumAge: 60000, timeout: 20000 },
     );
     return () => { if (watchId.current != null) navigator.geolocation.clearWatch(watchId.current); watchId.current = null; };
-  }, [consent?.location]);
+  }, [consent?.location, takeFix]);
 
   // Signed-in patients: keep their current location on the server (throttled) so doctor & chemist
   // searches start from where they are now.
@@ -75,12 +84,9 @@ export function ConsentProvider({ children }) {
     setConsent({ ...(consent || {}), location: true });
     if (consent?.location && status !== 'live' && 'geolocation' in navigator) {
       setStatus('asking');
-      navigator.geolocation.getCurrentPosition((pos) => {
-        const v = { lat: round3(pos.coords.latitude), lng: round3(pos.coords.longitude), accuracy: Math.round(pos.coords.accuracy), at: Date.now(), source: 'live' };
-        setLoc(v); write(LOC_KEY, v); setStatus('live');
-      }, (err) => setStatus(err.code === 1 ? 'denied' : 'error'), { enableHighAccuracy: true, timeout: 20000 });
+      navigator.geolocation.getCurrentPosition(takeFix, (err) => setStatus(err.code === 1 ? 'denied' : 'error'), { enableHighAccuracy: true, timeout: 20000 });
     }
-  }, [consent, setConsent, status]);
+  }, [consent, setConsent, status, takeFix]);
 
   // Typing a place stops live tracking — the person chose a fixed location.
   const setManual = useCallback((m) => {

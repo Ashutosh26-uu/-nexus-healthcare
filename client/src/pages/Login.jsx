@@ -46,7 +46,13 @@ export default function Login() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (user) navigate(location.state?.from && location.state.from.startsWith(ROLE_HOME[user.role]) ? location.state.from : ROLE_HOME[user.role], { replace: true });
+    if (!user) return;
+    // Back to where they were bounced from: their own portal, or a document link (prescription, report, invoice,
+    // statement — those routes check the role again). Internal paths only.
+    const from = location.state?.from;
+    const ok = typeof from === 'string' && /^\/(?!\/)/.test(from)
+      && (from.startsWith(ROLE_HOME[user.role]) || /^\/(rx|lab-report|lab-label|invoice|statement)\//.test(from));
+    navigate(ok ? from : ROLE_HOME[user.role], { replace: true });
   }, [user, navigate, location.state]);
 
   const loginPassword = async (e) => {

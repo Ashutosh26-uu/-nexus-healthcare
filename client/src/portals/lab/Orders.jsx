@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, Upload, ArrowRight, Stethoscope, AlertTriangle, MapPin, FileText, Home, CalendarClock, IndianRupee, Barcode, Stamp, Undo2, Gift } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
@@ -14,12 +14,17 @@ export default function Orders({ home, orders, reload, onReport }) {
   const [tab, setTab] = useState(() => (orders.some((o) => o.status === 'ordered') ? 'ordered' : 'all'));
   const [q, setQ] = useState('');
   const [run, busy] = useAction();
-  const count = (s) => (s === 'all' ? orders.length : orders.filter((o) => o.status === s).length);
+  // One pass for the tab counts; the filtered list only recomputes when orders, tab or search change.
+  const counts = useMemo(() => orders.reduce((m, o) => { m[o.status] = (m[o.status] || 0) + 1; return m; }, {}), [orders]);
+  const count = (s) => (s === 'all' ? orders.length : counts[s] || 0);
 
-  const list = orders
-    .filter((o) => tab === 'all' || o.status === tab)
-    .filter((o) => !q || `${o.patientName} ${o.patientId} ${o.sampleId || ''} ${o.tests.map((t) => `${t.name} ${t.code}`).join(' ')}`.toLowerCase().includes(q.toLowerCase()))
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const list = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return orders
+      .filter((o) => tab === 'all' || o.status === tab)
+      .filter((o) => !needle || `${o.patientName} ${o.patientId} ${o.sampleId || ''} ${o.tests.map((t) => `${t.name} ${t.code}`).join(' ')}`.toLowerCase().includes(needle))
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }, [orders, tab, q]);
 
   const advance = async (o) => {
     const n = NEXT[o.status];

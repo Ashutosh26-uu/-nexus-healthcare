@@ -111,8 +111,9 @@ function RxCard({ rx, inventory, transfers = [], reload }) {
           )}
           <div className="row wrap rx-btns">
             {!verified && <span className="tiny muted grow">Tick both checks to dispense.</span>}
-            {missing.length === 0 && <Button variant="ghost" size="sm" disabled={!verified} loading={busy === 'partial'} onClick={() => run('partial', () => api.post(`/prescriptions/${rx.id}/dispense`, { status: 'dispensed', partial: true }), 'Dispensed partially — patient told the rest will follow').then((ok) => ok && reload())}>Dispense partial</Button>}
-            <Button icon={PackageCheck} disabled={!verified} loading={busy === 'dispensed'}
+            {missing.length === 0 && <Button variant="ghost" size="sm" disabled={!verified || !!busy} loading={busy === 'partial'} onClick={() => run('partial', () => api.post(`/prescriptions/${rx.id}/dispense`, { status: 'dispensed', partial: true }), 'Dispensed partially — patient told the rest will follow').then((ok) => ok && reload())}>Dispense partial</Button>}
+            {/* Either dispense button in flight blocks both — one prescription, one stock deduction. */}
+            <Button icon={PackageCheck} disabled={!verified || !!busy} loading={busy === 'dispensed'}
               onClick={() => act('dispensed', { partial: missing.length > 0 }, missing.length ? `Partially dispensed for ${rx.patientName}` : `Packed for ${rx.patientName} — they've been told it's ready`)}>
               {missing.length ? `Dispense ${lines.length - missing.length} of ${lines.length}` : 'Dispense full'}
             </Button>

@@ -16,19 +16,25 @@ export default function ScanBox({ reload, onReport }) {
   const [camera, setCamera] = useState(false);
   const [run, busy] = useAction();
   const inputRef = useRef(null);
+  const lookupSeq = useRef(0);
 
   const lookup = async (raw) => {
     const value = String(raw || '').trim();
     if (!value) return;
     setError('');
+    // Clear before the request: a second tube scanned while this lookup is in flight must not be wiped
+    // half-typed when it returns (the error names the code that failed).
+    setCode('');
+    const seq = ++lookupSeq.current;
     try {
       const r = await api.post('/lab/scan', { code: value });
+      if (seq !== lookupSeq.current) return; // a newer scan won
       setFound(r.order);
     } catch (e) {
+      if (seq !== lookupSeq.current) return;
       setFound(null);
       setError(e.message);
     }
-    setCode(''); // ready for the next scan either way (the error names the code that failed)
     inputRef.current?.focus();
   };
   const advance = async () => {
@@ -78,8 +84,10 @@ function CameraScan({ onClose, onCode }) {
     (async () => {
       try {
         const detector = new window.BarcodeDetector({ formats: ['code_128'] });
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        if (!alive) return;
+        const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        // Closed while the permission prompt was open: the cleanup already ran, so stop this stream here.
+        if (!alive) { s.getTracks().forEach((t) => t.stop()); return; }
+        stream = s;
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
         const tick = async () => {

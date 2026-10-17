@@ -22,15 +22,15 @@ export default function StatementPrint() {
     const title = document.title;
     api.get(`/doctor/statement?month=${encodeURIComponent(month)}`).then((r) => {
       setSt(r);
-      document.title = `Statement ${r.month} · ${r.doctor.name}`;
+      document.title = `Statement ${r.month} · ${r.doctor?.name || ''}`;
     }).catch((e) => setError(e.message));
     return () => { document.title = title; };
   }, [month]);
 
   if (error) return <div className="rxp-wrap"><div className="rxp-error">{error}</div></div>;
   if (!st) return <Loading />;
-  const rows = st.days.filter((d) => d.consults > 0);
-  const t = st.totals;
+  const rows = (st.days || []).filter((d) => d.consults > 0);
+  const t = st.totals || {};
 
   return (
     <div className="rxp-wrap">

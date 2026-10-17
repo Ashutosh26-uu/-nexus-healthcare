@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ArrowUp, ArrowDown, ArrowRight, ShieldAlert, Lock, History, FlaskConical, MessageSquareQuote, Pill, ChevronDown } from 'lucide-react';
-import { api } from '../../api';
+import { useLive } from '../../live';
 import { fmtDate, cx } from '../../components/ui';
 
 const TREND = { up: ArrowUp, down: ArrowDown, same: ArrowRight };
@@ -9,15 +9,11 @@ const since = (days) => (days == null ? null : days === 0 ? 'since today' : days
 // The first-minute card on the consult page: who this is, what not to give them, what they're on, what
 // happened last time and which numbers are off. Same access rules as the full record (server-side).
 export default function PatientSummary({ consultId }) {
-  const [s, setS] = useState(null);
-  const [error, setError] = useState('');
   const [open, setOpen] = useState(true);
-  useEffect(() => {
-    let alive = true;
-    setS(null); setError('');
-    api.get(`/consults/${encodeURIComponent(consultId)}/summary`).then((r) => alive && setS(r)).catch((e) => alive && setError(e.message));
-    return () => { alive = false; };
-  }, [consultId]);
+  // Live, like the record tabs: when the patient approves access mid-consult (or a report lands), the
+  // locked card opens up without reopening the page. A failed refresh keeps the last summary on screen.
+  const { data: s, error: loadError } = useLive(`/consults/${encodeURIComponent(consultId)}/summary`, ['consents', 'records', 'lab', 'prescriptions']);
+  const error = !s && loadError;
 
   if (error) return null; // the rest of the consult page still works; the record tabs show the reason
   if (!s) return <div className="card dr-psum loading"><span className="spinner sm" /><span className="small muted">Loading patient summary…</span></div>;

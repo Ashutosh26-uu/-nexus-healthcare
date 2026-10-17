@@ -3,7 +3,7 @@ import { ArrowRight, ShieldCheck, ChevronDown, Search } from 'lucide-react';
 import { api } from '../api';
 import { useI18n } from '../i18n';
 import { COUNTRIES, guessCountry } from '../i18n/countries';
-import { Button, Field, cx } from './ui';
+import { Button, Field, cx, safeUrl } from './ui';
 
 export function OtpInput({ value, onChange, length = 6, autoFocus }) {
   const refs = useRef([]);
@@ -158,6 +158,6 @@ export default function OtpFlow({ onDone }) {
 // or links to the test mailbox when no real mail server is configured.
 export function DevCode({ sent }) {
   if (sent?.devCode) return <div className="dev-otp">Demo mode — this address can&apos;t receive email, so here is the code: <strong className="mono notranslate" translate="no">{sent.devCode}</strong></div>;
-  if (sent?.emailPreview) return <div className="dev-otp">Demo email sent. <a href={sent.emailPreview} target="_blank" rel="noopener noreferrer" className="notranslate" translate="no"><strong>Open the email to see your code →</strong></a></div>;
+  if (safeUrl(sent?.emailPreview)) return <div className="dev-otp">Demo email sent. <a href={safeUrl(sent.emailPreview)} target="_blank" rel="noopener noreferrer" className="notranslate" translate="no"><strong>Open the email to see your code →</strong></a></div>;
   return null;
 }

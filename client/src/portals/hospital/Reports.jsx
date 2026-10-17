@@ -11,7 +11,12 @@ const monthRange = (m) => {
   return [`${m}-01`, ymd(new Date(y, mo, 0))];
 };
 const hourLabel = (h) => `${((h + 11) % 12) + 1}${h < 12 ? 'a' : 'p'}`;
-const csvCell = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+// Text cells that start like a formula (=, +, -, @, tab, CR) get a leading ' so Excel/Sheets never run them.
+const csvCell = (v) => {
+  let s = v == null ? '' : String(v);
+  if (typeof v !== 'number' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
 
 function downloadCsv(r) {
   const lines = [

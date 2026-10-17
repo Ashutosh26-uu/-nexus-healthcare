@@ -48,6 +48,10 @@ function securityHeaders(_req, res, next) {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('X-DNS-Prefetch-Control', 'off');
   res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=(self)');
+  // Only directives that cannot break the app (inline font onload, Razorpay checkout, print pop-ups written with
+  // document.write and blob: PDF previews — which inherit this policy — all still work): no clickjacking, no
+  // <base> hijack. A route that needs a stricter policy (e.g. /api/files) overrides this header.
+  res.setHeader('Content-Security-Policy', "base-uri 'self'; frame-ancestors 'none'");
   if (isProd()) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   next();
 }

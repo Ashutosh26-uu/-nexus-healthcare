@@ -106,7 +106,7 @@ const messageFor = (code, lang, purpose = 'login') => (purpose === 'consent'
   ? `${code} is your Nexus Healthcare approval code. Share it only with the doctor in front of you to let them see your records and write a prescription. It cannot be used to sign in. Valid ${Math.round(TTL / 60000)} min.`
   : purpose === 'reset'
     ? `${code} is your Nexus Healthcare code to set a new password. It expires in ${Math.round(TTL / 60000)} minutes. If you didn't ask to change your password, ignore this email — your password stays the same.`
-    : (MESSAGES[(lang || 'en').split('-')[0]] || MESSAGES.en)(code, Math.round(TTL / 60000)));
+    : (MESSAGES[String(lang || 'en').split('-')[0]] || MESSAGES.en)(code, Math.round(TTL / 60000)));
 const SUBJECTS = { consent: (c) => `${c} — approve your doctor (Nexus Healthcare)`, reset: (c) => `${c} — set a new password (Nexus Healthcare)`, login: (c) => `${c} — your Nexus Healthcare code` };
 // Codes are stored per purpose, so a code sent for one thing (e.g. a patient approving a doctor, or
 // changing a password) can never be redeemed for another (e.g. signing in as that patient).
@@ -114,6 +114,7 @@ const PURPOSES = new Set(['login', 'consent', 'reset']);
 // Addresses that are not real inboxes: demo accounts (and phone-only patients' "…@patient.omnicare.in")
 // plus the reserved example/test domains. A real mail server must never send codes there.
 const DEMO_EMAIL = /@(([a-z0-9-]+\.)*(omnicare|nexushealthcare)\.in|example\.(com|org|net)|[a-z0-9.-]+\.(test|invalid|example|localhost))$/i;
+const EMAIL_OK = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // only ever run on input of ≤ 254 chars (RFC 5321 limit)
 const keyFor = (purpose, target) => (purpose === 'login' ? target : `${purpose}|${target}`);
 
 /* ---------- providers ---------- */
@@ -212,7 +213,8 @@ async function sendCode({ phone, dialCode, email, channel = 'sms', lang, ip, pur
   if (channel === 'email') {
     if (!configured().email && !devMode()) throw new OtpError('Email codes aren\'t set up on this server yet. Please contact support.', 503);
     target = String(email || '').trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target)) throw new OtpError('Please enter a valid email address.');
+    // Length first: the pattern below is quadratic on long dot-heavy input (a 2 MB body would block the event loop).
+    if (target.length > 254 || !EMAIL_OK.test(target)) throw new OtpError('Please enter a valid email address.');
     // Placeholder addresses are never mailed. In dev mode the code is shown on screen instead (demo accounts
     // keep working locally); on a live server they are refused.
     placeholder = DEMO_EMAIL.test(target);
@@ -330,7 +332,9 @@ function publicConfig() {
 // Never throws — a reminder email failing must not break the request or the sweeper that sent it.
 async function sendMail({ to, subject, text, html }) {
   const target = String(to || '').trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target) || DEMO_EMAIL.test(target)) return { sent: false, reason: 'not_a_real_inbox' };
+  if (target.length > 254 || !EMAIL_OK.test(target) || DEMO_EMAIL.test(target)) return { sent: false, reason: 'not_a_real_inbox' };
+  // Header values: callers build subjects from stored names — never let a newline reach the mail headers.
+  subject = String(subject || '').replace(/[\r\n]+/g, ' ').slice(0, 250);
   if (!configured().email) {
     if (process.env.NODE_ENV !== 'production') console.log(`[mail] (no SMTP_HOST — not sent) to ${maskEmail(target)}: ${subject}`);
     return { sent: false, reason: 'no_smtp' };

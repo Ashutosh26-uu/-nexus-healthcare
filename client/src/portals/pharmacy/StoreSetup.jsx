@@ -28,7 +28,7 @@ function PhotoBox({ label, hint, fileId, onUploaded, accept = 'image/*', icon })
         <span className="ph-photo-text"><strong>{fileId ? 'Uploaded — tap to replace' : busy ? 'Uploading…' : 'Tap to upload'}</strong><span className="tiny muted">{hint}</span></span>
         {fileId && <CheckCircle2 className="ph-photo-ok" />}
       </button>
-      <input ref={input} type="file" accept={accept} hidden onChange={(e) => pick(e.target.files?.[0])} />
+      <input ref={input} type="file" accept={accept} hidden onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ''; }} />
       {error && <div className="form-error small mt-1">{error}</div>}
     </div>
   );

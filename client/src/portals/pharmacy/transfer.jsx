@@ -46,8 +46,9 @@ export function SourceActions({ t, inv, reload, who = 'you' }) {
       <div className="row wrap" style={{ gap: 8, justifyContent: 'flex-end' }}>
         {t.status === 'requested' && (
           <>
-            <Button size="sm" variant="ghost" icon={X} loading={busy === 'decline'} onClick={() => act('decline', 'Declined — the supply engine will look for another source')}>Decline</Button>
-            <Button size="sm" icon={Check} loading={busy === 'accept'} onClick={() => act('accept', 'Accepted. Pack it, then mark dispatched.')}>Accept</Button>
+            {/* One answer per request: either button in flight disables both. */}
+            <Button size="sm" variant="ghost" icon={X} loading={busy === 'decline'} disabled={!!busy} onClick={() => act('decline', 'Declined — the supply engine will look for another source')}>Decline</Button>
+            <Button size="sm" icon={Check} loading={busy === 'accept'} disabled={!!busy} onClick={() => act('accept', 'Accepted. Pack it, then mark dispatched.')}>Accept</Button>
           </>
         )}
         {t.status === 'accepted' && (

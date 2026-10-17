@@ -35,7 +35,9 @@ export default function CommandApp() {
     const mine = (c) => c.from.includes(raw.scope.district) || c.to.includes(raw.scope.district);
     return { ...raw, corridors: (raw.corridors || []).filter(mine) };
   }, [raw]);
-  const gov = { ...live, data: scoped };
+  // Stable context value: every Command Center screen reads it, so it only changes when the data does.
+  const { loading: liveLoading, error: liveError, reload: liveReload, setData: liveSetData } = live;
+  const gov = useMemo(() => ({ loading: liveLoading, error: liveError, reload: liveReload, setData: liveSetData, data: scoped }), [liveLoading, liveError, liveReload, liveSetData, scoped]);
   const { data, loading, error, reload } = gov;
   const openAlerts = (data?.alerts || []).filter(isOpen).length;
 

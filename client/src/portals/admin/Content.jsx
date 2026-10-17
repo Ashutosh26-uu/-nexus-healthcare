@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useCallback, useDeferredValue, useMemo, useState } from 'react';
 import { Plus, Check, Send, Megaphone, Languages, Search, Undo2 } from 'lucide-react';
 import { api } from '../../api';
 import { PageHeader } from '../../components/PortalLayout';
@@ -14,7 +14,7 @@ const LANGS = [
 ];
 const ADV_LANGS = ['Hindi', 'English', 'Awadhi', 'Bhojpuri', 'Bengali', 'Tamil', 'Telugu', 'Marathi', 'Kannada'];
 
-function Cell({ row, lang, onSave }) {
+const Cell = memo(function Cell({ row, lang, onSave }) {
   const [val, setVal] = useState(row[lang] || '');
   const [state, setState] = useState('');
   const dirty = val !== (row[lang] || '');
@@ -41,18 +41,19 @@ function Cell({ row, lang, onSave }) {
       {state === 'saving' && <span className="spinner sm ad-cell-ok" />}
     </div>
   );
-}
+});
 
 function Translations({ rows, reload }) {
   const [q, setQ] = useState('');
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ key: '', en: '', hi: '', ta: '', bn: '' });
   const [run, busy] = useAction();
-  const save = async (key, lang, value) => {
+  // Stable identity so the memoised cells don't all re-render on every keystroke in the search box.
+  const save = useCallback(async (key, lang, value) => {
     const r = await run(`${key}-${lang}`, () => api.put(`/admin/translations/${encodeURIComponent(key)}`, { [lang]: value }), 'Translation saved');
     if (r) reload();
     return Boolean(r);
-  };
+  }, [run, reload]);
   const add = async (e) => {
     e.preventDefault();
     const key = form.key.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
@@ -60,8 +61,13 @@ function Translations({ rows, reload }) {
     const r = await run('add', () => api.put(`/admin/translations/${key}`, langs), `Added “${key}”`);
     if (r) { setAdding(false); setForm({ key: '', en: '', hi: '', ta: '', bn: '' }); reload(); }
   };
-  const shown = rows.filter((r) => !q || JSON.stringify(r).toLowerCase().includes(q.toLowerCase()));
-  const missing = rows.reduce((s, r) => s + LANGS.filter((l) => !r[l.key]).length, 0);
+  // Typing in the search stays smooth on a big catalog: filter on a deferred copy, only when rows/search change.
+  const dq = useDeferredValue(q);
+  const shown = useMemo(() => {
+    const needle = dq.trim().toLowerCase();
+    return needle ? rows.filter((r) => JSON.stringify(r).toLowerCase().includes(needle)) : rows;
+  }, [rows, dq]);
+  const missing = useMemo(() => rows.reduce((s, r) => s + LANGS.filter((l) => !r[l.key]).length, 0), [rows]);
 
   return (
     <Card>

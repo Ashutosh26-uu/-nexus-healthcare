@@ -4,7 +4,7 @@ import { Megaphone, ArrowRight } from 'lucide-react';
 export default function Advisory({ advisories, linkToAlerts = true }) {
   if (!advisories?.length) return null;
   // One banner per disease: keep the strongest signal (several pin codes can raise alerts at once).
-  const mult = (a) => parseFloat(a.message.match(/([\d.]+)×/)?.[1] || 0) + (a.status === 'confirmed' ? 100 : 0);
+  const mult = (a) => parseFloat(String(a.message || '').match(/([\d.]+)×/)?.[1] || 0) + (a.status === 'confirmed' ? 100 : 0);
   const byDisease = Object.values(advisories.reduce((acc, a) => {
     if (!acc[a.disease] || mult(a) > mult(acc[a.disease])) acc[a.disease] = a;
     return acc;

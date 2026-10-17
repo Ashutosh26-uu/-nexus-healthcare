@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ShieldCheck, Smartphone, CreditCard, CheckCircle2, Info } from 'lucide-react';
 import { api } from '../../api';
-import { Button, fmtMoney } from '../../components/ui';
+import { Button, fmtMoney, safeUrl } from '../../components/ui';
 import QR from '../../components/QR';
 import { useAuth } from '../../auth';
 
@@ -74,7 +74,7 @@ export default function PaymentStep({ payment, onPaid, onError, breakdown }) {
           <div className="stack" style={{ gap: 6 }}>
             <strong className="small">{payment.upi ? 'Scan with any UPI app' : 'Pay by UPI'}</strong>
             <span className="tiny muted">Google Pay · PhonePe · Paytm · BHIM</span>
-            {payment.upi && isMobile() && <a className="btn sm secondary" href={payment.upi}><Smartphone size={15} /> Open my UPI app</a>}
+            {safeUrl(payment.upi, ['upi:']) && isMobile() && <a className="btn sm secondary" href={safeUrl(payment.upi, ['upi:'])}><Smartphone size={15} /> Open my UPI app</a>}
             {payment.demo && (
               <div className="pt-pay-demo tiny"><Info size={13} /> <span><strong>Demo payments</strong> — online payments aren&apos;t connected yet, so no money moves. {payment.demoConfirmAllowed ? 'Tap below to continue.' : 'Please contact support to complete this booking.'}</span></div>
             )}

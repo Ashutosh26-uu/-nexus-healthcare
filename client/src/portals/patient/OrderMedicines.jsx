@@ -74,7 +74,8 @@ export default function OrderMedicines() {
   const [confirmSub, setConfirmSub] = useState(null); // drug whose switch is waiting for the patient's yes
   const refill = params.get('refill') === '1';
 
-  useEffect(() => { if (!rxId && prescriptions.length && source === 'rx') setRxId(prescriptions[0].id); }, [prescriptions, rxId, source]);
+  // No id, or a link/refill id that isn't on this profile (old link, another family member): fall back to the latest.
+  useEffect(() => { if (source === 'rx' && prescriptions.length && !prescriptions.some((r) => r.id === rxId)) setRxId(prescriptions[0].id); }, [prescriptions, rxId, source]);
   useEffect(() => { if (!prescriptions.length && !homeLoading) setSource('other'); }, [prescriptions.length, homeLoading]);
   useEffect(() => { if (patient) setAddress((patient.address ? `${patient.address}, ` : '') + [patient.district, patient.state, patient.pincode].filter(Boolean).join(', ')); }, [patient?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const rx = prescriptions.find((r) => r.id === rxId);

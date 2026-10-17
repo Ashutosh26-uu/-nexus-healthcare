@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { Search, PackagePlus, Boxes, ShieldAlert, Snowflake, IndianRupee } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Button, Stat, Pills, fmtNum } from '../../components/ui';
@@ -10,10 +10,15 @@ export default function Stock({ home, reload }) {
   const [adding, setAdding] = useState(false);
   const inv = home.inventory;
   const watch = inv.filter((i) => stockLevel(i).key !== 'ok');
-  const items = inv
-    .filter((i) => (filter === 'watch' ? stockLevel(i).key !== 'ok' : filter === 'cold' ? isColdChain(i.drug) : true))
-    .filter((i) => !q || `${i.drug} ${i.batch}`.toLowerCase().includes(q.toLowerCase()))
-    .sort((a, b) => a.drug.localeCompare(b.drug));
+  // Deferred search + memoised list so the (memoised) stock table doesn't re-render on every keystroke.
+  const dq = useDeferredValue(q);
+  const items = useMemo(() => {
+    const needle = dq.trim().toLowerCase();
+    return inv
+      .filter((i) => (filter === 'watch' ? stockLevel(i).key !== 'ok' : filter === 'cold' ? isColdChain(i.drug) : true))
+      .filter((i) => !needle || `${i.drug} ${i.batch}`.toLowerCase().includes(needle))
+      .sort((a, b) => a.drug.localeCompare(b.drug));
+  }, [inv, filter, dq]);
   const units = inv.reduce((s, i) => s + i.qty, 0);
 
   return (

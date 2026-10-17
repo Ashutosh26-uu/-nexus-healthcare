@@ -27,6 +27,14 @@ export const fmtNum = (n) => Number(n || 0).toLocaleString(safeLocale());
 export const initials = (name) => String(name || '').replace(/^(Dr\.|Mr\.|Mrs\.|Ms\.)\s*/i, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 export const cx = (...a) => a.filter(Boolean).join(' ');
 
+// Links built from server/user data: only the listed schemes (or a same-origin path) — never javascript:/data:.
+export function safeUrl(url, schemes = ['http:', 'https:']) {
+  const s = String(url || '').trim();
+  if (!s) return null;
+  if (/^\/(?!\/)/.test(s)) return s; // same-origin path, not protocol-relative
+  try { return schemes.includes(new URL(s).protocol) ? s : null; } catch { return null; }
+}
+
 const AVATAR_COLORS = ['#0f5c4d', '#d9734e', '#3d7fb8', '#7a4f9a', '#b8862b', '#2a8a6e', '#c8463d', '#4b6b8a'];
 export function Avatar({ name = '', size, className }) {
   const n = [...name].reduce((s, c) => s + c.charCodeAt(0), 0);

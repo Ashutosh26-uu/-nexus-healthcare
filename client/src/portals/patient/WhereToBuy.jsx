@@ -11,11 +11,13 @@ export default function WhereToBuy({ rx, selectable, value, onChange, onLoaded }
   const [error, setError] = useState('');
   const [open, setOpen] = useState(null);
 
+  const lat = device.loc?.lat;
+  const lng = device.loc?.lng;
   useEffect(() => {
     if (!rx) return undefined;
     let alive = true;
     setError('');
-    const qs = device.loc ? `?lat=${device.loc.lat}&lng=${device.loc.lng}` : '';
+    const qs = lat != null && lng != null ? `?lat=${lat}&lng=${lng}` : '';
     api.get(`/prescriptions/${rx.id}/pharmacies${qs}`).then((r) => {
       if (!alive) return;
       setData(r); onLoaded?.(r);
@@ -23,7 +25,7 @@ export default function WhereToBuy({ rx, selectable, value, onChange, onLoaded }
     }).catch((e) => alive && setError(e.message));
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rx?.id, device.loc]);
+  }, [rx?.id, lat, lng]);
 
   if (error) return <div className="form-error">{error}</div>;
   if (!data) return <div className="stack">{[0, 1].map((i) => <div key={i} className="skeleton" style={{ height: 64, borderRadius: 12 }} />)}</div>;

@@ -26,7 +26,7 @@ export default function Connectors({ orders }) {
   // What the outbreak engine actually receives: one line per result, nothing personal.
   const feed = orders
     .filter((o) => o.status === 'reported')
-    .flatMap((o) => o.results.filter((r) => NOTIFIABLE.test(r.name)).map((r) => ({ test: r.name, code: o.tests.find((t) => NOTIFIABLE.test(t.name) && t.name.split(' ')[0].toLowerCase() === r.name.split(' ')[0].toLowerCase())?.code || '—', result: r.value, flag: r.flag, pin: o.pincode, date: o.reportedAt })))
+    .flatMap((o) => (o.results || []).filter((r) => NOTIFIABLE.test(r.name)).map((r) => ({ test: r.name, code: o.tests.find((t) => NOTIFIABLE.test(t.name) && t.name.split(' ')[0].toLowerCase() === r.name.split(' ')[0].toLowerCase())?.code || '—', result: r.value, flag: r.flag, pin: o.pincode, date: o.reportedAt })))
     .sort((a, b) => new Date(b.date) - new Date(a.date))
     .slice(0, 8);
 

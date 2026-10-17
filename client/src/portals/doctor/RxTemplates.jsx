@@ -27,7 +27,8 @@ export default function RxTemplateTools({ form, onApply, onAddItems }) {
   useEffect(() => { load(); }, [load]);
 
   const use = (t) => {
-    if (form.items.length && !confirm) { setConfirm(t); return; }
+    // Confirmation is per template: a pending question about one must not wave another through.
+    if (form.items.length && confirm !== t) { setConfirm(t); return; }
     onApply(t);
     setConfirm(null); setOpen(false);
     toast(`“${t.name}” added — review doses before signing`);

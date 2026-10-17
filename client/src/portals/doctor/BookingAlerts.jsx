@@ -42,9 +42,9 @@ export function NewBookingPopup({ home }) {
             <strong className="dr-nb-name" translate="no">{c.patientName}</strong>
             <div className="small muted">{c.patientAge ?? '—'} y · {c.patientGender}{c.patient?.bloodGroup ? ` · ${c.patient.bloodGroup}` : ''}{c.bookingNo ? ` · ${c.bookingNo}` : ''}</div>
           </div>
-          <TriageBadge level={c.triage.level} />
+          <TriageBadge level={c.triage?.level} />
         </div>
-        <div className="dr-nb-sym"><span className="tiny muted">Symptoms{c.triage.symptomDays != null ? ` · for ${c.triage.symptomDays === 0 ? 'less than a day' : `${c.triage.symptomDays} day${c.triage.symptomDays > 1 ? 's' : ''}`}` : ''}</span><p className="mb-0">“{c.triage.symptoms}”</p></div>
+        <div className="dr-nb-sym"><span className="tiny muted">Symptoms{c.triage?.symptomDays != null ? ` · for ${c.triage.symptomDays === 0 ? 'less than a day' : `${c.triage.symptomDays} day${c.triage.symptomDays > 1 ? 's' : ''}`}` : ''}</span><p className="mb-0">“{c.triage?.symptoms || '—'}”</p></div>
         {(c.patient?.allergies?.length > 0 || c.patient?.currentMeds?.length > 0 || c.patient?.conditions?.length > 0) && (
           <div className="dr-nb-flags small">
             {c.patient.allergies?.length > 0 && <span className="badge rose">Allergic: {c.patient.allergies.join(', ')}</span>}
@@ -96,8 +96,14 @@ export function CheckInModal({ open, onClose, onCheckedIn }) {
   const streamRef = useRef(null);
   const canScan = typeof window !== 'undefined' && 'BarcodeDetector' in window && navigator.mediaDevices?.getUserMedia;
 
-  const stop = () => { streamRef.current?.getTracks().forEach((t) => t.stop()); streamRef.current = null; setScanning(false); };
-  useEffect(() => { if (!open) { stop(); setCode(''); setError(''); setDone(null); } return stop; }, [open]);
+  const openRef = useRef(open); // read after awaits: the modal may have closed (or unmounted) meanwhile
+  const timerRef = useRef(null);
+  const stop = () => { clearTimeout(timerRef.current); streamRef.current?.getTracks().forEach((t) => t.stop()); streamRef.current = null; setScanning(false); };
+  useEffect(() => {
+    openRef.current = open;
+    if (!open) { stop(); setCode(''); setError(''); setDone(null); }
+    return () => { openRef.current = false; stop(); };
+  }, [open]);
 
   const submit = (body) => run('checkin', async () => {
     setError('');
@@ -111,18 +117,22 @@ export function CheckInModal({ open, onClose, onCheckedIn }) {
     setError('');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      // Closed while the permission prompt was up: release the camera instead of leaving it on in the background.
+      if (!openRef.current) { stream.getTracks().forEach((t) => t.stop()); return; }
+      stop();
       streamRef.current = stream; setScanning(true);
       await new Promise((r) => setTimeout(r, 50));
-      if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
+      if (videoRef.current && streamRef.current === stream) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
       const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+      // ~4 reads a second is plenty for a QR held up to the camera; every animation frame just burns battery.
       const tick = async () => {
-        if (!streamRef.current || !videoRef.current) return;
+        if (streamRef.current !== stream || !videoRef.current) return;
         try {
           const found = await detector.detect(videoRef.current);
           const hit = found.find((f) => /^NEXUS-VISIT:/.test(f.rawValue));
           if (hit) { submit({ payload: hit.rawValue }); return; }
         } catch { /* keep trying */ }
-        requestAnimationFrame(tick);
+        if (streamRef.current === stream) timerRef.current = setTimeout(tick, 250);
       };
       tick();
     } catch { setError('Camera not available — type the 6-digit code instead.'); stop(); }

@@ -11,7 +11,7 @@ export default function Reports({ orders }) {
   const [open, setOpen] = useState(null);
   const reported = orders
     .filter((o) => o.status === 'reported')
-    .filter((o) => (filter === 'critical' ? o.critical : filter === 'abnormal' ? o.results.some((r) => r.flag !== 'normal' && r.flag !== 'negative') : true))
+    .filter((o) => (filter === 'critical' ? o.critical : filter === 'abnormal' ? (o.results || []).some((r) => r.flag !== 'normal' && r.flag !== 'negative') : true))
     .sort((a, b) => new Date(b.reportedAt) - new Date(a.reportedAt));
 
   return (
@@ -43,7 +43,7 @@ export default function Reports({ orders }) {
                     <table className="table">
                       <thead><tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Reference</th><th>Flag</th></tr></thead>
                       <tbody>
-                        {o.results.map((r, i) => (
+                        {(o.results || []).map((r, i) => (
                           <tr key={i}>
                             <td>{r.name}</td>
                             <td translate="no" dir="ltr"><strong>{r.value}</strong></td>

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Stethoscope, Pill, FlaskConical, Upload, Syringe, FolderHeart, ChevronRight, ScanLine, AlertTriangle, Check, FileText, ExternalLink } from 'lucide-react';
 import { api } from '../../api';
-import { Button, Card, Empty, Field, Modal, StatusBadge, cx, fmtDate, fmtDateTime, useAction, useToast } from '../../components/ui';
+import { Button, Card, Empty, Field, Modal, StatusBadge, cx, fmtDate, fmtDateTime, safeUrl, useAction, useToast } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, usePatientLive, firstName, localISO, Skeleton } from './shared';
 import { getLocale } from '../../i18n';
@@ -204,8 +204,13 @@ function FileLink({ fileId, fileUrl }) {
   // The server always sends fileId with its own /api/files URLs; anything else is a plain link.
   const id = fileId || (fileUrl.startsWith(FILES_PATH) ? decodeURIComponent(fileUrl.slice(FILES_PATH.length)) : null);
   const open = async () => {
-    if (!id) { window.open(fileUrl, '_blank', 'noopener'); return; }
+    if (!id) {
+      const href = safeUrl(fileUrl); // a stored link could be javascript:/data: — open only http(s) or our own paths
+      if (href) window.open(href, '_blank', 'noopener,noreferrer'); else toast('This file link isn\'t valid.', 'error');
+      return;
+    }
     const win = window.open('', '_blank');
+    if (win) win.opener = null; // the blank tab is later pointed at the blob; it needn't reach back into this page
     setBusy(true);
     try {
       const objectUrl = await api.fileObjectUrl(id);

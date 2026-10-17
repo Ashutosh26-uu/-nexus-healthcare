@@ -6,7 +6,7 @@ import { Avatar, Button, Field, Modal, fmtDateTime, fmtMoney, cx } from '../../c
 import { AvailBadge } from '../../components/Availability';
 import VoiceInput from '../../components/VoiceInput';
 import { usePatient } from './shared';
-import { SlotPicker } from './Consult';
+import { SlotPicker } from './VisitChange';
 import PaymentStep from './Payment';
 import VisitPass from './VisitPass';
 import QR from '../../components/QR';

@@ -1,5 +1,5 @@
 // Shared stock helpers for the Pharmacy and Supply (distributor) portals.
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { ScanBarcode, PackagePlus } from 'lucide-react';
 import { Button, Field, Modal, Progress, Empty, useAction, useToast, fmtNum, fmtDate, cx } from '../../components/ui';
 import { api } from '../../api';
@@ -68,7 +68,9 @@ function QtyInput({ item, field = 'qty', onSaved, label }) {
  * Inventory table with inline quantity editing.
  * showSafety: render the safety-stock column as an editable field + coverage bar (distributor view).
  */
-export function StockTable({ items, onSaved, showSafety, unit = 'units', emptyText, actions }) {
+// Memoised: a search box above it re-renders the page on every keystroke, but the table (one row and
+// two inputs per batch) only re-renders when its items actually change.
+export const StockTable = memo(function StockTable({ items, onSaved, showSafety, unit = 'units', emptyText, actions }) {
   if (!items.length) return <div className="card"><Empty icon={PackagePlus} title="Nothing matches">{emptyText || 'Try a different search or filter.'}</Empty></div>;
   return (
     <div className="table-wrap">
@@ -110,7 +112,7 @@ export function StockTable({ items, onSaved, showSafety, unit = 'units', emptyTe
       <div className="stock-foot tiny muted">Click a number to correct it — press Enter to save. Quantities are in {unit}.</div>
     </div>
   );
-}
+});
 
 export function AddStockModal({ open, onClose, onAdded, defaultSafety = 20, title = 'Add stock' }) {
   const [run, busy] = useAction();

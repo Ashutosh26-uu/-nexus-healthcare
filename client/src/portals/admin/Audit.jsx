@@ -33,7 +33,11 @@ const label = (a) => ACTIONS.find(([k]) => k === a)?.[1] || a.replace(/_/g, ' ')
 
 function exportCsv(rows) {
   const cols = ['at', 'actorName', 'role', 'action', 'patientId', 'recordType', 'reason', 'reviewed', 'reviewedBy', 'reviewNote'];
-  const esc = (v) => { const s = v === undefined || v === null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const esc = (v) => {
+    let s = v === undefined || v === null ? '' : String(v);
+    if (typeof v !== 'number' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`; // no formula injection in Excel/Sheets
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
   const csv = [cols.join(','), ...rows.map((r) => cols.map((c) => esc(r[c])).join(','))].join('\n');
   const url = URL.createObjectURL(new Blob([String.fromCharCode(0xfeff) + csv], { type: 'text/csv;charset=utf-8' }));
   const a = document.createElement('a');

@@ -6,8 +6,8 @@ import { useCall } from '../../components/useCall';
 import CallMedia from '../../components/CallMedia';
 import { useLive } from '../../live';
 import { useAuth } from '../../auth';
-import { Avatar, Button, Card, Empty, Loading, Tabs, TriageBadge, TRIAGE, StatusBadge, Sparkline, timeAgo, fmtTime, fmtDateTime, useAction, cx } from '../../components/ui';
-import { VitalsChips, VITAL_META, useLiveVitals, useNow, routeInfo } from './shared';
+import { Avatar, Button, Card, Empty, Loading, Tabs, TriageBadge, TRIAGE, StatusBadge, timeAgo, fmtTime, fmtDateTime, useAction, cx } from '../../components/ui';
+import { VitalsChips, VITAL_META, useNow, routeInfo } from './shared';
 import { useRecord, AccessGate, EmergencyBanner, CriticalCard, HistoryPanel, VisitsPanel, LabsPanel, AllergyList } from './Record';
 import RxComposer from './RxComposer';
 import PatientSummary from './PatientSummary';
@@ -43,7 +43,7 @@ function VideoStage({ consult, doctorName, live, onStart, starting }) {
         <span className="dr-live-pill">{live && !ended ? <><span className="dr-rec" />LIVE · <CallTimer since={consult.startedAt} /></> : ended ? 'Call ended' : 'Not started'}</span>
         {inCall
           ? <span className="dr-net" role="status"><Signal size={14} />{connected ? 'Connected' : state === 'reconnecting' ? 'Reconnecting…' : state === 'failed' ? 'Not connected' : state === 'ended' ? 'Patient left' : state === 'connecting' ? 'Connecting…' : 'Waiting'}</span>
-          : <span className="dr-net"><Signal size={14} />{consult.kioskName ? 'HD · 2.1 Mbps' : 'Good connection'}</span>}
+          : <span className="dr-net"><Signal size={14} />{live ? 'Call off' : 'Call not started'}</span>}
       </div>
       {!(remoteVideo && connected) && (
         <div className={cx('dr-stage-center', remoteVideo && 'over-video')}>
@@ -147,22 +147,21 @@ function ChatPanel({ consult, onSent }) {
   );
 }
 
-function LiveVitals({ consult, active }) {
-  const { vitals, history } = useLiveVitals(consult.vitals, active);
-  if (!consult.vitals) return <Empty icon={Activity} title="No device readings">This patient joined without kiosk vitals. Ask them about fever, breathing and pain.</Empty>;
+// Exactly what the device recorded — never a simulated "live" drift around it (that invented readings).
+function LiveVitals({ consult }) {
+  const vitals = consult.vitals;
+  if (!vitals) return <Empty icon={Activity} title="No device readings">This patient joined without kiosk vitals. Ask them about fever, breathing and pain.</Empty>;
   return (
     <div className="stack">
       <div className="row between">
-        <span className="tiny muted row" style={{ gap: 6 }}>{active ? <><span className="dot green pulse" />Streaming from {consult.kioskName || 'device'}</> : 'Captured at check-in'}</span>
+        <span className="tiny muted row" style={{ gap: 6 }}>Captured{consult.kioskName ? ` at ${consult.kioskName}` : ' at check-in'}</span>
         <span className="tiny muted">{timeAgo(consult.createdAt)}</span>
       </div>
       <div className="dr-vgrid">
-        {VITAL_META.filter((m) => vitals[m.key] !== undefined && vitals[m.key] !== null).map((m) => (
+        {VITAL_META.filter((m) => vitals[m.key] !== undefined && vitals[m.key] !== null && vitals[m.key] !== '').map((m) => (
           <div key={m.key} className={cx('dr-vtile', m.flag(vitals[m.key]))}>
             <span className="dr-vtile-l"><m.icon size={14} />{m.label}</span>
             <span className="dr-vtile-v">{vitals[m.key]}<small>{m.unit}</small></span>
-            {m.key === 'pulse' && history.pulse.length > 2 && <Sparkline data={history.pulse} height={26} color="var(--clay)" fill={false} />}
-            {m.key === 'spo2' && history.spo2.length > 2 && <Sparkline data={history.spo2} height={26} color="var(--sky)" fill={false} />}
           </div>
         ))}
       </div>
@@ -171,7 +170,7 @@ function LiveVitals({ consult, active }) {
 }
 
 function TriagePanel({ consult, override, setOverride }) {
-  const t = consult.triage;
+  const t = consult.triage || {};
   return (
     <div className="stack">
       <div className="dr-triage-head">
@@ -225,7 +224,7 @@ export default function Consult() {
   const record = rec.data;
   const tabs = [
     { value: 'triage', label: 'AI triage', icon: Sparkles },
-    { value: 'vitals', label: 'Live vitals', icon: Activity },
+    { value: 'vitals', label: 'Vitals', icon: Activity },
     { value: 'history', label: 'History', icon: ClipboardList },
     { value: 'visits', label: 'Past visits', icon: History, count: record?.visits ? Math.max(0, record.visits.filter((v) => v.id !== id).length) : undefined },
     { value: 'labs', label: 'Labs', icon: FlaskConical, count: record?.labs?.length },
@@ -247,7 +246,7 @@ export default function Consult() {
           <div>
             <div className="row wrap" style={{ gap: 8 }}>
               <h2 className="mb-0" style={{ fontSize: '1.6rem' }} translate="no">{consult.patientName}</h2>
-              <TriageBadge level={override || consult.triage.level} />
+              <TriageBadge level={override || consult.triage?.level} />
               <StatusBadge status={consult.status} />
             </div>
             <div className="small muted">
@@ -280,7 +279,7 @@ export default function Consult() {
           <Tabs tabs={tabs} value={tab} onChange={setTab} />
           <div className="dr-summary-body">
             {tab === 'triage' && <TriagePanel consult={consult} override={override} setOverride={setOverride} />}
-            {tab === 'vitals' && <LiveVitals consult={consult} active={live} />}
+            {tab === 'vitals' && <LiveVitals consult={consult} />}
             {tab === 'history' && gated((d) => <HistoryPanel data={d} />)}
             {tab === 'visits' && gated((d) => <VisitsPanel visits={d.visits} excludeId={id} />)}
             {tab === 'labs' && gated((d) => <LabsPanel labs={d.labs} />)}

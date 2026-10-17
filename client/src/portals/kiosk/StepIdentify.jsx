@@ -221,7 +221,7 @@ export default function StepIdentify() {
             </div>
             <div className="k-qr-side">
               <label className="k-field"><span>{t('qr_type')}</span>
-                <input className="k-input big mono" dir="ltr" value={qr} onChange={(e) => setQr(e.target.value.toUpperCase())} placeholder="OC-2041-5521" onKeyDown={(e) => e.key === 'Enter' && identify(qr.trim())} />
+                <input className="k-input big mono" dir="ltr" value={qr} onChange={(e) => setQr(e.target.value.toUpperCase())} placeholder="OC-2041-5521" onKeyDown={(e) => e.key === 'Enter' && !busy && identify(qr.trim())} />
               </label>
               <KButton icon={Search} loading={busy} disabled={!qr.trim()} onClick={() => identify(qr.trim())}>{t('find')}</KButton>
               <div className="k-demo">

@@ -155,6 +155,9 @@ function mark(t, fresh, depth = 0) {
 // Shared handler for record, nested-object and document proxies.
 const handler = {
   set(t, k, v) {
+    // `Object.assign(record, parsedJson)` with an own "__proto__" key would swap the stored record's prototype
+    // (inherited role/verified flags…). Stored records stay plain: the key is dropped.
+    if (k === '__proto__') return true;
     const old = t[k];
     if (old === v && (v === null || typeof v !== 'object') && k in t) return true; // no-op write
     wrappedFresh = false;

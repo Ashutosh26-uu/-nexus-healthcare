@@ -118,7 +118,7 @@ function RxCard({ rx, onOrder, past }) {
       <div className="row between wrap mt-2 pt-rx-foot">
         <span className="tiny muted pt-sig"><PenLine size={13} className="inline-ic" /> Digitally signed · {rx.signature}</span>
         <div className="row wrap" style={{ gap: 8 }}>
-          {rx.paperFileId && <Button variant="ghost" size="sm" icon={FileText} onClick={() => { const w = window.open('', '_blank'); api.fileObjectUrl(rx.paperFileId).then((u) => { if (w) w.location.href = u; setTimeout(() => URL.revokeObjectURL(u), 60000); }).catch(() => w?.close()); }}>Original</Button>}
+          {rx.paperFileId && <Button variant="ghost" size="sm" icon={FileText} onClick={() => { const w = window.open('', '_blank'); if (w) w.opener = null; api.fileObjectUrl(rx.paperFileId).then((u) => { if (w) w.location.href = u; setTimeout(() => URL.revokeObjectURL(u), 60000); }).catch(() => w?.close()); }}>Original</Button>}
           <Button variant="ghost" size="sm" icon={Download} onClick={() => window.open(`/rx/${rx.id}`, '_blank', 'noopener')}>Download</Button>
           <Button variant="secondary" size="sm" icon={BadgeIndianRupee} onClick={() => setShowShops((v) => !v)}>{showShops ? 'Hide stores' : 'Where to buy & price'}</Button>
           {!past && <Button variant="clay" icon={Pill} onClick={onOrder}>Order these medicines</Button>}

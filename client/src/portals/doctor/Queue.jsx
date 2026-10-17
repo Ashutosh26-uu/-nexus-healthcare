@@ -78,7 +78,7 @@ export default function Queue() {
             const r = routeInfo(c);
             const live = c.status === 'in_progress';
             return (
-              <article key={c.id} className={cx('card dr-qcard fade-in', live && 'live', `lvl-${c.triage.level}`)} style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}>
+              <article key={c.id} className={cx('card dr-qcard fade-in', live && 'live', `lvl-${c.triage?.level}`)} style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}>
                 <div className="dr-qcard-strip" />
                 <div className="dr-qcard-body">
                   <div className="row top between wrap">
@@ -100,13 +100,13 @@ export default function Queue() {
                     <div className="row wrap" style={{ gap: 6 }}>
                       {c.token && <span className="badge sun" title={c.walkIn ? 'Walk-in token from reception' : 'Token given at check-in'}>Token {c.token}</span>}
                       {live && <StatusBadge status="in_progress">In consult</StatusBadge>}
-                      <TriageBadge level={c.triage.level} />
+                      <TriageBadge level={c.triage?.level} />
                     </div>
                   </div>
 
-                  <p className="dr-qsym">"{c.triage.symptoms}"{sinceLabel(c) && <span className="tiny muted" style={{ fontStyle: 'normal' }}> · {sinceLabel(c)}</span>}</p>
+                  <p className="dr-qsym">"{c.triage?.symptoms}"{sinceLabel(c) && <span className="tiny muted" style={{ fontStyle: 'normal' }}> · {sinceLabel(c)}</span>}</p>
                   {c.runningLate && <p className="tiny muted mb-1"><Hourglass size={12} style={{ verticalAlign: '-2px' }} /> Patient told you&apos;re ~{c.runningLate.minutes} min late</p>}
-                  {c.triage.note && <p className="small muted mb-1">{c.triage.note}</p>}
+                  {c.triage?.note && <p className="small muted mb-1">{c.triage.note}</p>}
 
                   <VitalsChips vitals={c.vitals} compact />
 

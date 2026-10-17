@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Search, UserPlus, Ban, RotateCcw, Globe2, Lock } from 'lucide-react';
 import { api } from '../../api';
 import { PageHeader } from '../../components/PortalLayout';
@@ -16,6 +16,8 @@ function CreateUserModal({ open, onClose, facilities, onCreated }) {
   const [form, setForm] = useState(blank);
   const [err, setErr] = useState('');
   const [run, busy] = useAction();
+  // A cancelled form (with its temporary password) must not reappear the next time the modal opens.
+  useEffect(() => { if (open) { setForm(blank); setErr(''); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const facType = FACILITY_ROLE[form.role];
   const facOptions = facType ? facilities.filter((f) => f.type === facType) : [];

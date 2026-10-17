@@ -5,16 +5,11 @@ import { PageHeader } from '../../components/PortalLayout';
 import { Button, Card, Stat, Loading, BarChart, TriageBadge, Empty, Avatar, fmtMoney, fmtNum, fmtDateTime } from '../../components/ui';
 import { useDoctorHome } from './context';
 import { getLocale } from '../../i18n';
-import { usePublicConfig } from '../../config';
 
-// Demo network only: typical recent volume so the chart isn't empty. A live network shows real counts only.
-const DEMO_WEEK = [11, 14, 9, 16, 13, 7];
-
+// Real numbers only, in every mode — nothing is padded so the chart "looks busy".
 export default function Earnings() {
   const home = useDoctorHome();
   const data = home.data;
-  const config = usePublicConfig();
-  const demo = !!config?.demo;
   // Local calendar month (not UTC), so the picker never defaults to next/last month around midnight.
   const thisMonth = useMemo(() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`; }, []);
   const [month, setMonth] = useState(thisMonth);
@@ -24,16 +19,14 @@ export default function Earnings() {
   const week = useMemo(() => {
     if (!data) return { values: [], labels: [], earned: 0 };
     const days = data.week || [];
-    const extra = (i) => (demo && i < days.length - 1 ? DEMO_WEEK[i] || 0 : 0);
     return {
-      values: days.map((d, i) => d.consults + extra(i)),
+      values: days.map((d) => d.consults || 0),
       labels: days.map((d, i) => (i === days.length - 1 ? 'Today' : new Date(`${d.date}T12:00:00`).toLocaleDateString(getLocale(), { weekday: 'short' }))),
-      earned: days.reduce((s, d, i) => s + d.earnings + extra(i) * (data.doctor?.fee || 0), 0),
+      earned: days.reduce((s, d) => s + (d.earnings || 0), 0),
     };
-  }, [data, demo]);
+  }, [data]);
 
-  // Wait for the config too, so totals and payout don't jump from real to demo numbers once it arrives.
-  if (!data || !config) return <Loading />;
+  if (!data) return <Loading />;
   const { doctor, completed } = data;
   const weekTotal = week.values.reduce((a, b) => a + b, 0);
   const weekEarn = week.earned;
@@ -58,7 +51,7 @@ export default function Earnings() {
         <Card className="green">
           <div className="row" style={{ gap: 10 }}><Landmark size={20} /><h3 className="mb-0">Next payout</h3></div>
           <div className="dr-payout">{fmtMoney(Math.round(weekEarn * 0.9))}</div>
-          <p className="small mb-1" style={{ opacity: 0.85 }}>On {nextMonday.toLocaleDateString(getLocale(), { weekday: 'long', day: 'numeric', month: 'short' })} to your bank account ending ••4421, after the 10% platform fee.</p>
+          <p className="small mb-1" style={{ opacity: 0.85 }}>On {nextMonday.toLocaleDateString(getLocale(), { weekday: 'long', day: 'numeric', month: 'short' })} to your registered payout account, after the 10% platform fee. Questions about your payout account? Contact the Nexus Healthcare team.</p>
           <p className="tiny mb-0" style={{ opacity: 0.7 }}>Amounts shown are before TDS (section 194J), which is deducted at payout where applicable.</p>
         </Card>
       </div>
@@ -83,7 +76,7 @@ export default function Earnings() {
                   <tr key={c.id}>
                     <td><div className="row" style={{ gap: 10 }}><Avatar name={c.patientName} size="sm" /><Link to={`/doctor/consult/${c.id}`} translate="no">{c.patientName}</Link></div></td>
                     <td className="small">{c.diagnosis || <span className="muted">—</span>}</td>
-                    <td><TriageBadge level={c.triage.level} /></td>
+                    <td><TriageBadge level={c.triage?.level} /></td>
                     <td className="small muted">{c.kioskName || 'App'}</td>
                     <td className="small muted nowrap">{fmtDateTime(c.completedAt)}</td>
                     <td className="right">{c.kioskName ? <span className="badge sky">Pilot</span> : fmtMoney(doctor.fee)}</td>

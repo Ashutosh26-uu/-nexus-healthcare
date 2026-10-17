@@ -22,7 +22,7 @@ function latestVitals(db, patientId) {
   // Pull HbA1c / LDL from lab reports if present.
   for (const o of db.labOrders.filter((x) => x.patientId === patientId && x.results?.length)) {
     for (const r of o.results) {
-      const name = r.name.toLowerCase();
+      const name = String(r?.name || '').toLowerCase(); // lab techs type results — a row without a name must not 500 the twin
       if (v.hba1c === undefined && name.includes('hba1c')) v.hba1c = parseFloat(r.value);
       if (v.ldl === undefined && name.includes('ldl')) v.ldl = parseFloat(r.value);
     }
@@ -122,7 +122,7 @@ function forecast(db, { scopeDistrict } = {}) {
       const sympt = db.consults.filter((c) => recent(c.createdAt, 14) && pinOfPatient.get(c.patientId) === pin && dis.symptomRe.test(`${c.triage?.symptoms || ''} ${c.triage?.note || ''}`)).length;
       // Signal 3: pharmacy sell-through — low stock of related drugs in this pin's pharmacies.
       const pharmas = db.facilities.filter((f) => f.type === 'pharmacy' && f.pincode === pin).map((f) => f.id);
-      const lowStock = db.inventory.filter((i) => pharmas.includes(i.facilityId) && dis.drugs.some((d) => i.drug.toLowerCase().includes(d.toLowerCase())) && i.qty <= (i.safetyStock || 0) * 1.5).length;
+      const lowStock = db.inventory.filter((i) => pharmas.includes(i.facilityId) && dis.drugs.some((d) => String(i.drug || '').toLowerCase().includes(d.toLowerCase())) && i.qty <= (i.safetyStock || 0) * 1.5).length;
       // Signal 4: existing confirmed/open outbreak alerts.
       const alertBoost = db.alerts.filter((a) => a.type === 'outbreak' && a.pincode === pin && dis.labRe.test(a.disease || '') && ['open', 'confirmed'].includes(a.status)).reduce((s, a) => s + (a.status === 'confirmed' ? 2 : 1) * (a.multiplier || 1), 0);
       // Seasonal/weather factor (synthetic: monsoon months push dengue/gastro).

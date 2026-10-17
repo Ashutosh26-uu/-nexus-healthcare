@@ -7,18 +7,19 @@ import { session } from '../../api';
 import { useLive } from '../../live';
 import { PatientContext, HOME_TOPICS, PageSkeleton, firstName, greeting, relationOf, usePatient } from './shared';
 import Home from './Home';
-import Triage from './Triage';
-import Consult from './Consult';
-import ConsultRoom from './ConsultRoom';
-import Records from './Records';
-import Medicines from './Medicines';
-import Settings from './Settings';
-import CompleteProfile from './CompleteProfile';
-import FollowUps from './FollowUps';
 import { useI18n, codeForName } from '../../i18n';
 import './patient.css';
 
-// Less-used pages load on demand to keep the patient bundle small.
+// Only Home is in the first load; every other page (and the doctor finder, booking, payment and call code they
+// pull in) is fetched on demand. Code is cached by the browser; data is still fetched live on every visit.
+const Triage = lazy(() => import('./Triage'));
+const Consult = lazy(() => import('./Consult'));
+const ConsultRoom = lazy(() => import('./ConsultRoom'));
+const Records = lazy(() => import('./Records'));
+const Medicines = lazy(() => import('./Medicines'));
+const Settings = lazy(() => import('./Settings'));
+const CompleteProfile = lazy(() => import('./CompleteProfile'));
+const FollowUps = lazy(() => import('./FollowUps'));
 const Twin = lazy(() => import('./Twin'));
 const Wallet = lazy(() => import('./Wallet'));
 const FamilyGraph = lazy(() => import('./FamilyGraph'));
