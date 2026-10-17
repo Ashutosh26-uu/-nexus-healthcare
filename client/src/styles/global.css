@@ -417,3 +417,19 @@ table { max-width: 100%; }
 }
 /* Popups sit above the floating chat button (z 90–95). */
 .modal-backdrop { z-index: 110; }
+
+/* Filter rows (chip-select) must not look like action buttons: flat tinted chips, a small count
+   bubble, and on phones one swipeable row. Actions stay solid/outlined .btn. */
+.chip-select .chip { background: var(--paper-2); border-color: transparent; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-weight: 600; }
+.chip-select .chip:hover:not(:disabled) { border-color: var(--line); background: #fff; }
+.chip-select .chip.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.chip-select .chip .pt-chip-count { margin: 0; min-width: 20px; padding: 1px 6px; border-radius: 99px; background: rgba(0, 0, 0, .07); font-size: .72rem; opacity: 1; text-align: center; }
+.chip-select .chip.on .pt-chip-count { background: rgba(255, 255, 255, .22); }
+@media (max-width: 760px) {
+  .page-header { flex-direction: column; align-items: stretch; gap: 12px; }
+  .page-header .page-actions { width: 100%; }
+  .page-header .page-actions > .btn { flex: 1 1 auto; justify-content: center; }
+  .chip-select { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding: 2px 16px 6px; scroll-padding-inline: 16px; }
+  .chip-select::-webkit-scrollbar { display: none; }
+  .chip-select .chip { flex: none; padding: 7px 12px; font-size: .84rem; }
+}

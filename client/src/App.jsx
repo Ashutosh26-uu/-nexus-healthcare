@@ -79,7 +79,7 @@ function RequireRole({ roles, children }) {
   // Still holding a token but the server isn't answering: auth keeps retrying, so don't send them to /login.
   if (!user && unreachable) {
     return (
-      <div className="card" style={{ maxWidth: 420, margin: '15vh auto', padding: 28, textAlign: 'center' }} role="status">
+      <div className="card" style={{ maxWidth: 420, width: 'calc(100% - 32px)', boxSizing: 'border-box', margin: '15vh auto', padding: 28, textAlign: 'center' }} role="status">
         <div className="spinner" style={{ margin: '0 auto 16px' }} />
         <h3>Can&apos;t reach the server — retrying…</h3>
         <p className="muted">Check your internet connection. You&apos;re still signed in.</p>
