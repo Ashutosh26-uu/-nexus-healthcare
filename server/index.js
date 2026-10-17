@@ -22,6 +22,8 @@ const payments = require('./payments');
 const geo = require('./geo');
 const automation = require('./automation');
 const aadhaarQr = require('./aadhaarQr');
+const wellness = require('./wellness');
+const credits = require('./credits');
 
 const { OtpError, normalizePhone, samePhone } = otp;
 
@@ -717,11 +719,15 @@ app.post('/api/auth/register/quick', registerLimiter, async (req, res) => {
   if (findUserByPhone(loginPhone)) return res.status(409).json({ error: 'An account with this mobile number already exists. Please sign in.' });
   if (findUserByEmail(loginEmail)) return res.status(409).json({ error: 'This email is already registered. Please sign in.' });
   const d = db();
+  // Invite code: only here, only once (referredBy is never written anywhere else). Own code / own phone or
+  // email is ignored rather than refused — the account still gets made, just with no reward attached.
+  const referral = credits.referralAtSignup(d, clean(req.body?.ref, 20), { email: loginEmail, phone: loginPhone });
   const user = {
     id: store.id('u'), name: cleanName, email: loginEmail, phone: loginPhone, role: 'patient', status: 'active',
     passwordHash: await bcrypt.hash(crypto.randomBytes(24).toString('hex'), 10),
     phoneVerifiedAt: verified.phone ? nowIso() : null, emailVerifiedAt: verified.email ? nowIso() : null,
     region: { state: '', district: '', country: clean(country, 2) || 'IN' }, createdAt: nowIso(),
+    ...(referral.referrer ? { referredBy: referral.referrer.id, referredAt: nowIso() } : {}),
   };
   d.users.push(user);
   const patient = {
@@ -732,10 +738,11 @@ app.post('/api/auth/register/quick', registerLimiter, async (req, res) => {
   d.patients.push(patient);
   notify(user.id, 'Welcome to Nexus Healthcare 💚', `Your Health Passport ${patient.id} is ready. Complete your profile so doctors near you can help faster.`);
   audit(user, 'created_passport', patient.id, 'passport', verified.phone ? 'Quick sign-up · mobile verified by OTP' : 'Quick sign-up · email verified by OTP');
+  if (referral.referrer) audit(user, 'referral_joined', patient.id, 'credit', `invited by ${referral.referrer.id}`);
   automation.emit('patient.registered', { patientId: patient.id, via: 'app', district: patient.district || null }, { contact: autoContact(patient) });
   store.save();
   broadcast('patients', 'admin');
-  res.json({ token: sign(user), user: publicUser(user), patient });
+  res.json({ token: sign(user), user: publicUser(user), patient, referral: { applied: !!referral.referrer, reason: referral.reason || null } });
 });
 
 app.get('/api/auth/me', auth, (req, res) => {
@@ -1299,7 +1306,7 @@ app.get('/api/patient/records', auth, role('patient', 'caregiver'), (req, res) =
     ...d.prescriptions.filter((r) => r.patientId === p.id).map((r) => ({ kind: 'prescription', id: r.id, date: r.createdAt, title: `Prescription · ${r.items.length} medicine${r.items.length > 1 ? 's' : ''}`, detail: r.items.map((i) => i.drug).join(', '), data: enrichRx(r) })),
     ...d.labOrders.filter((o) => o.patientId === p.id).map((o) => ({ kind: 'lab', id: o.id, date: o.reportedAt || o.createdAt, title: `Lab · ${o.tests.map((t) => t.name).join(', ')}`, detail: o.status === 'reported' ? 'Report ready' : o.status === 'review' ? 'Status: being checked by the pathologist' : `Status: ${o.status}`, data: enrichLab(o) })),
     ...d.records.filter((r) => r.patientId === p.id).map((r) => ({ kind: 'upload', id: r.id, date: r.date, title: r.title, detail: r.summary, data: r })),
-    ...(p.vaccinations || []).map((v, i) => ({ kind: 'vaccination', id: `vac_${i}`, date: v.date, title: `Vaccination · ${v.name}`, detail: 'Recorded' })),
+    ...(p.vaccinations || []).map((v, i) => ({ kind: 'vaccination', id: `vac_${i}`, date: v.date, title: `Vaccination · ${v.name}`, detail: v.place ? `Given at ${v.place}` : 'Recorded', data: { place: v.place || null, fileId: v.fileId || null, fileUrl: v.fileId ? `/api/files/${v.fileId}` : null } })),
   ].sort((a, b) => (a.date < b.date ? 1 : -1));
   res.json({ patient: p, items });
 });
@@ -1494,6 +1501,7 @@ app.post('/api/consults/:id/cancel', auth, (req, res) => {
     if (doc) doctorInbox(db(), doc).forEach((u) => notify(u, 'Booking cancelled', `${p?.name || 'A patient'} cancelled${c.scheduledAt ? ` the ${istWhenShort(c.scheduledAt)} visit` : ' their visit'}.`));
   }
   audit(req.user, 'cancelled_consult', c.patientId, 'consult', `${c.id}${refund ? ` · refund ₹${refund}` : ''}`);
+  credits.sweep(db(), req.user); // credit spent on it returns (and a refunded first visit loses its referral reward)
   touchConsultParties(c);
   store.save();
   broadcast('consults', 'queue', `consult:${c.id}`);
@@ -1855,6 +1863,7 @@ app.post('/api/medicine-orders/:id/cancel', auth, role('patient', 'caregiver'), 
   if (o.advancePaid) o.refundDue = o.advancePaid;
   const opay = o.paymentId && d.payments.find((x) => x.id === o.paymentId);
   if (opay?.status === 'created') opay.status = 'void';
+  credits.sweep(d, req.user);
   (o.pharmacyId ? [o.pharmacyId] : o.candidates).forEach((fid) => pharmacistsOf(d, fid).forEach((u) => touch(u.id)));
   store.save();
   broadcast('pharmacy', 'medorders');
@@ -1876,6 +1885,7 @@ app.post('/api/medicine-orders/:id/respond', auth, role('pharmacist'), (req, res
     }
     o.status = 'declined'; o.declinedAt = nowIso(); o.declineReason = clean(req.body?.reason, 160) || 'Not available right now';
     if (o.advancePaid) o.refundDue = o.advancePaid;
+    credits.sweep(d, req.user); // the Nexus-credit part of the advance goes back as credit
     patientOwnerUserIds(p).forEach((u) => notify(u, 'Order not accepted', `${o.pharmacyId ? f.name : 'Nearby chemists'} couldn't take order ${o.orderNo}: ${o.declineReason}.${o.advancePaid ? ` Your advance of ₹${o.advancePaid} will be refunded.` : ''} Try another chemist.`));
   } else {
     if (!o.pharmacyId) {
@@ -2430,21 +2440,23 @@ function finalizePayment(d, pay, user) {
     patientOwnerUserIds(p).forEach((u) => notify(u, 'Booking confirmed', `${doc.name}${where}. ${c.mode === 'in_person' ? 'Show your visit QR at the reception.' : 'We\'ll alert you when the doctor joins.'}`));
     audit(user, 'paid_booking', p.id, 'consult', `${c.id} · ₹${pay.amount}`);
     automation.emit('booking.confirmed', { consultId: c.id, patientId: p.id, doctorId: doc.id, doctorName: doc.name, mode: c.mode, location: c.location?.name || null, scheduledAt: c.scheduledAt || null, amount: pay.amount }, { contact: autoContact(p) });
+    credits.rewardReferral(d, pay); // invited person's first paid visit → ₹50 each, once
   } else if (pay.purpose === 'lab_advance') {
     const o = d.labOrders.find((x) => x.id === pay.refId);
     if (!o || o.booking?.paymentId !== pay.id) return;
-    Object.assign(o.booking, { paidAt: nowIso(), advancePaid: pay.amount });
+    Object.assign(o.booking, { paidAt: nowIso(), advancePaid: pay.gross ?? pay.amount }); // gross: Nexus credit counts as paid
     o.needsBooking = false;
     const p = d.patients.find((x) => x.id === o.patientId);
     const when = o.booking.slot ? ` · ${new Date(o.booking.slot).toLocaleString('en-IN', { timeZone: APP_TZ, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` : '';
-    d.users.filter((u) => u.role === 'lab_tech' && u.facilityId === o.labId).forEach((u) => notify(u.id, 'New paid test booking', `${p?.name} · ${o.tests.map((t) => t.name).join(', ')} · ${o.booking.homeCollection ? 'home collection' : 'walk-in'}${when} · ₹${pay.amount} advance paid, collect ₹${o.booking.balance}`));
-    patientOwnerUserIds(p).forEach((u) => notify(u, 'Test booked ✅', `${facilityName(o.labId)}${when}. ₹${pay.amount} paid — pay ₹${o.booking.balance} at the lab. Report in about ${o.booking.reportInHours} hours after the sample.`));
+    d.users.filter((u) => u.role === 'lab_tech' && u.facilityId === o.labId).forEach((u) => notify(u.id, 'New paid test booking', `${p?.name} · ${o.tests.map((t) => t.name).join(', ')} · ${o.booking.homeCollection ? 'home collection' : 'walk-in'}${when} · ₹${o.booking.advancePaid} advance paid, collect ₹${o.booking.balance}`));
+    patientOwnerUserIds(p).forEach((u) => notify(u, 'Test booked ✅', `${facilityName(o.labId)}${when}. ₹${o.booking.advancePaid} paid${pay.creditApplied ? ` (₹${pay.creditApplied} Nexus credit)` : ''} — pay ₹${o.booking.balance} at the lab. Report in about ${o.booking.reportInHours} hours after the sample.`));
     audit(user, 'paid_lab_advance', o.patientId, 'lab', `${o.id} · ₹${pay.amount}`);
     automation.emit('lab.booked', { labOrderId: o.id, patientId: o.patientId, labId: o.labId, labName: facilityName(o.labId), testsCount: o.tests.length, homeCollection: !!o.booking.homeCollection, slot: o.booking.slot || null, advancePaid: pay.amount, balance: o.booking.balance, reportInHours: o.booking.reportInHours }, { contact: autoContact(p) });
+    credits.rewardReferral(d, pay);
   } else if (pay.purpose === 'med_order_advance') {
     const o = d.medOrders.find((x) => x.id === pay.refId);
     if (!o || o.status !== 'awaiting_payment') return;
-    o.advancePaid = pay.amount; o.status = 'requested'; o.paidAt = nowIso();
+    o.advancePaid = pay.gross ?? pay.amount; o.status = 'requested'; o.paidAt = nowIso();
     announceMedOrder(d, o);
     audit(user, 'paid_medicine_advance', o.patientId, 'medicine', `${o.orderNo} · ₹${pay.amount}`);
   } else if (pay.purpose === 'delivery') {
@@ -2498,6 +2510,7 @@ app.post('/api/payments/:id/confirm', auth, (req, res) => {
     pay.status = 'refund_pending'; pay.paidAt = nowIso(); pay.refundReason = problem;
     audit(req.user, 'payment_refund_due', pay.patientId, 'payment', `${pay.id} · ₹${pay.amount} · ${problem}`);
     automation.emit('payment.refund_due', { paymentId: pay.id, purpose: pay.purpose, amount: pay.amount, method: pay.method, gatewayPaymentId: pay.gatewayPaymentId || null, reason: problem, patientId: pay.patientId || null });
+    credits.sweep(d, req.user); // any Nexus credit on it comes back as credit
     store.save();
     return res.status(409).json({ error: `${problem} Your ₹${pay.amount} will be refunded automatically.` });
   }
@@ -2506,6 +2519,92 @@ app.post('/api/payments/:id/confirm', auth, (req, res) => {
   store.save();
   broadcast('consults', 'queue', 'prescriptions', 'pharmacy', 'payments', 'lab', 'medorders');
   res.json(payments.publicPayment(pay, { dataMode: DATA_MODE }));
+});
+
+// ---------- Nexus credit + Refer & earn (rules and ledger in credits.js) ----------
+// Credit can cover up to 100% of a consult / lab advance / medicine advance. A part-covered payment leaves at
+// least ₹1 for the gateway; a fully covered one is confirmed right here through the same finalizePayment.
+credits.init({ audit, notify });
+const creditBusy = new Set(); // payments whose gateway order is being re-made (in memory: a crash can't wedge one)
+const refLookupLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 30, message: 'Too many tries. Please wait a few minutes.' });
+
+// Sign-up page: "You were invited by <first name>" — the first name is all anyone learns from a code.
+app.get('/api/referrals/code/:code', refLookupLimiter, (req, res) => {
+  const ref = credits.referrerByCode(db(), req.params.code);
+  if (!ref) return res.status(404).json({ error: 'This invite code isn\'t valid — you can still sign up.' });
+  res.json({ firstName: credits.firstName(ref.name), reward: credits.REFERRAL_AMOUNT });
+});
+
+app.get('/api/referrals/me', auth, role('patient', 'caregiver'), (req, res) => {
+  const d = db();
+  credits.sweep(d, req.user);
+  const code = credits.codeFor(d, req.user); // made on first visit — older accounts get one too
+  const invited = credits.invitedBy(d, req.user);
+  const balance = credits.balance(d, req.user.id);
+  store.save();
+  res.json({
+    code, path: `/signup?ref=${code}`, reward: credits.REFERRAL_AMOUNT, cap: credits.REFERRAL_CAP, creditDays: credits.CREDIT_DAYS,
+    rewardedCount: invited.filter((i) => i.status === 'earned').length, invited, balance, history: credits.history(d, req.user.id),
+  });
+});
+
+app.get('/api/credits', auth, role('patient', 'caregiver'), (req, res) => {
+  const d = db();
+  credits.sweep(d, req.user);
+  const balance = credits.balance(d, req.user.id);
+  store.save();
+  res.json({ balance, history: credits.history(d, req.user.id), creditDays: credits.CREDIT_DAYS });
+});
+
+// The payment step's "Use ₹X Nexus credit" toggle. Body: { useCredit: true|false } — the amount is always ours.
+app.post('/api/payments/:id/credit', auth, role('patient', 'caregiver'), async (req, res) => {
+  const d = db();
+  const pay = d.payments.find((x) => x.id === req.params.id);
+  if (!pay || pay.userId !== req.user.id) return res.status(404).json({ error: 'Payment not found.' });
+  if (!credits.PURPOSES.has(pay.purpose)) return res.status(400).json({ error: 'Nexus credit can be used for consults, lab tests and medicine orders.' });
+  if (pay.status !== 'created') return res.status(409).json({ error: pay.status === 'paid' ? 'This is already paid.' : 'This payment was cancelled. Please book again.' });
+  if (creditBusy.has(pay.id)) return res.status(409).json({ error: 'One moment — we\'re still updating this payment.' });
+  const problem = payableProblem(d, pay);
+  if (problem) return res.status(409).json({ error: problem });
+  const use = req.body?.useCredit === true;
+  credits.sweep(d, req.user); // credit stuck on an older voided payment is spendable again first
+  const gross = pay.gross ?? pay.amount;
+  if (use !== (pay.creditApplied > 0)) {
+    if (use) {
+      // Debit and payment update happen in this one synchronous block — two taps (or two tabs) can't both spend it.
+      const want = credits.coverable(gross, credits.balance(d, req.user.id));
+      if (want <= 0) return res.status(400).json({ error: 'You don\'t have Nexus credit to use right now.' });
+      const applied = credits.spend(d, req.user, req.user.id, want, pay.id);
+      Object.assign(pay, { gross, creditApplied: applied, creditReturned: null, amount: credits.r2(gross - applied) });
+    } else {
+      credits.giveBack(d, req.user, pay, 'Taken off the payment');
+      Object.assign(pay, { creditApplied: 0, amount: gross });
+    }
+    if (pay.amount <= 0) {
+      Object.assign(pay, { amount: 0, status: 'paid', paidAt: nowIso(), method: 'credit', orderId: null });
+      audit(req.user, 'paid_with_credit', pay.patientId, 'payment', `${pay.id} · ₹${pay.creditApplied} Nexus credit`);
+      finalizePayment(d, pay, req.user);
+      store.save();
+      broadcast('consults', 'queue', 'prescriptions', 'pharmacy', 'payments', 'lab', 'medorders');
+      return res.json({ payment: payments.publicPayment(pay, { dataMode: DATA_MODE }), balance: credits.balance(d, req.user.id) });
+    }
+    if (pay.provider === 'razorpay') {
+      // The old gateway order is for the old sum: drop it before awaiting, so it can't be confirmed meanwhile.
+      const oldOrder = pay.orderId; pay.orderId = null; creditBusy.add(pay.id); store.save();
+      try {
+        const order = await payments.createOrder({ amount: pay.amount, receipt: pay.id, notes: { payment: pay.id } });
+        pay.orderId = order?.orderId || null;
+      } catch (e) {
+        // Back to the full sum (the old order was made for it); taking credit off can't restore an order, so pay again.
+        if (use) { credits.giveBack(d, req.user, pay, 'Gateway error'); Object.assign(pay, { creditApplied: 0, amount: gross, orderId: oldOrder }); }
+        store.save();
+        return res.status(502).json({ error: `${e.message} Your Nexus credit wasn't used.` });
+      } finally { creditBusy.delete(pay.id); }
+      credits.sweep(d, req.user); // voided while we waited → the credit goes straight back
+    }
+    store.save();
+  }
+  res.json({ payment: payments.publicPayment(pay, { dataMode: DATA_MODE }), balance: credits.balance(d, req.user.id) });
 });
 
 // The patient's visit pass: a code that changes every 30 seconds, so a screenshot can't be reused.
@@ -2795,6 +2894,239 @@ app.post('/api/family', auth, role('patient', 'caregiver'), (req, res) => {
   broadcast('patients', 'family');
   res.json(p);
 });
+
+// ---------- family health hub, vaccinations & home health tracker ----------
+// Readings live in their own collection (one row each) so a profile's 5000-reading history never rides along
+// with the patient record on every save or record view.
+const vitalsOf = (patientId) => (db().vitalsLog || []).filter((e) => e.patientId === patientId);
+const vitalsCtx = (p) => ({ heightCm: p.heightCm || null, child: wellness.isChild(p.dob, istDay(Date.now())) });
+// Same "running low" rule as GET /api/patient/refills (due within a week, or already nudged this cycle).
+function lowMedsFor(d, p, now, byRx) {
+  const latest = latestRxByDrug(d, p.id);
+  const out = [];
+  for (const rx of d.prescriptions) {
+    if (rx.patientId !== p.id) continue;
+    const info = refillInfo(d, rx, latest, byRx);
+    if (!info || info.superseded) continue;
+    const daysLeft = Math.ceil((info.runOut - now) / 86400000);
+    if (daysLeft < -30 || !(daysLeft <= 7 || rx.refill?.notifiedFor === info.runOutDay)) continue;
+    out.push({ rxId: rx.id, label: refillLabel(d, rx), daysLeft, runOutOn: new Date(info.runOut).toISOString() });
+  }
+  return out.sort((a, b) => a.daysLeft - b.daysLeft);
+}
+
+// One card per family profile: the numbers that bring a carer back — next visit, vaccines due, medicines running
+// low, latest home reading. Always computed live (no caching): it is cheap and must match the detail pages.
+app.get('/api/family/overview', auth, role('patient', 'caregiver'), (req, res) => {
+  const d = db();
+  const now = Date.now(); const today = istDay(now);
+  const profiles = profilesFor(req.user);
+  const ids = new Set(profiles.map((p) => p.id));
+  const byRx = medOrdersByRx(d);
+  const latest = new Map(); // patientId → { kind → newest entry }
+  for (const e of d.vitalsLog || []) {
+    if (!ids.has(e.patientId)) continue;
+    const m = latest.get(e.patientId) || {};
+    if (!m[e.kind] || m[e.kind].at < e.at) m[e.kind] = e;
+    latest.set(e.patientId, m);
+  }
+  const visits = new Map();
+  for (const c of d.consults) {
+    if (!ids.has(c.patientId) || !['scheduled', 'queued', 'in_progress'].includes(c.status)) continue;
+    const at = c.scheduledAt || c.createdAt;
+    const prev = visits.get(c.patientId);
+    if (!prev || at < prev.at) visits.set(c.patientId, { id: c.id, at, status: c.status, mode: c.mode, doctorName: doctorById(c.doctorId)?.name || null, followUp: Boolean(c.followUp) });
+  }
+  res.json(profiles.map((p) => {
+    const ctx = vitalsCtx(p);
+    const readings = Object.values(latest.get(p.id) || {}).sort((a, b) => (a.at < b.at ? 1 : -1)).map((e) => { const v = wellness.readingView(e, ctx); return { ...v, text: wellness.readingText(v) }; });
+    return {
+      id: p.id, name: p.name, age: ageOf(p.dob), gender: p.gender, relation: p.relation || null, self: p.userId === req.user.id, hasDob: Boolean(p.dob),
+      nextAppointment: visits.get(p.id) || null,
+      vaccines: p.dob ? wellness.vaccineCounts(p, today) : null,
+      lowMeds: lowMedsFor(d, p, now, byRx),
+      readings, latestReading: readings[0] || null,
+      vitalsReminder: p.vitalsReminder?.on ? { time: p.vitalsReminder.time, kind: p.vitalsReminder.kind } : null,
+    };
+  }));
+});
+
+// Vaccination schedule for the active profile: UIP doses with due / overdue / missed state for under-18s,
+// optional flu / tetanus reminders for adults. Existing p.vaccinations entries are reused ({ name, date } plus
+// code / place / fileId for doses marked here).
+app.get('/api/patient/vaccines', auth, role('patient', 'caregiver'), (req, res) => {
+  const p = activePatient(req);
+  res.json(wellness.vaccinePlan(p, istDay(Date.now())));
+});
+
+const VACCINE_NAMES = new Map([...catalog.UIP_SCHEDULE.map((x) => [x.code, x.name]), ...catalog.IAP_OPTIONAL.map((x) => [x.code, x.name]), ...Object.entries(catalog.ADULT_VACCINES).map(([k, v]) => [`adult_${k}`, v.name])]);
+app.post('/api/patient/vaccines', auth, role('patient', 'caregiver'), async (req, res) => {
+  const p = activePatient(req);
+  const b = req.body || {};
+  const code = clean(b.code, 20);
+  const name = code === 'other' ? clean(b.name, 80) : VACCINE_NAMES.get(code);
+  if (!name) return res.status(400).json({ error: code === 'other' ? 'Please enter the vaccine name.' : 'Choose a vaccine from the schedule.' });
+  const date = clean(b.date, 10);
+  const today = istDay(Date.now());
+  if (!wellness.isDay(date) || date > today) return res.status(400).json({ error: 'Please enter the date it was given (not in the future).' });
+  if (p.dob && date < p.dob) return res.status(400).json({ error: 'That date is before the date of birth — please check it.' });
+  let fileId = null;
+  if (b.fileId) {
+    const f = await store.adapter().fileGet(clean(b.fileId, 80));
+    if (!f || f.uploadedBy !== req.user.id) return res.status(400).json({ error: 'Please upload the card photo again.' });
+    fileId = f.id;
+  }
+  const entry = { name, date, code: code === 'other' ? undefined : code, place: clean(b.place, 120) || undefined, fileId: fileId || undefined, recordedBy: req.user.name, recordedAt: nowIso() };
+  Object.keys(entry).forEach((k) => entry[k] === undefined && delete entry[k]);
+  const list = (p.vaccinations || []).filter((v) => code === 'other' || v.code !== code); // re-marking a dose corrects it
+  if (list.length >= 200) return res.status(400).json({ error: 'Too many vaccination entries on this profile.' });
+  p.vaccinations = [...list, entry];
+  audit(req.user, 'recorded_vaccination', p.id, 'vaccination', name);
+  store.save();
+  broadcast('records', 'vaccines');
+  res.json(wellness.vaccinePlan(p, today));
+});
+
+app.delete('/api/patient/vaccines/:code', auth, role('patient', 'caregiver'), (req, res) => {
+  const p = activePatient(req);
+  const code = clean(req.params.code, 20);
+  const before = (p.vaccinations || []).length;
+  p.vaccinations = (p.vaccinations || []).filter((v) => v.code !== code);
+  if (p.vaccinations.length === before) return res.status(404).json({ error: 'That dose isn\'t marked as given.' });
+  audit(req.user, 'removed_vaccination', p.id, 'vaccination', VACCINE_NAMES.get(code) || code);
+  store.save();
+  broadcast('records', 'vaccines');
+  res.json(wellness.vaccinePlan(p, istDay(Date.now())));
+});
+
+// Adults: yearly flu / 10-yearly tetanus reminders, off unless switched on. `since` anchors the first reminder
+// when no dose is on record.
+app.put('/api/patient/vaccines/reminders', auth, role('patient', 'caregiver'), (req, res) => {
+  const p = activePatient(req);
+  const today = istDay(Date.now());
+  const prefs = { ...(p.vaxPrefs || {}) };
+  for (const k of Object.keys(catalog.ADULT_VACCINES)) {
+    if (req.body?.[k] === undefined) continue;
+    const on = req.body[k] === true;
+    prefs[k] = on ? { on: true, since: prefs[k]?.on ? prefs[k].since : today } : { on: false };
+  }
+  p.vaxPrefs = prefs;
+  store.save();
+  broadcast('vaccines');
+  res.json(wellness.vaccinePlan(p, today));
+});
+
+// Home readings: BP, sugar, weight, SpO₂, temperature — for the active profile, by its owner or carer.
+app.get('/api/patient/vitals-log', auth, role('patient', 'caregiver'), (req, res) => {
+  const p = activePatient(req);
+  const days = [7, 30, 90, 365].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+  const ctx = vitalsCtx(p);
+  const all = vitalsOf(p.id).sort((a, b) => (a.at < b.at ? 1 : -1));
+  const latest = wellness.KINDS.map((k) => all.find((e) => e.kind === k)).filter(Boolean).map((e) => { const v = wellness.readingView(e, ctx); return { ...v, text: wellness.readingText(v) }; });
+  res.json({
+    days, total: all.length, cap: wellness.VITALS_CAP, heightCm: p.heightCm || null, child: ctx.child,
+    entries: all.filter((e) => e.at >= since).map((e) => wellness.readingView(e, ctx)),
+    latest,
+    reminder: p.vitalsReminder || { on: false, time: '08:00', kind: 'bp' },
+  });
+});
+
+app.post('/api/patient/vitals-log', auth, role('patient', 'caregiver'), (req, res) => {
+  const d = db();
+  const p = activePatient(req);
+  const b = req.body || {};
+  const { entry, error } = wellness.validateReading(b);
+  if (error) return res.status(400).json({ error });
+  const now = Date.now();
+  let at = now;
+  if (b.at) {
+    at = Date.parse(b.at);
+    if (!Number.isFinite(at) || at > now + 5 * 60000) return res.status(400).json({ error: 'The reading time can\'t be in the future.' });
+    if (at < now - 365 * 86400000) return res.status(400).json({ error: 'You can add readings from the last 12 months.' });
+    if (p.dob && istDay(at) < p.dob) return res.status(400).json({ error: 'That time is before the date of birth.' });
+  }
+  if (!d.vitalsLog) d.vitalsLog = [];
+  if (vitalsOf(p.id).length >= wellness.VITALS_CAP) return res.status(400).json({ error: `This profile already has ${wellness.VITALS_CAP} readings saved. Please delete some old ones first.` });
+  if (entry.heightCm) { p.heightCm = entry.heightCm; delete entry.heightCm; }
+  const rec = { id: store.id('vit'), patientId: p.id, ...entry, at: new Date(at).toISOString(), note: clean(b.note, 200) || undefined, byUserId: req.user.id, byName: req.user.name, createdAt: nowIso() };
+  if (!rec.note) delete rec.note;
+  d.vitalsLog.push(rec);
+  audit(req.user, 'logged_home_reading', p.id, 'vitals', entry.kind);
+  store.save();
+  broadcast('vitals');
+  const v = wellness.readingView(rec, vitalsCtx(p));
+  res.json({ ...v, text: wellness.readingText(v) });
+});
+
+app.delete('/api/patient/vitals-log/:id', auth, role('patient', 'caregiver'), (req, res) => {
+  const list = db().vitalsLog || [];
+  const i = list.findIndex((e) => e.id === req.params.id);
+  // Someone else's reading looks exactly like a missing one — no existence oracle.
+  if (i < 0 || !ownsPatient(req.user, list[i].patientId)) return res.status(404).json({ error: 'Reading not found.' });
+  const [gone] = list.splice(i, 1);
+  audit(req.user, 'deleted_home_reading', gone.patientId, 'vitals', gone.kind);
+  store.save();
+  broadcast('vitals');
+  res.json({ ok: true });
+});
+
+// Optional daily nudge ("Log your BP") at a time the user picks, in the network's time zone; in-app only.
+app.put('/api/patient/vitals-log/reminder', auth, role('patient', 'caregiver'), (req, res) => {
+  const p = activePatient(req);
+  const b = req.body || {};
+  const on = b.on === true;
+  const time = clean(b.time, 5) || p.vitalsReminder?.time || '08:00';
+  const kind = b.kind || p.vitalsReminder?.kind || 'bp';
+  if (!wellness.TIME_RE.test(time)) return res.status(400).json({ error: 'Please pick a time like 08:00.' });
+  if (!wellness.KINDS.includes(kind)) return res.status(400).json({ error: 'Choose what to be reminded about.' });
+  p.vitalsReminder = { on, time, kind, lastDay: p.vitalsReminder?.lastDay || null };
+  store.save();
+  broadcast('vitals');
+  res.json(p.vitalsReminder);
+});
+
+const istMinutes = (ms) => { const [h, m] = new Date(ms).toLocaleString('en-GB', { timeZone: APP_TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).split(':').map(Number); return h * 60 + m; };
+const READING_WORD = { bp: 'BP', sugar: 'blood sugar', weight: 'weight', spo2: 'oxygen level', temp: 'temperature' };
+const shortDay = (day) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+// From sweepReminders (every 5 minutes): vaccine reminders 7 days before and on the due date (once each, tracked
+// per profile+dose+due date in p.vaxReminded) and the daily "log your reading" nudge (once a day, within 3 hours
+// of the chosen time so a restart doesn't fire yesterday's nudge at midnight).
+function sweepWellness(now = Date.now()) {
+  const d = db();
+  const today = istDay(now); const mins = istMinutes(now);
+  const out = { vaccine: 0, vitals: 0 };
+  for (const p of d.patients) {
+    if (!p.dob && !p.vaxPrefs && !p.vitalsReminder?.on) continue;
+    const owners = patientOwnerUserIds(p);
+    if (!owners.length) continue;
+    const first = String(p.name || '').split(' ')[0];
+    const due = wellness.vaccineRemindersDue(p, today);
+    if (due.length) {
+      p.vaxReminded = { ...(p.vaxReminded || {}), ...Object.fromEntries(due.map((x) => [x.key, nowIso()])) };
+      const todayList = due.filter((x) => x.band === 'due').map((x) => x.name);
+      const soon = due.filter((x) => x.band === 'pre');
+      const parts = [todayList.length ? `Due now: ${todayList.join(', ')}.` : '', soon.length ? `Coming up on ${shortDay(soon[0].dueOn)}: ${soon.map((x) => x.name).join(', ')}.` : ''].filter(Boolean);
+      owners.forEach((u) => notify(u, todayList.length ? `Vaccine due for ${first}` : `Vaccine due soon for ${first}`, `${parts.join(' ')} Mark it as given in the app once done. ${catalog.UIP_NOTE}`, 'reminder'));
+      // No vaccine names in email (emails carry no medical details) — just a nudge to open the app.
+      emailPatient(p, `Vaccination reminder for ${first}`, [`${first} has a vaccination ${todayList.length ? 'due now' : `coming up on ${shortDay(soon[0].dueOn)}`}.`, 'Open the app to see which one, and mark it as given once done.'], { why: 'You are receiving this because vaccination reminders are on in Nexus Healthcare.', hello: false });
+      out.vaccine += 1;
+    }
+    const r = p.vitalsReminder;
+    if (r?.on && r.lastDay !== today && wellness.TIME_RE.test(r.time || '')) {
+      const [h, m] = r.time.split(':').map(Number);
+      const late = mins - (h * 60 + m);
+      if (late >= 0 && late <= 180) {
+        r.lastDay = today;
+        const whose = (u) => (u === p.userId ? 'your' : `${first}’s`);
+        owners.forEach((u) => notify(u, `Time to log ${whose(u)} ${READING_WORD[r.kind] || 'reading'}`, `A quick reading keeps ${whose(u)} doctor in the loop. Open Health tracker to add it.`, 'reminder'));
+        out.vitals += 1;
+      }
+    }
+  }
+  if (out.vaccine + out.vitals) { store.save(); broadcast('notifications'); }
+  return out;
+}
 
 // ---------- doctor portal ----------
 // The doctor's last 7 local days (APP_TZ), oldest first: consults completed and what patients actually paid —
@@ -3302,6 +3634,7 @@ app.get('/api/doctor/patient/:id', auth, role('doctor'), (req, res) => {
       prescriptions: d.prescriptions.filter((r) => r.patientId === p.id && r.createdAt <= upTo).map(enrichRx),
       labs: d.labOrders.filter((o) => o.patientId === p.id && o.createdAt <= upTo).map((o) => (o.reportedAt && o.reportedAt > upTo ? { ...enrichLab(o), status: 'processing', results: [], insights: [], doctorNote: null } : enrichLab(o))),
       uploads: d.records.filter((r) => r.patientId === p.id && (r.date || '') <= upTo),
+      homeReadings: wellness.homeReadingsSummary(vitalsOf(p.id), { ...vitalsCtx(p), upTo }),
     });
   }
   if (!consented && !bg) {
@@ -3314,13 +3647,14 @@ app.get('/api/doctor/patient/:id', auth, role('doctor'), (req, res) => {
     return res.json({ emergency: true, expiresAt: new Date(new Date(bg.at).getTime() + 60 * 60000).toISOString(), patient: { id: p.id, name: p.name, age: ageOf(p.dob), gender: p.gender, bloodGroup: p.bloodGroup, allergies: p.allergies, conditions: p.conditions, currentMeds: p.currentMeds, emergencyContacts: p.emergencyContacts } });
   }
   // Account-level settings (privacy choices, deletion requests, kiosk session) are the patient's own — not part of the clinical record.
-  const { privacy: _priv, deletionRequest: _del, kioskSeen: _ks, aadhaarRefHash: _ar, ...clinical } = p;
+  const { privacy: _priv, deletionRequest: _del, kioskSeen: _ks, aadhaarRefHash: _ar, vaxReminded: _vr, vaxPrefs: _vp, vitalsReminder: _vit, ...clinical } = p;
   res.json({
     patient: { ...clinical, age: ageOf(p.dob) },
     visits: d.consults.filter((c) => c.patientId === p.id && c.status === 'completed').map(enrichConsult),
     prescriptions: d.prescriptions.filter((r) => r.patientId === p.id).map(enrichRx),
     labs: d.labOrders.filter((o) => o.patientId === p.id).map(enrichLab),
     uploads: d.records.filter((r) => r.patientId === p.id),
+    homeReadings: wellness.homeReadingsSummary(vitalsOf(p.id), vitalsCtx(p)),
   });
 });
 
@@ -3361,7 +3695,8 @@ app.get('/api/consults/:id/summary', auth, role('doctor'), (req, res) => {
     const a = num(l.value); const b = l.prev ? num(l.prev.value) : null;
     return { ...l, abnormal: !['normal', 'negative', ''].includes(String(l.flag).toLowerCase()), trend: a === null || b === null ? null : a > b ? 'up' : a < b ? 'down' : 'same' };
   }).sort((x, y) => Number(y.abnormal) - Number(x.abnormal) || (x.date < y.date ? 1 : -1)).slice(0, 8);
-  res.json({ ...base, access: consented ? 'full' : 'copy', copyUntil: upTo, ...critical, visits, labs });
+  // Home readings follow the same rule as labs: full with consent, up to the transfer date for a copy, none on break-glass.
+  res.json({ ...base, access: consented ? 'full' : 'copy', copyUntil: upTo, ...critical, visits, labs, homeReadings: wellness.homeReadingsSummary(vitalsOf(p.id), { ...vitalsCtx(p), upTo }) });
 });
 
 const lookupLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 120, key: (r) => r.headers.authorization || r.ip, message: 'Too many patient searches. Please wait a while.' });
@@ -5689,6 +6024,13 @@ app.post('/api/consults/:id/scribe', auth, role('doctor'), (req, res) => {
   res.json(innovations.scribeDraft(db(), c));
 });
 
+// ---------- public no-login pages: medicine prices, lab test prices, doctor & lab profiles, sitemap, robots ----------
+// Registered before the SPA catch-all so /sitemap.xml, /robots.txt and the meta-filled public pages win.
+require('./publicPages')(app, {
+  db, catalog, geo, security, clean, own, publicDoctor, doctorStats, practiceOf, bookingOptions, labQuote, testInfo, stockRow,
+  MEDICINE_RADIUS_KM, LAB_ADVANCE_SHARE, auth, role, activePatient, store, audit, broadcast, dist: path.join(__dirname, '..', 'client', 'dist'),
+});
+
 // ---------- static client (production) ----------
 const dist = path.join(__dirname, '..', 'client', 'dist');
 if (fs.existsSync(dist)) {
@@ -5825,12 +6167,13 @@ const reminderEmailsOn = () => DATA_MODE === 'live' || process.env.REMINDER_EMAI
 const escHtml = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 // The real inboxes of everyone who manages this patient (the patient and/or a guardian); otp.sendMail drops placeholders again.
 const ownerEmails = (p) => [...new Set(patientOwnerUserIds(p).map((id) => db().users.find((u) => u.id === id)?.email).filter((e) => e && !DEMO_EMAIL.test(e)).map((e) => e.toLowerCase()))];
-function emailPatient(p, subject, lines) {
+// `why` replaces the booking footer; `hello: false` greets neutrally (a parent reading about their child's profile).
+function emailPatient(p, subject, lines, { why = 'You are receiving this because you have a booking on Nexus Healthcare.', hello: greet = true } = {}) {
   if (!p || !reminderEmailsOn()) return;
   const url = APP_URL();
-  const hello = `Hello ${String(p.name || '').split(' ')[0] || 'there'},`;
-  const text = [hello, '', ...lines, '', `Open Nexus Healthcare: ${url}`, '', 'You are receiving this because you have a booking on Nexus Healthcare.'].join('\n');
-  const html = `<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e6dfd3;border-radius:14px;color:#1d2b2a"><h2 style="color:#0f5c4d;margin:0 0 12px">Nexus Healthcare</h2><p>${escHtml(hello)}</p>${lines.filter(Boolean).map((l) => `<p>${escHtml(l)}</p>`).join('')}<p style="margin:20px 0"><a href="${escHtml(url)}" style="background:#0f5c4d;color:#fff;padding:10px 18px;border-radius:10px;text-decoration:none">Open the app</a></p><p style="color:#6f7c78;font-size:12px">You are receiving this because you have a booking on Nexus Healthcare.</p></div>`;
+  const hello = greet ? `Hello ${String(p.name || '').split(' ')[0] || 'there'},` : 'Hello,';
+  const text = [hello, '', ...lines, '', `Open Nexus Healthcare: ${url}`, '', why].join('\n');
+  const html = `<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e6dfd3;border-radius:14px;color:#1d2b2a"><h2 style="color:#0f5c4d;margin:0 0 12px">Nexus Healthcare</h2><p>${escHtml(hello)}</p>${lines.filter(Boolean).map((l) => `<p>${escHtml(l)}</p>`).join('')}<p style="margin:20px 0"><a href="${escHtml(url)}" style="background:#0f5c4d;color:#fff;padding:10px 18px;border-radius:10px;text-decoration:none">Open the app</a></p><p style="color:#6f7c78;font-size:12px">${escHtml(why)}</p></div>`;
   for (const to of ownerEmails(p)) otp.sendMail({ to, subject, text, html }).catch(() => {});
 }
 const consultWhere = (c) => (c.mode === 'in_person' ? `at ${c.location?.name || 'the clinic'}${c.location?.address ? `, ${c.location.address}` : ''}` : `${c.mode === 'audio' ? 'audio call' : c.mode === 'chat' ? 'chat' : 'video'} in the app`);
@@ -5939,6 +6282,7 @@ function sweepReminders(now = Date.now()) {
     out.medicine += 1;
   }
   if (out.consult + out.doctor + out.lab + out.medicine) { store.save(); broadcast('notifications'); }
+  Object.assign(out, sweepWellness(now)); // vaccines + daily reading nudges (saves on its own)
   return out;
 }
 
@@ -5956,6 +6300,7 @@ function expireUnpaid() {
   for (const p of d.payments) {
     if (p.status === 'created' && Date.parse(p.createdAt) < cutoff) { p.status = 'void'; changed = true; }
   }
+  if (credits.sweep(d)) changed = true; // credit on voided / refunded payments goes back
   if (changed) store.save();
 }
 

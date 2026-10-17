@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ArrowUp, ArrowDown, ArrowRight, ShieldAlert, Lock, History, FlaskConical, MessageSquareQuote, Pill, ChevronDown } from 'lucide-react';
 import { useLive } from '../../live';
 import { fmtDate, cx } from '../../components/ui';
+import HomeReadings from './HomeReadings';
 
 const TREND = { up: ArrowUp, down: ArrowDown, same: ArrowRight };
 const since = (days) => (days == null ? null : days === 0 ? 'since today' : days === 1 ? 'for 1 day' : `for ${days} days`);
@@ -73,6 +74,7 @@ export default function PatientSummary({ consultId }) {
                   </div>
                 </div>
               )}
+              <HomeReadings data={s.homeReadings} compact />
             </>
           )}
         </div>

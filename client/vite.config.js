@@ -14,6 +14,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': { target: 'http://localhost:4000', changeOrigin: true },
+      // Served by the API server (built live from the network), same as in production.
+      '/sitemap.xml': { target: 'http://localhost:4000', changeOrigin: true },
+      '/robots.txt': { target: 'http://localhost:4000', changeOrigin: true },
     },
   },
 })

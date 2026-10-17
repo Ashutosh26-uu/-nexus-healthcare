@@ -4,6 +4,7 @@ import { api } from '../../api';
 import { Avatar, Button, Modal, fmtMoney, timeAgo, cx } from '../../components/ui';
 import { AvailBadge } from '../../components/Availability';
 import { getLocale } from '../../i18n';
+import ShareButton from '../../components/ShareButton';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const todayKey = () => DAYS[(new Date().getDay() + 6) % 7];
@@ -46,6 +47,8 @@ export default function DoctorProfile({ doc, onClose, onConsult, busy, consultLa
             <div className="row wrap" style={{ gap: 8 }}><AvailBadge a={doc.availability} />{doc.verified !== false && <span className="badge green"><BadgeCheck size={12} /> Registration verified</span>}</div>
             <div className="small muted mt-1">{doc.availability?.label}{doc.availability?.next ? ` · next ${doc.availability.next}` : ''}</div>
           </div>
+          <ShareButton iconOnly label="Share this doctor on WhatsApp" url={window.location.origin}
+            text={`${doc.name} (${doc.specialty}${doc.experience ? `, ${doc.experience} yrs experience` : ''}) is on Nexus Healthcare — registration-verified doctors, book from your phone:`} />
         </div>
         <div className="pt-dp-stats">
           <div><Briefcase size={16} /><strong>{doc.experience} yrs</strong><span>experience</span></div>

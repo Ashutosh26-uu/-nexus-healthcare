@@ -203,4 +203,68 @@ function nextSteps(results = [], { doctorName } = {}) {
   return steps;
 }
 
-module.exports = { DRUG_PRICES, TESTS, unitsFor, priceOf, nameOfTest, round, interpret, nextSteps, substitutesFor, sameSalt, genericKeyOf, gstOf };
+// ---- child vaccination schedule ----
+// Source: Government of India, MoHFW — "National Immunization Schedule (NIS) for Infants, Children and Pregnant
+// Women" under the Universal Immunization Programme (UIP), as published by the National Health Mission:
+//   https://nhm.gov.in/New_Updates_2018/NHM_Components/Immunization/report/National_%20Immunization_Schedule.pdf
+//   (see also https://www.mohfw.gov.in/sites/default/files/Universal%20Immunization%20Programme.pdf)
+// Ages are from the date of birth: [n, 'd'|'w'|'m'|'y'].
+//   due  = when the NIS says to give it (start of its window)
+//   late = end of the NIS window; for single-age doses (6/10/14 weeks…) the app allows 4 weeks before calling it
+//          "overdue" — that grace is OUR nudge rule, not part of the NIS
+//   last = latest age the NIS allows the dose (e.g. "Pentavalent can be given till one year of age"); after it the
+//          dose is "missed" and the parent is pointed to the doctor rather than told to get it. null = NIS gives none
+//          (then the app treats it as "missed — ask your doctor about catch-up" a year after `late`).
+// PCV: the 2020 NIS lists it for selected states; it was scaled up nationally under UIP in 2021.
+// JE: endemic districts only. Vitamin A doses 2–9 are usually given in the biannual ICDS/anganwadi rounds.
+const UIP_NOTE = 'Schedule as per Government of India UIP; your paediatrician may advise changes.';
+const UIP_SOURCE = { name: 'National Immunization Schedule — Universal Immunization Programme, MoHFW / National Health Mission', url: 'https://nhm.gov.in/New_Updates_2018/NHM_Components/Immunization/report/National_%20Immunization_Schedule.pdf' };
+const UIP_SCHEDULE = [
+  { code: 'bcg', name: 'BCG', group: 'At birth', due: [0, 'd'], late: [4, 'w'], last: [1, 'y'], protects: 'Tuberculosis (TB)' },
+  { code: 'opv0', name: 'OPV-0 (polio drops)', group: 'At birth', due: [0, 'd'], late: [15, 'd'], last: [15, 'd'], protects: 'Polio' },
+  { code: 'hepb0', name: 'Hepatitis B — birth dose', group: 'At birth', due: [0, 'd'], late: [1, 'd'], last: [1, 'd'], protects: 'Hepatitis B' },
+  { code: 'opv1', name: 'OPV-1 (polio drops)', group: '6 weeks', due: [6, 'w'], late: [10, 'w'], last: [5, 'y'], protects: 'Polio' },
+  { code: 'penta1', name: 'Pentavalent-1', group: '6 weeks', due: [6, 'w'], late: [10, 'w'], last: [1, 'y'], protects: 'Diphtheria, whooping cough, tetanus, Hepatitis B, Hib' },
+  { code: 'rvv1', name: 'Rotavirus-1 (RVV)', group: '6 weeks', due: [6, 'w'], late: [10, 'w'], last: [1, 'y'], protects: 'Severe diarrhoea (rotavirus)' },
+  { code: 'fipv1', name: 'fIPV-1 (injectable polio)', group: '6 weeks', due: [6, 'w'], late: [10, 'w'], last: null, protects: 'Polio' },
+  { code: 'pcv1', name: 'PCV-1 (pneumococcal)', group: '6 weeks', due: [6, 'w'], late: [10, 'w'], last: null, protects: 'Pneumonia, meningitis' },
+  { code: 'opv2', name: 'OPV-2 (polio drops)', group: '10 weeks', due: [10, 'w'], late: [14, 'w'], last: [5, 'y'], protects: 'Polio' },
+  { code: 'penta2', name: 'Pentavalent-2', group: '10 weeks', due: [10, 'w'], late: [14, 'w'], last: [1, 'y'], protects: 'Diphtheria, whooping cough, tetanus, Hepatitis B, Hib' },
+  { code: 'rvv2', name: 'Rotavirus-2 (RVV)', group: '10 weeks', due: [10, 'w'], late: [14, 'w'], last: [1, 'y'], protects: 'Severe diarrhoea (rotavirus)' },
+  { code: 'opv3', name: 'OPV-3 (polio drops)', group: '14 weeks', due: [14, 'w'], late: [18, 'w'], last: [5, 'y'], protects: 'Polio' },
+  { code: 'penta3', name: 'Pentavalent-3', group: '14 weeks', due: [14, 'w'], late: [18, 'w'], last: [1, 'y'], protects: 'Diphtheria, whooping cough, tetanus, Hepatitis B, Hib' },
+  { code: 'rvv3', name: 'Rotavirus-3 (RVV)', group: '14 weeks', due: [14, 'w'], late: [18, 'w'], last: [1, 'y'], protects: 'Severe diarrhoea (rotavirus)' },
+  { code: 'fipv2', name: 'fIPV-2 (injectable polio)', group: '14 weeks', due: [14, 'w'], late: [18, 'w'], last: null, protects: 'Polio' },
+  { code: 'pcv2', name: 'PCV-2 (pneumococcal)', group: '14 weeks', due: [14, 'w'], late: [18, 'w'], last: null, protects: 'Pneumonia, meningitis' },
+  { code: 'mr1', name: 'MR-1 (measles & rubella)', group: '9–12 months', due: [9, 'm'], late: [12, 'm'], last: [5, 'y'], protects: 'Measles, rubella' },
+  { code: 'je1', name: 'JE-1 (Japanese encephalitis)', group: '9–12 months', due: [9, 'm'], late: [12, 'm'], last: null, protects: 'Japanese encephalitis', note: 'Only in JE-endemic districts — ask your ANM / doctor.' },
+  { code: 'pcvb', name: 'PCV booster', group: '9–12 months', due: [9, 'm'], late: [12, 'm'], last: null, protects: 'Pneumonia, meningitis' },
+  { code: 'vita1', name: 'Vitamin A — 1st dose', group: '9–12 months', due: [9, 'm'], late: [12, 'm'], last: [5, 'y'], protects: 'Vitamin A deficiency, night blindness', note: 'Given with MR-1.' },
+  { code: 'mr2', name: 'MR-2 (measles & rubella)', group: '16–24 months', due: [16, 'm'], late: [24, 'm'], last: [5, 'y'], protects: 'Measles, rubella' },
+  { code: 'je2', name: 'JE-2 (Japanese encephalitis)', group: '16–24 months', due: [16, 'm'], late: [24, 'm'], last: null, protects: 'Japanese encephalitis', note: 'Only in JE-endemic districts — ask your ANM / doctor.' },
+  { code: 'dptb1', name: 'DPT booster-1', group: '16–24 months', due: [16, 'm'], late: [24, 'm'], last: [7, 'y'], protects: 'Diphtheria, whooping cough, tetanus' },
+  { code: 'opvb', name: 'OPV booster (polio drops)', group: '16–24 months', due: [16, 'm'], late: [24, 'm'], last: [5, 'y'], protects: 'Polio' },
+  // Vitamin A doses 2–9: at 16–18 months, then every 6 months up to 5 years.
+  ...[16, 22, 28, 34, 40, 46, 52, 58].map((m, i) => ({ code: `vita${i + 2}`, name: `Vitamin A — dose ${i + 2}`, group: i === 0 ? '16–24 months' : 'Every 6 months to 5 years', due: [m, 'm'], late: [i === 0 ? 18 : m + 6, 'm'], last: [5, 'y'], protects: 'Vitamin A deficiency, night blindness', note: i ? 'Usually given in the 6-monthly anganwadi rounds.' : undefined })),
+  { code: 'dptb2', name: 'DPT booster-2', group: '5–6 years', due: [5, 'y'], late: [7, 'y'], last: [7, 'y'], protects: 'Diphtheria, whooping cough, tetanus' },
+  { code: 'td10', name: 'Td (tetanus & adult diphtheria)', group: '10 years', due: [10, 'y'], late: [11, 'y'], last: null, protects: 'Tetanus, diphtheria' },
+  { code: 'td16', name: 'Td (tetanus & adult diphtheria)', group: '16 years', due: [16, 'y'], late: [17, 'y'], last: null, protects: 'Tetanus, diphtheria' },
+];
+// Not part of UIP: optional vaccines from the Indian Academy of Pediatrics (IAP) schedule. Shown for information
+// only ("recommended by IAP, talk to your doctor") — no due/overdue status and no reminders.
+const IAP_OPTIONAL = [
+  { code: 'iap_flu', name: 'Influenza (flu)', when: 'From 6 months, then every year till 5 years', protects: 'Flu' },
+  { code: 'iap_tcv', name: 'Typhoid conjugate vaccine', when: '6–9 months', protects: 'Typhoid' },
+  { code: 'iap_mmr', name: 'MMR (adds mumps)', when: '9 months, 15 months, 4–6 years', protects: 'Measles, mumps, rubella' },
+  { code: 'iap_hepa', name: 'Hepatitis A', when: '12 months (2nd dose 18 months if inactivated vaccine)', protects: 'Hepatitis A (jaundice)' },
+  { code: 'iap_var', name: 'Varicella (chickenpox)', when: '15 months, 2nd dose 3–6 months later or at 4–6 years', protects: 'Chickenpox' },
+  { code: 'iap_tdap', name: 'Tdap', when: '10–12 years (in place of the Td at 10)', protects: 'Tetanus, diphtheria, whooping cough' },
+  { code: 'iap_hpv', name: 'HPV', when: '9–14 years (2 doses)', protects: 'Cervical and other HPV cancers' },
+];
+// Adults: reminders only when the user switches them on.
+const ADULT_VACCINES = {
+  flu: { name: 'Flu shot (influenza)', everyYears: 1, match: /flu|influenza/i },
+  tetanus: { name: 'Tetanus / Td booster', everyYears: 10, match: /tetanus|\btd\b|\btt\b|tdap/i },
+};
+
+module.exports = { DRUG_PRICES, TESTS, unitsFor, priceOf, nameOfTest, round, interpret, nextSteps, substitutesFor, sameSalt, genericKeyOf, gstOf, UIP_SCHEDULE, UIP_NOTE, UIP_SOURCE, IAP_OPTIONAL, ADULT_VACCINES };

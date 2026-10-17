@@ -21,6 +21,11 @@ const InvoicePrint = lazy(() => import('./pages/InvoicePrint'));
 const StatementPrint = lazy(() => import('./pages/StatementPrint'));
 const ChatWidget = lazy(() => import('./components/ChatWidget'));
 const QueueDisplay = lazy(() => import('./pages/QueueDisplay'));
+// Public, no-login pages (free tools, doctor & lab profiles) — found from Google and WhatsApp shares.
+const MedicinePrices = lazy(() => import('./pages/public/MedicinePrices'));
+const LabTests = lazy(() => import('./pages/public/LabTests'));
+const PublicDoctors = lazy(() => import('./pages/public/Doctors'));
+const PublicLabs = lazy(() => import('./pages/public/Labs'));
 
 const PatientApp = lazy(() => import('./portals/patient'));
 const KioskApp = lazy(() => import('./portals/kiosk'));
@@ -131,6 +136,10 @@ function AppRoutes() {
         <Route path="/signup" element={<Lazy><Signup /></Lazy>} />
         <Route path="/forgot-password" element={<Lazy><ForgotPassword /></Lazy>} />
         <Route path="/join" element={<Lazy><Join /></Lazy>} />
+        <Route path="/medicines/:slug?" element={<Lazy><MedicinePrices /></Lazy>} />
+        <Route path="/lab-tests/:code?" element={<Lazy><LabTests /></Lazy>} />
+        <Route path="/find/doctors/:slug?" element={<Lazy><PublicDoctors /></Lazy>} />
+        <Route path="/find/labs/:slug?" element={<Lazy><PublicLabs /></Lazy>} />
         <Route path="/rx/:id" element={<RequireRole roles={['patient', 'caregiver', 'doctor', 'pharmacist', 'lab_tech', 'super_admin']}><Lazy><RxPrint /></Lazy></RequireRole>} />
         <Route path="/lab-label/:id" element={<RequireRole roles={['lab_tech']}><Lazy><SampleLabel /></Lazy></RequireRole>} />
         <Route path="/invoice/:orderId" element={<RequireRole roles={['patient', 'caregiver', 'pharmacist']}><Lazy><InvoicePrint /></Lazy></RequireRole>} />

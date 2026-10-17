@@ -4,6 +4,7 @@ import { api } from '../../api';
 import { useLive } from '../../live';
 import { Button, Field, Modal, Empty, Loading, StatusBadge, fmtDate, useAction, cx } from '../../components/ui';
 import { VitalsChips, useNow } from './shared';
+import HomeReadings from './HomeReadings';
 
 /* Fetches a patient's record with consent gating. Refreshes when consents change. */
 export function useRecord(patientId) {
@@ -143,6 +144,11 @@ export function HistoryPanel({ data }) {
   return (
     <div className="stack">
       <CriticalCard p={p} />
+      {data.homeReadings?.count > 0 && (
+        <Section icon={HeartPulse} title="Home readings">
+          <HomeReadings data={data.homeReadings} />
+        </Section>
+      )}
       {p.vaccinations?.length > 0 && (
         <Section icon={ShieldCheck} title="Vaccinations">
           {p.vaccinations.map((v) => <div key={`${v.name}|${v.date}`} className="small">{v.name} <span className="muted">· {fmtDate(v.date)}</span></div>)}

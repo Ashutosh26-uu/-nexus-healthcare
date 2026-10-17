@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { FlaskConical, MapPin, Home as HomeIcon, BadgeCheck, Check, Droplet, Utensils, FileText, Building2, Phone, Smartphone, CalendarClock, ArrowRight, ArrowLeft, Download, Stethoscope, Star, Users, LocateFixed, ShieldCheck, Ambulance, Repeat, Search, Hourglass, CreditCard, Bike, Gift, Stamp, HeartPulse } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
@@ -7,6 +7,7 @@ import { Button, Card, Empty, Field, Modal, Switch, fmtDate, fmtDateTime, fmtMon
 import { usePatient, usePatientLive, firstName, localISO, PageSkeleton } from './shared';
 import { useDeviceLocation } from './NearbyDoctors';
 import PaymentStep from './Payment';
+import ShareButton from '../../components/ShareButton';
 import BookingFlow from './BookingFlow';
 import { getLocale } from '../../i18n';
 import './tests.css';
@@ -54,10 +55,11 @@ function LabChooser({ order, onClose, onBooked }) {
   const [near, setNear] = useState(null);
   const [sort, setSort] = useState('distance');
   const [data, setData] = useState(null);
-  const [labId, setLabId] = useState(null);
+  // A test the patient booked themselves (from the public price page) starts on the lab they picked there.
+  const [labId, setLabId] = useState(() => (order?.selfBooked ? order.labId || null : null));
   const [home, setHome] = useState(false);
   const [slot, setSlot] = useState('');
-  const [shareRx, setShareRx] = useState(true);
+  const [shareRx, setShareRx] = useState(!order?.selfBooked);
   const [pay, setPay] = useState(null);
   const [expired, setExpired] = useState(false); // advance refused with 409: the booking changed, choose again
   const [run, busy] = useAction();
@@ -106,7 +108,7 @@ function LabChooser({ order, onClose, onBooked }) {
   );
 
   return (
-    <Modal open={!!order} onClose={onClose} wide title={title} subtitle={order ? `From your prescription: ${order.tests.map((t) => t.name).join(' · ')}` : ''} footer={footer}>
+    <Modal open={!!order} onClose={onClose} wide title={title} subtitle={order ? `${order.selfBooked ? 'Your test' : 'From your prescription'}: ${order.tests.map((t) => t.name).join(' · ')}` : ''} footer={footer}>
       {!data ? <div className="stack">{[0, 1, 2].map((i) => <div key={i} className="skeleton" style={{ height: 72, borderRadius: 12 }} />)}</div> : (
         <div className="stack">
           <div className="steps">{[0, 1, 2, 3].map((i) => <span key={i} className={cx(i <= step && 'done')} />)}</div>
@@ -169,10 +171,10 @@ function LabChooser({ order, onClose, onBooked }) {
                 <Switch checked={home} onChange={lab.homeCollection ? setHome : () => {}} label="Home collection" />
               </div>
               <Field label="Preferred time (optional)"><input className="input" type="datetime-local" value={slot} min={localISO().slice(0, 16)} onChange={(e) => setSlot(e.target.value)} /></Field>
-              <label className="check small pt-share-rx">
+              {!order.selfBooked && <label className="check small pt-share-rx">
                 <input type="checkbox" checked={shareRx} onChange={(e) => setShareRx(e.target.checked)} />
                 <span><strong>Share my prescription with {lab.name}</strong><span className="tiny muted block">They see the doctor&apos;s order, so nothing is missed.</span></span>
-              </label>
+              </label>}
               <div className="pt-lab-prep">{data.tests.map((t) => <span key={t.code} className="tiny"><Droplet size={12} /> <strong>{t.name}:</strong> {t.sample} · <Utensils size={12} /> {t.prep}</span>)}</div>
               <dl className="kv review">
                 <dt>Tests</dt><dd>{fmtMoney(lab.total)}</dd>
@@ -202,6 +204,24 @@ export default function Tests() {
   const [packages, setPackages] = useState(false);
   const [payFor, setPayFor] = useState(null); // an unpaid package booking to finish
   const isSelf = profiles.find((p) => p.id === patient?.id)?.self;
+  // Links from the public price pages: ?book=<test>&lab=<lab> opens the lab booking for that test (no prescription
+  // needed), ?package=<id> opens that check-up package.
+  const [params, setParams] = useSearchParams();
+  const [preselect, setPreselect] = useState(null);
+  const [linkError, setLinkError] = useState('');
+  const bookCode = params.get('book');
+  const pkgId = params.get('package');
+  useEffect(() => {
+    if (!bookCode && !pkgId) return undefined;
+    let alive = true;
+    const done = () => setParams((p) => { const n = new URLSearchParams(p); ['book', 'lab', 'package'].forEach((k) => n.delete(k)); return n; }, { replace: true });
+    if (pkgId) { setPreselect(pkgId); setPackages(true); done(); return undefined; }
+    api.post('/patient/tests/self-order', { code: bookCode, lab: params.get('lab') || undefined })
+      .then((r) => { if (alive) { setChoosing(r.order); reload(); } })
+      .catch((e) => { if (alive) setLinkError(e.message); })
+      .finally(() => { if (alive) done(); });
+    return () => { alive = false; };
+  }, [bookCode, pkgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (error && !data) return <Empty title="We couldn't load your tests">{error}</Empty>;
   if (!data) return <PageSkeleton />;
@@ -217,6 +237,7 @@ export default function Tests() {
         <span className="grow"><strong>Book a health check-up</strong><span className="tiny muted block">Packages from labs near you — fixed price, home collection where offered.</span></span>
         <Button variant="secondary" icon={Gift} onClick={() => setPackages(true)}>See packages</Button>
       </div>
+      {linkError && <div className="callout rose"><FlaskConical /><span>{linkError}</span></div>}
       {data.orders.length === 0 && (
         <Card><Empty icon={FlaskConical} title="No tests advised yet">When a doctor orders a test, it shows up here with nearby labs and prices.</Empty></Card>
       )}
@@ -226,7 +247,7 @@ export default function Tests() {
           <div className="row top between wrap" style={{ gap: 10 }}>
             <div>
               <strong>{o.tests.map((t) => t.name).join(' · ')}</strong>
-              <div className="small muted">{o.packageName ? <><Gift size={12} /> {o.packageName} · booked by you</> : <>Advised by <span translate="no">{o.doctorName}</span></>} · {fmtDate(o.createdAt)}</div>
+              <div className="small muted">{o.packageName ? <><Gift size={12} /> {o.packageName} · booked by you</> : o.selfBooked && !o.doctorName ? <>Booked by you</> : <>Advised by <span translate="no">{o.doctorName}</span></>} · {fmtDate(o.createdAt)}</div>
             </div>
             {o.quote && <div className="pt-wtb-price"><strong>{fmtMoney(o.booking?.price ?? o.quote.total)}</strong><span className="tiny muted">{o.bookingState === 'paid' || o.bookingState === 'in_lab' ? 'booked' : 'estimate'}</span></div>}
           </div>
@@ -240,6 +261,10 @@ export default function Tests() {
           )}
           {o.bookingState === 'paid' && o.status === 'ordered' && (
             <div className="callout sky"><CreditCard /><span>Booked · <strong>{fmtMoney(o.booking.advancePaid || o.booking.advance)}</strong> paid online · pay <strong>{fmtMoney(o.booking.balance)}</strong> at the lab.{o.booking.homeCollection ? ' A technician will come home to collect the sample.' : ' Show your Health Passport QR at the counter.'}</span></div>
+          )}
+          {o.bookingState === 'paid' && o.status === 'ordered' && (
+            /* Where and when only — the test names stay private. */
+            <div><ShareButton label="Tell family on WhatsApp" text={`My lab visit is booked on Nexus Healthcare${o.booking.homeCollection ? ' — home sample collection' : ` at ${o.labName}`}${o.booking.slot ? `, ${fmtDateTime(o.booking.slot)}` : ''}.`} /></div>
           )}
           {o.bookingState === 'awaiting_payment' && (
             <div className="callout"><CreditCard /><span>Your booking at <strong translate="no">{o.labName}</strong> isn&apos;t confirmed yet — pay the 20% advance ({fmtMoney(o.booking.advance)}) to confirm.</span></div>
@@ -329,7 +354,7 @@ export default function Tests() {
       ))}
       <LabChooser key={choosing?.id || 'none'} order={choosing} onClose={() => { setChoosing(null); reload(); }} onBooked={() => { setChoosing(null); reload(); }} />
       <BookingFlow doctor={rebook} onClose={() => setRebook(null)} />
-      {(packages || payFor) && <PackagePicker resume={payFor} onClose={() => { setPackages(false); setPayFor(null); reload(); }} />}
+      {(packages || payFor) && <PackagePicker resume={payFor} preselect={preselect} onClose={() => { setPackages(false); setPayFor(null); setPreselect(null); reload(); }} />}
     </div>
   );
 }
@@ -375,7 +400,7 @@ function CollectionStatus({ order }) {
 }
 
 // Health check-up packages: browse → collection & time → 20% advance (same payment flow as any lab booking).
-function PackagePicker({ resume, onClose }) {
+function PackagePicker({ resume, preselect, onClose }) {
   const [data, setData] = useState(null);
   const [pick, setPick] = useState(null);
   const [home, setHome] = useState(!!resume?.booking?.homeCollection);
@@ -388,9 +413,10 @@ function PackagePicker({ resume, onClose }) {
       if (!alive) return;
       setData(r);
       if (resume) setPick(r.packages.find((k) => k.id === resume.packageId && k.labId === resume.labId) || null);
+      else if (preselect) { const k = r.packages.find((x) => x.id === preselect); if (k) { setPick(k); setHome(!!k.lab.homeCollection); } }
     }).catch(() => alive && setData({ packages: [] }));
     return () => { alive = false; };
-  }, [resume]);
+  }, [resume, preselect]);
   const total = pick ? pick.price + (home && pick.lab.homeCollection ? data.homeFee : 0) : 0;
   const advance = Math.max(1, Math.ceil(total * (data?.advanceShare || 0.2)));
   const book = () => run('book', async () => {

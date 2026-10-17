@@ -729,3 +729,23 @@ button.pt-wtb-head { cursor: pointer; }
 .pt-low-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-top: 1px dashed var(--line-2); }
 .pt-low-item:first-child { border-top: 0; padding-top: 0; }
 @media (max-width: 480px) { .pt-om-sub { padding-left: 12px; } .pt-low-item .btn { width: 100%; } }
+
+/* Nexus credit toggle on the payment step + Invite & earn page */
+.pt-pay-credit { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1.5px dashed var(--clay, #d97757); background: var(--card); }
+.pt-pay-credit > svg { flex: none; color: var(--clay, #d97757); }
+.pt-inv-hero { display: grid; gap: 12px; padding: 18px; border-radius: 18px; background: var(--green-soft); }
+.pt-inv-code { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pt-inv-code strong { font-size: 1.5rem; letter-spacing: 0.12em; color: var(--green-ink); }
+.pt-inv-link { display: flex; gap: 6px; align-items: center; min-width: 0; padding: 8px 10px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); }
+.pt-inv-link span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.pt-inv-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.pt-inv-actions > * { flex: 1 1 140px; }
+.pt-inv-steps { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin: 0; padding: 0; list-style: none; }
+.pt-inv-steps li { display: flex; gap: 8px; align-items: flex-start; padding: 10px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); }
+.pt-inv-steps b { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--green-2); color: #fff; font-size: 0.75rem; }
+.pt-inv-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.pt-inv-row:last-child { border-bottom: 0; }
+.pt-inv-amt { font-weight: 600; white-space: nowrap; }
+.pt-inv-amt.plus { color: var(--green-2); }
+.pt-inv-amt.minus { color: var(--ink-3); }
+.share-wa { white-space: nowrap; }

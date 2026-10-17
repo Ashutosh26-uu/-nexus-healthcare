@@ -1,7 +1,10 @@
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronRight, Repeat } from 'lucide-react';
 import NearbyDoctors from './NearbyDoctors';
-import { Button, StatusBadge, fmtDateTime } from '../../components/ui';
+import BookingFlow from './BookingFlow';
+import { api } from '../../api';
+import { Button, StatusBadge, fmtDateTime, useToast } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient } from './shared';
 
@@ -14,6 +17,20 @@ export default function Consult() {
   const location = useLocation();
   const upcoming = home?.upcoming || [];
   const start = location.state || {};
+  // ?book=<doctorId> comes from a public doctor profile ("Book a consult" → sign in → here): open booking at once.
+  const [params, setParams] = useSearchParams();
+  const bookId = params.get('book');
+  const [bookDoc, setBookDoc] = useState(null);
+  const toast = useToast();
+  useEffect(() => {
+    if (!bookId) return undefined;
+    let alive = true;
+    api.get(`/doctors/${encodeURIComponent(bookId)}/booking-options`)
+      .then((o) => { if (alive) setBookDoc(o.doctor); })
+      .catch((e) => { if (alive) toast(e.message || 'This doctor can\'t be booked right now.', 'error'); })
+      .finally(() => { if (alive) setParams((p) => { const n = new URLSearchParams(p); n.delete('book'); return n; }, { replace: true }); });
+    return () => { alive = false; };
+  }, [bookId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="stack lg">
@@ -47,6 +64,7 @@ export default function Consult() {
       {/* Keyed on the profile: the finder only reads its prefills on mount, and `patient` arrives after the
           first render on a cold load (and changes on a family-profile switch). */}
       <NearbyDoctors key={patient?.id || 'none'} full symptoms={start.symptoms || patient?.currentSymptoms?.text || ''} department={start.department || patient?.currentSymptoms?.department || ''} />
+      <BookingFlow doctor={bookDoc} onClose={() => setBookDoc(null)} />
     </div>
   );
 }

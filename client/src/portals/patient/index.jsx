@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Home as HomeIcon, HeartPulse, Video, FolderHeart, Pill, ShieldCheck, Users, IdCard, Settings as SettingsIcon, ChevronDown, Check, UserPlus, Activity, Coins, Dna, ScanLine, UserRoundPen, MapPin, Stethoscope, FileUp, FlaskConical, CalendarClock, Repeat } from 'lucide-react';
+import { Home as HomeIcon, HeartPulse, Video, FolderHeart, Pill, ShieldCheck, Users, IdCard, Settings as SettingsIcon, ChevronDown, Check, UserPlus, Activity, Coins, Dna, ScanLine, UserRoundPen, MapPin, Stethoscope, FileUp, FlaskConical, CalendarClock, Repeat, Gauge, Syringe } from 'lucide-react';
+import { Gift } from 'lucide-react'; // Invite & earn
 import PortalLayout from '../../components/PortalLayout';
 import { Avatar, Button, Modal, cx, useToast } from '../../components/ui';
 import { session } from '../../api';
@@ -22,6 +23,7 @@ const CompleteProfile = lazy(() => import('./CompleteProfile'));
 const FollowUps = lazy(() => import('./FollowUps'));
 const Twin = lazy(() => import('./Twin'));
 const Wallet = lazy(() => import('./Wallet'));
+const Invite = lazy(() => import('./Invite'));
 const FamilyGraph = lazy(() => import('./FamilyGraph'));
 const MedicineScan = lazy(() => import('./MedicineScan'));
 const ChangeDoctor = lazy(() => import('./ChangeDoctor'));
@@ -30,6 +32,8 @@ const Tests = lazy(() => import('./Tests'));
 const EmergencyCard = lazy(() => import('./EmergencyCard'));
 const Consents = lazy(() => import('./Consents'));
 const Family = lazy(() => import('./Family'));
+const Tracker = lazy(() => import('./Tracker'));
+const Vaccines = lazy(() => import('./Vaccines'));
 
 // Keyed by id so state from one consult never carries into the next.
 function ConsultRoomById() {
@@ -84,6 +88,8 @@ export default function PatientApp() {
     { to: '/patient/symptoms', label: 'Check symptoms', icon: HeartPulse },
     { to: '/patient/consult', label: 'Talk to a doctor', icon: Video },
     { to: '/patient/follow-ups', label: 'Follow-ups', icon: CalendarClock, badge: (home.data?.upcoming || []).length || null },
+    { to: '/patient/tracker', label: 'Health tracker', icon: Gauge },
+    { to: '/patient/vaccines', label: 'Vaccinations', icon: Syringe },
     { to: '/patient/twin', label: 'Health Twin', icon: Activity },
     { to: '/patient/records', label: 'My records', icon: FolderHeart },
     { to: '/patient/medicines', label: 'Medicines', icon: Pill, badge: (activeRx + (home.data?.medicineOrders || 0)) || null },
@@ -91,6 +97,7 @@ export default function PatientApp() {
     { to: '/patient/tests', label: 'Tests & reports', icon: FlaskConical },
     { to: '/patient/consents', label: 'Who sees my data', icon: ShieldCheck, badge: pending || null },
     { to: '/patient/wallet', label: 'Data Wallet', icon: Coins },
+    { to: '/patient/invite', label: 'Invite & earn', icon: Gift },
     { to: '/patient/family', label: 'Family', icon: Users },
     { to: '/patient/family-graph', label: 'Family health', icon: Dna },
     { to: '/patient/scan', label: 'Check a medicine', icon: ScanLine },
@@ -113,7 +120,10 @@ export default function PatientApp() {
           <Route path="medicines" element={<Medicines />} />
           <Route path="consents" element={<Consents />} />
           <Route path="wallet" element={<Wallet />} />
+          <Route path="invite" element={<Invite />} />
           <Route path="family" element={<Family />} />
+          <Route path="tracker" element={<Tracker />} />
+          <Route path="vaccines" element={<Vaccines />} />
           <Route path="family-graph" element={<FamilyGraph />} />
           <Route path="scan" element={<MedicineScan />} />
           <Route path="emergency" element={<EmergencyCard />} />

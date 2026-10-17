@@ -30,6 +30,12 @@ const PORTALS = [
   { icon: Landmark, title: 'Health officials', text: 'One live picture of beds, doctors, medicines and outbreaks — district to nation.', to: '/login', cta: 'Command center' },
 ];
 
+const FREE_TOOLS = [
+  { icon: Pill, title: 'Medicine price checker', text: 'See the salt, indicative price and cheaper same-salt generics or Jan Aushadhi options — and which chemists near you have it.', to: '/medicines', cta: 'Check a medicine' },
+  { icon: FlaskConical, title: 'Lab test prices', text: 'Compare CBC, HbA1c, lipid profile and more across verified labs — price, report time, NABL and home collection.', to: '/lab-tests', cta: 'Compare test prices' },
+  { icon: Stethoscope, title: 'Find a doctor', text: 'Verified doctors by specialty and city, with fees, languages, live availability and genuine patient reviews.', to: '/find/doctors', cta: 'Find a doctor' },
+];
+
 export default function Landing() {
   const { user } = useAuth();
   const config = usePublicConfig();
@@ -58,6 +64,7 @@ export default function Landing() {
         <div className="l-container l-nav-inner">
           <Logo />
           <nav className={cx('l-links', menu && 'open')} onClick={() => setMenu(false)}>
+            <a href="#tools">Free tools</a>
             <a href="#how">How it works</a>
             <a href="#kiosk">E-Clinics</a>
             <a href="#partners">For partners</a>
@@ -153,6 +160,27 @@ export default function Landing() {
             </div>
           </div>
         )}
+      </section>
+
+      {/* ---------- free tools (public, no sign-in) ---------- */}
+      <section className="l-section" id="tools">
+        <div className="l-container">
+          <div className="l-section-head">
+            <span className="eyebrow">Free tools · no sign-in</span>
+            <h2>Check prices and find a doctor — free.</h2>
+            <p className="muted">Prices from verified chemists and labs on Nexus, and verified doctors with reviews only from real visits.</p>
+          </div>
+          <div className="l-portals">
+            {FREE_TOOLS.map((p) => (
+              <Link key={p.to} to={p.to} className="l-portal">
+                <div className="l-portal-icon"><p.icon /></div>
+                <h4>{p.title}</h4>
+                <p className="muted small">{p.text}</p>
+                <span className="l-portal-cta">{p.cta} <ArrowRight size={15} /></span>
+              </Link>
+            ))}
+          </div>
+        </div>
       </section>
 
       {/* ---------- story / how it works ---------- */}
@@ -341,6 +369,7 @@ export default function Landing() {
           </div>
           <div>
             <h4>Product</h4>
+            <Link to="/medicines">Medicine price checker</Link><Link to="/lab-tests">Lab test prices</Link><Link to="/find/doctors">Find a doctor</Link><Link to="/find/labs">Labs near you</Link>
             <a href="#how">How it works</a><a href="#kiosk">E-Clinics</a><a href="#privacy">Privacy &amp; consent</a><button type="button" className="l-footer-link" onClick={openCookieSettings}>Cookie preferences</button>
           </div>
           <div>

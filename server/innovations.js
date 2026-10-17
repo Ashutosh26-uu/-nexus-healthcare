@@ -19,6 +19,13 @@ function latestVitals(db, patientId) {
     if (v.sys === undefined && cv.bp) { const [s, d] = String(cv.bp).split('/').map(Number); v.sys = s; v.dia = d; }
     for (const k of ['pulse', 'spo2', 'temp', 'weight', 'sugar']) if (v[k] === undefined && cv[k] != null) v[k] = Number(cv[k]);
   }
+  // Home readings (Health tracker) fill whatever no clinic visit has measured yet, newest first.
+  const home = (db.vitalsLog || []).filter((e) => e.patientId === patientId).sort((a, b) => (a.at < b.at ? 1 : -1));
+  for (const e of home) {
+    if (e.kind === 'bp' && v.sys === undefined) { v.sys = e.sys; v.dia = e.dia; if (v.pulse === undefined && e.pulse) v.pulse = e.pulse; }
+    else if (e.kind === 'sugar' && v.sugar === undefined && e.context === 'fasting') v.sugar = e.value;
+    else if (['spo2', 'temp', 'weight'].includes(e.kind) && v[e.kind] === undefined) v[e.kind] = e.value;
+  }
   // Pull HbA1c / LDL from lab reports if present.
   for (const o of db.labOrders.filter((x) => x.patientId === patientId && x.results?.length)) {
     for (const r of o.results) {

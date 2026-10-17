@@ -9,6 +9,7 @@ import VoiceInput from '../../components/VoiceInput';
 import { usePatient, PageSkeleton } from './shared';
 import { useDeviceLocation, LocationButton } from './NearbyDoctors';
 import PaymentStep from './Payment';
+import ShareButton from '../../components/ShareButton';
 
 const STEPS = ['Medicines', 'Chemist', 'Pickup or delivery', 'Done'];
 
@@ -52,13 +53,15 @@ export default function OrderMedicines() {
   const device = useDeviceLocation();
   const prescriptions = useMemo(() => home?.prescriptions || [], [home]);
   const [step, setStep] = useState(0);
-  const [source, setSource] = useState('rx');
+  // ?drug= comes from the public price checker: start on "other medicine" with that name filled in.
+  const linkedDrug = (params.get('drug') || '').slice(0, 80);
+  const [source, setSource] = useState(linkedDrug ? 'other' : 'rx');
   const [rxId, setRxId] = useState(params.get('rx') || '');
   const [picks, setPicks] = useState({}); // drug → { on, qty }
   // Rows carry a stable id so removing one doesn't hand its typed text / suggestions to the next row.
   const rowId = useRef(1);
   const newRow = (drug = '') => ({ id: rowId.current++, drug, qty: 1 });
-  const [others, setOthers] = useState(() => [{ id: 0, drug: '', qty: 1 }]);
+  const [others, setOthers] = useState(() => [{ id: 0, drug: linkedDrug, qty: 1 }]);
   const [rxFile, setRxFile] = useState(null);
   const [quote, setQuote] = useState(null);
   const [shopId, setShopId] = useState(null);
@@ -113,6 +116,8 @@ export default function OrderMedicines() {
   const deliveryFee = fulfilment === 'delivery' ? (quote?.deliveryFee || 0) : 0;
   const total = Math.round((medicines + deliveryFee) * 100) / 100;
   const advance = fulfilment === 'delivery' ? Math.ceil(total * (quote?.advanceShare || 0.35)) : 0;
+  // What the generic swaps the patient accepted saved (shown + shareable on the "order sent" screen).
+  const genericSaved = source === 'rx' ? Math.round(Object.entries(picks).filter(([, v]) => v.on && v.sub).reduce((s, [drug, v]) => s + (subs[drug]?.saving || 0) * (v.qty || 0), 0)) : 0;
 
   const findChemists = async () => {
     setError('');
@@ -336,6 +341,13 @@ export default function OrderMedicines() {
               <p className="small muted mb-0">{result.order.pharmacyName ? <><strong translate="no">{result.order.pharmacyName}</strong> has your order.</> : 'Every chemist near you has your request — we’ll tell you who accepts.'} We&apos;ll notify you at every step.</p>
               <div className="pt-bk-id"><span className="tiny muted">{result.order.fulfilment === 'delivery' ? 'Delivery code — share it with the rider' : 'Pickup code — show it at the counter'}</span><strong className="mono">{result.order.otp}</strong></div>
               {result.order.fulfilment === 'delivery' && <p className="small mb-0"><Truck size={14} style={{ verticalAlign: '-2px' }} /> Advance {fmtMoney(result.order.advance)} paid · {fmtMoney(result.order.balance)} on delivery</p>}
+              {genericSaved > 0 && (
+                <div className="callout green small" style={{ textAlign: 'left' }}><BadgeIndianRupee /><div className="stack" style={{ gap: 8 }}>
+                  <span>You saved <strong>{fmtMoney(genericSaved)}</strong> by choosing same-salt generics.</span>
+                  {/* The amount only — never which medicines. */}
+                  <ShareButton label="Share the tip" url={window.location.origin} text={`I saved ${fmtMoney(genericSaved)} on medicines with Nexus Healthcare — it shows cheaper same-salt, same-strength options your doctor allows:`} />
+                </div></div>
+              )}
               <Button icon={Package} onClick={() => navigate('/patient/medicines')}>Track my order</Button>
             </div>
           )}

@@ -5,12 +5,16 @@ import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, greeting, firstName, PageSkeleton, PassportQR } from './shared';
 import { getLocale } from '../../i18n';
 import { LateNotice, VisitChangeActions } from './VisitChange';
+import { useLive } from '../../live';
+import { HealthToday, FamilyInvite } from './HomeHealth';
+import InviteCard from './InviteCard';
 
 const MODE_ICON = { video: Video, audio: Phone, chat: MessageCircle };
 
 export default function Home() {
   const { home, homeLoading, homeError, profiles, reloadHome } = usePatient();
   const navigate = useNavigate();
+  const hub = useLive('/family/overview', ['vitals', 'vaccines', 'consults', 'family', 'patients']);
 
   if (homeLoading) return <PageSkeleton />;
   if (homeError && !home) return <Empty title="We couldn't load your home screen">{homeError}</Empty>;
@@ -82,6 +86,9 @@ export default function Home() {
         </div>
       )}
 
+      <HealthToday card={(hub.data || []).find((x) => x.id === p.id)} isSelf={isSelf} name={firstName(p.name)} />
+      {isSelf && profiles.length <= 1 && <FamilyInvite />}
+
       <div className="pt-quick">
         <QuickAction to="/patient/symptoms" icon={HeartPulse} title="Check symptoms" text="Tell us what's wrong — takes 2 minutes" tone="clay" />
         <QuickAction to="/patient/consult" icon={Video} title="Talk to a doctor" text="Video, audio or chat, from home" tone="green" />
@@ -150,6 +157,7 @@ export default function Home() {
 
         <div className="stack lg">
           <PassportCard patient={p} />
+          {isSelf && <InviteCard />}
 
           {home.advisories?.length > 0 && (
             <Card title={<h3 className="row" style={{ gap: 8 }}><Megaphone size={18} className="pt-clay" /> Health tips near you</h3>}>

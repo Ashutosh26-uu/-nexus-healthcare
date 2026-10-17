@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { ShieldCheck, Smartphone, CreditCard, CheckCircle2, Info } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ShieldCheck, Smartphone, CreditCard, CheckCircle2, Info, Gift } from 'lucide-react';
 import { api } from '../../api';
-import { Button, fmtMoney, safeUrl } from '../../components/ui';
+import { Button, Switch, fmtMoney, safeUrl } from '../../components/ui';
 import QR from '../../components/QR';
 import { useAuth } from '../../auth';
 
@@ -19,16 +19,43 @@ const loadRazorpay = () => {
   return rzpLoading;
 };
 
+// What Nexus credit can pay for (the server decides the amount; this only decides whether to offer it).
+const CREDIT_PURPOSES = new Set(['consult', 'lab_advance', 'med_order_advance']);
+
 const isMobile = () => /android|iphone|ipad|ipod/i.test(navigator.userAgent);
 
 // Pay for a consult or a delivery. Razorpay (real money, signature-verified on our server) when the
 // keys are configured; otherwise a real UPI QR plus a clearly-labelled demo confirmation.
 // `onError(err)` lets the parent offer a way forward — a 409 means the booking can no longer be paid for
 // (time passed, cancelled, changed), so paying again can't work.
-export default function PaymentStep({ payment, onPaid, onError, breakdown }) {
+export default function PaymentStep({ payment: initial, onPaid, onError, breakdown }) {
   const { user } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // The credit toggle changes the amount (and the gateway order), so the step keeps its own copy.
+  const [payment, setPayment] = useState(initial);
+  if (payment.id !== initial.id) setPayment(initial);
+  const [credit, setCredit] = useState(0);
+  const creditable = CREDIT_PURPOSES.has(payment.purpose) && payment.status === 'created';
+  useEffect(() => {
+    if (!creditable) return undefined;
+    let alive = true;
+    api.get('/credits').then((r) => alive && setCredit(r.balance || 0)).catch(() => {});
+    return () => { alive = false; };
+  }, [payment.id, creditable]);
+
+  const applyCredit = async (on) => {
+    if (busy) return;
+    setBusy(true); setError('');
+    try {
+      const r = await api.post(`/payments/${payment.id}/credit`, { useCredit: on });
+      setPayment(r.payment); setCredit(r.balance || 0);
+      if (r.payment.status === 'paid') onPaid(r.payment);
+    } catch (e) { setError(e.message); if (e.status === 409) onError?.(e); } finally { setBusy(false); }
+  };
+  const gross = payment.gross ?? payment.amount;
+  // Mirrors the server rule for the label only: all of it, or leave at least ₹1 to pay.
+  const offer = payment.creditApplied || (credit >= gross ? gross : Math.max(0, Math.min(credit, gross - 1)));
 
   const confirm = async (body = {}) => {
     setBusy(true); setError('');
@@ -61,7 +88,19 @@ export default function PaymentStep({ payment, onPaid, onError, breakdown }) {
         <span className="tiny muted">{payment.label}</span>
         <strong>{fmtMoney(payment.amount)}</strong>
         {breakdown && <span className="tiny muted">Medicines {fmtMoney(breakdown.medicines)} + delivery {fmtMoney(breakdown.deliveryFee)}</span>}
+        {payment.creditApplied > 0 && <span className="tiny muted">{fmtMoney(gross)} − {fmtMoney(payment.creditApplied)} Nexus credit</span>}
       </div>
+
+      {creditable && offer > 0 && (
+        <div className="pt-pay-credit">
+          <Gift size={18} />
+          <span className="grow">
+            <strong className="small block">Use {fmtMoney(offer)} Nexus credit</strong>
+            <span className="tiny muted">{payment.creditApplied > 0 ? (payment.amount > 0 ? `Pay just ${fmtMoney(payment.amount)} now` : 'Covers the whole amount') : offer >= gross ? 'Covers the whole amount — confirms right away' : `You have ${fmtMoney(credit)} from inviting friends`}</span>
+          </span>
+          {busy ? <span className="spinner sm" /> : <Switch checked={payment.creditApplied > 0} onChange={applyCredit} label="Use Nexus credit" />}
+        </div>
+      )}
 
       {payment.provider === 'razorpay' ? (
         <div className="stack" style={{ alignItems: 'center' }}>

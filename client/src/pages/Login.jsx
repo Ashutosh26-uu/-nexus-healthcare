@@ -65,7 +65,7 @@ export default function Login() {
   };
 
   const onOtp = async (r, who) => {
-    if (r.newUser) navigate('/signup', { state: { ticket: r.ticket, email: who.email, country: who.country?.iso } });
+    if (r.newUser) navigate('/signup', { state: { ticket: r.ticket, email: who.email, country: who.country?.iso, from: location.state?.from } });
     else await signIn(r.token);
   };
 
@@ -119,7 +119,7 @@ export default function Login() {
 
           {/* One calm "new here?" block instead of three crowded lines. */}
           <div className="auth-divider" role="separator"><span>New to Nexus Healthcare?</span></div>
-          <Link to="/signup" className="btn secondary lg block auth-alt"><UserPlus size={17} /> Create your free Health Passport</Link>
+          <Link to="/signup" state={location.state?.from ? { from: location.state.from } : undefined} className="btn secondary lg block auth-alt"><UserPlus size={17} /> Create your free Health Passport</Link>
           <Link to="/join" className="auth-join"><Stethoscope size={16} /><span>Doctor, clinic, lab or pharmacy? <strong>Join the network</strong></span><ChevronRight size={16} /></Link>
         </div>
       </div>

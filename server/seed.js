@@ -263,6 +263,7 @@ function demoSeed() {
       { id: 'mo_demo1', orderNo: 'MO-418203', patientId: 'OC-2041-5521', userId: 'u_pat2', rxId: null, rxFileId: null, source: 'other', items: [{ drug: 'Paracetamol 500mg', qty: 10, unit: 'tablet', unitPrice: 0.45, lineTotal: 4.5 }, { drug: 'ORS sachet', qty: 6, unit: 'sachet', unitPrice: 9.45, lineTotal: 56.7 }], pharmacyId: 'fac_p1', candidates: [], fulfilment: 'pickup', address: null, medicines: 61.2, deliveryFee: 0, total: 61.2, advance: 0, balance: 61.2, advancePaid: 0, status: 'requested', otp: '5590', createdAt: ago(0, 0.2), note: '' },
     ],
     careTransfers: [],
+    credits: [], // Nexus credit ledger (credits.js)
   };
 }
 

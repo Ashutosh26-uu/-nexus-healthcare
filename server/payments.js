@@ -51,6 +51,8 @@ function publicPayment(p, { dataMode }) {
     orderId: p.orderId || null, keyId: p.provider === 'razorpay' ? keyId() : null,
     upi: upiUri({ amount: p.amount, ref: p.id, note: p.label || 'Nexus Healthcare' }),
     demo: p.provider === 'demo', demoConfirmAllowed: p.provider === 'demo' && demoAllowed(dataMode), paidAt: p.paidAt || null,
+    // Nexus credit (credits.js): `amount` is what's left to pay; `gross` is the price before credit.
+    gross: p.gross ?? p.amount, creditApplied: p.creditApplied || 0, method: p.method || null,
   };
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowRight, Check, HeartHandshake, ShieldCheck, UserRound } from 'lucide-react';
+import { ArrowRight, Check, Gift, HeartHandshake, ShieldCheck, UserRound } from 'lucide-react';
 import Logo from '../components/Logo';
 import { api } from '../api';
 import { useAuth, ROLE_HOME } from '../auth';
@@ -30,6 +30,21 @@ export default function Signup() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  // Invite link (/signup?ref=CODE). Kept for this tab so a detour through "Sign in" doesn't lose it.
+  const [ref] = useState(() => {
+    const fromUrl = new URLSearchParams(location.search).get('ref');
+    try { if (fromUrl) sessionStorage.setItem('oc_ref', fromUrl); return fromUrl || sessionStorage.getItem('oc_ref') || ''; } catch { return fromUrl || ''; }
+  });
+  const [inviter, setInviter] = useState(null);
+  useEffect(() => {
+    if (!/^[A-Za-z0-9]{6,12}$/.test(ref)) return undefined;
+    let alive = true;
+    api.get(`/referrals/code/${encodeURIComponent(ref)}`).then((r) => alive && setInviter(r)).catch(() => {});
+    return () => { alive = false; };
+  }, [ref]);
+  // Sent here from a public page's "Book" / "Order" button: continue there once the account exists (patient app only).
+  const from = location.state?.from;
+  const next = typeof from === 'string' && /^\/patient(\/|\?|$)/.test(from) ? from : '/patient';
 
   useEffect(() => { if (user && !busy) navigate(ROLE_HOME[user.role], { replace: true }); }, [user, busy, navigate]);
 
@@ -46,10 +61,11 @@ export default function Signup() {
   const create = async (tk) => {
     const r = await api.post('/auth/register/quick', {
       ticket: tk, name: form.name.trim(), email: form.email.trim(), phone: digits, dialCode: country.dial, country: country.iso,
-      language: APP_LANGS.find((l) => l.code === lang)?.name || 'English',
+      language: APP_LANGS.find((l) => l.code === lang)?.name || 'English', ...(inviter ? { ref } : {}),
     });
+    try { sessionStorage.removeItem('oc_ref'); } catch { /* ignore */ }
     await signIn(r.token);
-    navigate('/patient', { replace: true, state: { justJoined: true } });
+    navigate(next, { replace: true, state: { justJoined: true } });
   };
 
   const sendCode = async (e) => {
@@ -71,7 +87,7 @@ export default function Signup() {
     setBusy(true); setError('');
     try {
       const r = await api.post('/auth/otp/verify', { target: sent.target, code });
-      if (r.token) { await signIn(r.token); navigate('/patient', { replace: true }); return; } // already had an account
+      if (r.token) { await signIn(r.token); navigate(next, { replace: true }); return; } // already had an account
       await create(r.ticket);
     } catch (err) { setError(err.message); setCode(''); } finally { setBusy(false); }
   };
@@ -79,13 +95,16 @@ export default function Signup() {
   return (
     <div className="auth">
       <div className="auth-form-side">
-        <div className="auth-top"><Logo /><div className="row"><LanguagePicker /><Link to="/login" className="small muted">Already have an account? <strong>Sign in</strong></Link></div></div>
+        <div className="auth-top"><Logo /><div className="row"><LanguagePicker /><Link to="/login" state={from ? { from } : undefined} className="small muted">Already have an account? <strong>Sign in</strong></Link></div></div>
         <div className="auth-card fade-in" key={sent ? 'code' : 'details'}>
           {!sent ? (
             <form className="stack" onSubmit={sendCode}>
               <span className="eyebrow">Create your Health Passport · free</span>
               <h1 className="auth-title mb-0">Just three things to start</h1>
               <p className="muted mb-0">Your name, email and mobile number. You can add the rest later, whenever you like.</p>
+              {inviter && (
+                <div className="callout green small"><Gift size={16} /><div>You were invited by <strong translate="no">{inviter.firstName}</strong> — you&apos;ll get ₹{inviter.reward} Nexus credit after your first consult.</div></div>
+              )}
               <Field label="Your full name"><input className="input" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Sunita Devi" autoFocus autoComplete="name" /></Field>
               <Field label="Email">
                 <input className="input" type="email" dir="ltr" value={form.email} onChange={(e) => set('email', e.target.value.trim())} placeholder="you@example.com" readOnly={lockedEmail} autoComplete="email" />

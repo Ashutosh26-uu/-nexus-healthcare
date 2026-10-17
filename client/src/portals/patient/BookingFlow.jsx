@@ -10,6 +10,7 @@ import { SlotPicker } from './VisitChange';
 import PaymentStep from './Payment';
 import VisitPass from './VisitPass';
 import QR from '../../components/QR';
+import ShareButton from '../../components/ShareButton';
 
 const STEPS = ['Where', 'When', 'Symptoms', 'Pay'];
 const DURATIONS = [{ label: 'Today', days: 0 }, { label: '1–3 days', days: 2 }, { label: '4–7 days', days: 5 }, { label: '1–2 weeks', days: 10 }, { label: 'Over 2 weeks', days: 21 }];
@@ -228,6 +229,9 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
               <p className="small mb-0">{MODE_LABEL[booking.consult.mode] || MODE_LABEL.video}.{!later ? 'Stay on the consult screen — you’ll be called in shortly.' : `We'll remind you before ${fmtDateTime(slot)}.`}</p>
             </>
           )}
+          {/* For family: who, when, where — never the symptoms. */}
+          <ShareButton label="Tell family on WhatsApp"
+            text={`I've booked a doctor on Nexus Healthcare: ${d.name}, ${later && slot ? fmtDateTime(slot) : 'today, right now'} — ${visitType === 'video' ? (MODE_LABEL[booking.consult.mode] || MODE_LABEL.video).toLowerCase() : `at ${place?.name || 'the clinic'}`}.`} />
         </div>
       )}
     </Modal>
