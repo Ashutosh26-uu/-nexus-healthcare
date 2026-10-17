@@ -15,8 +15,7 @@
     "docker:build": "docker build -t nexus-healthcare .",
     "docker:up": "docker compose up -d --build",
     "catalyst:build": "node scripts/catalyst-build.mjs",
-    "catalyst:deploy": "npm run catalyst:build && cd catalyst-build && catalyst deploy",
-    "smoke": "node scripts/smoke.mjs"
+    "catalyst:deploy": "npm run catalyst:build && cd catalyst-build && catalyst deploy"
   },
   "devDependencies": {
     "concurrently": "^10.0.6",

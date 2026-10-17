@@ -1,28 +1,24 @@
 import { DoctorCtx } from './context';
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ListChecks, Users, CalendarDays, Wallet, Award, Pill, UserRound, Clock, FilePen, Video, Building2, GraduationCap, MapPin, Camera } from 'lucide-react';
-import { Suspense, useEffect, useState } from 'react';
+import { useState } from 'react';
 import PortalLayout from '../../components/PortalLayout';
 import { useLive } from '../../live';
 import { api } from '../../api';
-import { Button, Modal, Switch, useAction, cx, Loading } from '../../components/ui';
-import { lazyPage, whenIdle } from '../../lazyPage';
+import { Button, Modal, Switch, useAction, cx } from '../../components/ui';
 import { useAuth } from '../../auth';
+import Clinic from './Clinic';
 import Queue from './Queue';
+import Score from './Score';
+import Consult from './Consult';
+import Patients from './Patients';
+import Schedule from './Schedule';
+import Earnings from './Earnings';
+import Medicines from './Medicines';
+import Profile from './Profile';
+import Prescribe from './Prescribe';
 import { NewBookingPopup } from './BookingAlerts';
 import './doctor.css';
-
-// Only the queue ships in the portal chunk; every other screen loads on demand (nav hover/touch preloads
-// it). The consult screen — with the prescription composer — is preloaded as soon as the queue is idle.
-const Consult = lazyPage(() => import('./Consult'));
-const Prescribe = lazyPage(() => import('./Prescribe'));
-const Patients = lazyPage(() => import('./Patients'));
-const Schedule = lazyPage(() => import('./Schedule'));
-const Medicines = lazyPage(() => import('./Medicines'));
-const Clinic = lazyPage(() => import('./Clinic'));
-const Earnings = lazyPage(() => import('./Earnings'));
-const Score = lazyPage(() => import('./Score'));
-const Profile = lazyPage(() => import('./Profile'));
 
 // Keyed by id so state from one consult never carries into the next.
 function ConsultById() {
@@ -93,27 +89,24 @@ export default function DoctorApp() {
   const waiting = home.data?.stats?.waiting || 0;
   const doctor = home.data?.doctor;
   const verified = doctor ? doctor.verified : true;
-  const ready = !!doctor?.verified; // not before /doctor/home says so: unverified doctors never open a consult
-  useEffect(() => (ready ? whenIdle(() => { Consult.preload().catch(() => {}); Prescribe.preload().catch(() => {}); }) : undefined), [ready]);
   const nav = verified ? [
     { to: '/doctor', label: 'Patient queue', icon: ListChecks, end: true, badge: waiting || null },
-    { to: '/doctor/prescribe', label: 'Write prescription', icon: FilePen, preload: Prescribe.preload },
-    { to: '/doctor/patients', label: 'Patients & records', icon: Users, preload: Patients.preload },
-    { to: '/doctor/schedule', label: 'Schedule & availability', icon: CalendarDays, preload: Schedule.preload },
-    { to: '/doctor/medicines', label: 'My medicines', icon: Pill, preload: Medicines.preload },
-    { to: '/doctor/clinic', label: home.data?.clinic ? 'My clinic & doctors' : 'Add my clinic', icon: Building2, preload: Clinic.preload },
-    { to: '/doctor/earnings', label: 'Earnings & reports', icon: Wallet, preload: Earnings.preload },
-    { to: '/doctor/score', label: 'My quality score', icon: Award, preload: Score.preload },
-    { to: '/doctor/profile', label: 'My profile', icon: UserRound, preload: Profile.preload },
+    { to: '/doctor/prescribe', label: 'Write prescription', icon: FilePen },
+    { to: '/doctor/patients', label: 'Patients & records', icon: Users },
+    { to: '/doctor/schedule', label: 'Schedule & availability', icon: CalendarDays },
+    { to: '/doctor/medicines', label: 'My medicines', icon: Pill },
+    { to: '/doctor/clinic', label: home.data?.clinic ? 'My clinic & doctors' : 'Add my clinic', icon: Building2 },
+    { to: '/doctor/earnings', label: 'Earnings & reports', icon: Wallet },
+    { to: '/doctor/score', label: 'My quality score', icon: Award },
+    { to: '/doctor/profile', label: 'My profile', icon: UserRound },
   ] : [
     { to: '/doctor', label: 'Home', icon: ListChecks, end: true },
-    { to: '/doctor/profile', label: 'Complete profile', icon: UserRound, badge: doctor?.profileComplete ? null : '!', preload: Profile.preload },
-    { to: '/doctor/medicines', label: 'My medicines', icon: Pill, preload: Medicines.preload },
+    { to: '/doctor/profile', label: 'Complete profile', icon: UserRound, badge: doctor?.profileComplete ? null : '!' },
+    { to: '/doctor/medicines', label: 'My medicines', icon: Pill },
   ];
   return (
     <DoctorCtx.Provider value={home}>
       <PortalLayout portal="Doctor Portal" nav={nav} headerExtra={<PresenceControl home={home} />}>
-        <Suspense fallback={<Loading />}>
         <Routes>
           <Route index element={<Queue />} />
           <Route path="profile" element={<Profile />} />
@@ -128,7 +121,6 @@ export default function DoctorApp() {
           {verified && <Route path="score" element={<Score />} />}
           <Route path="*" element={<Navigate to="/doctor" replace />} />
         </Routes>
-        </Suspense>
         {verified && <NewBookingPopup home={home} />}
         <CompleteProfilePrompt doctor={doctor} />
       </PortalLayout>

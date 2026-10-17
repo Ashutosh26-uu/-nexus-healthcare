@@ -6,9 +6,7 @@ import { Avatar, Button, Card, Empty, Field, Modal, fmtDate, useAction, useToast
 import { OtpInput } from '../../components/OtpFlow';
 import { useDoctorHome } from './context';
 import { useDebounced, LAB_TESTS } from './shared';
-import { DrugSearch, TypedBadge } from './RxComposer';
-import { QuickEntry, RepeatLast, DiagnosisChips, DraftNote } from './RxQuick';
-import { useRxKit, startValues, stockFor, readDraft, clearDraft, useDraftAutosave, lc } from './rxKit';
+import { DrugSearch } from './RxComposer';
 import { TimingPicker, freqText, parseFreq } from './medTiming';
 import { MedicineForm, blankMed } from './Medicines';
 import DosDonts from './DosDonts';
@@ -111,28 +109,14 @@ function WriteStep({ patient, onDone, onCancel }) {
   const home = useDoctorHome();
   const doctor = home.data?.doctor;
   const toast = useToast();
-  // Draft per walk-in patient (24 h, this device) — see rxKit.
-  const draftKey = `walkin:${patient.id}`;
-  const [draft] = useState(() => readDraft(draftKey));
-  const [draftShown, setDraftShown] = useState(!!draft);
-  const [rows, setRows] = useState(draft?.rows || []);
-  const [diagnosis, setDiagnosis] = useState(draft?.diagnosis || '');
-  const [advice, setAdvice] = useState(draft?.advice || '');
+  const [rows, setRows] = useState([]);
+  const [diagnosis, setDiagnosis] = useState('');
+  const [advice, setAdvice] = useState('');
   const [complaint, setComplaint] = useState('');
-  const [dos, setDos] = useState(draft?.dos || []);
-  const [donts, setDonts] = useState(draft?.donts || []);
-  const [tests, setTests] = useState(draft?.tests || []);
-  const [followUp, setFollowUp] = useState(draft?.followUp || 0);
-  const kit = useRxKit();
-  const [lastRx, setLastRx] = useState(null);
-  const [sent, setSent] = useState(false);
-  const signRef = useRef(null);
-  useDraftAutosave(draftKey, { rows, diagnosis, advice, dos, donts, tests, followUp }, !sent);
-  useEffect(() => {
-    let alive = true;
-    api.get(`/doctor/last-rx?patientId=${encodeURIComponent(patient.id)}`).then((r) => alive && setLastRx(r.lastRx)).catch(() => {});
-    return () => { alive = false; };
-  }, [patient.id]);
+  const [dos, setDos] = useState([]);
+  const [donts, setDonts] = useState([]);
+  const [tests, setTests] = useState([]);
+  const [followUp, setFollowUp] = useState(0);
   const [paper, setPaper] = useState(null);
   const [targets, setTargets] = useState(null);
   const [pharmacyId, setPharmacyId] = useState('');
@@ -169,18 +153,10 @@ function WriteStep({ patient, onDone, onCancel }) {
   const pickLab = (id) => { setLabId(id); setLabDropped(false); };
 
   const update = (key, patch) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  // Smart defaults: the doctor's last dose of this drug → their saved medicine → the usual adult dose.
-  const addDrug = (d) => setRows((rs) => [...rs, { ...blankRow(d.name), ...startValues(kit, d.name, d.defaults) }]);
-  // Shorthand line: retyping a listed drug updates that line instead of adding it twice.
-  const addLine = (l) => {
-    const fields = { drug: l.drug, dose: l.dose, freq: l.freq, days: l.days, food: l.food, timing: l.timing, unknown: !!l.unknown, strengthOff: !!l.strengthMismatch };
-    const hit = rows.find((r) => lc(r.drug) === lc(l.drug));
-    if (hit) { update(hit.key, fields); return; }
-    const row = { ...blankRow(), ...fields };
-    setRows((rs) => [...rs, row]);
-    if (!l.unknown) stockFor(l.drug).then((st) => st && update(row.key, st));
+  const addDrug = (d) => {
+    const m = d.defaults;
+    setRows((rs) => [...rs, m ? { ...blankRow(d.name), dose: m.dose, freq: freqText(m) + (m.note ? ` · ${m.note}` : ''), days: m.days, timing: m.sos ? null : m.timing, food: m.food } : blankRow(d.name)]);
   };
-  const discardDraft = () => { setRows([]); setDiagnosis(''); setAdvice(''); setDos([]); setDonts([]); setTests([]); setFollowUp(0); clearDraft(draftKey); setDraftShown(false); };
   // Templates and favourite chips add lines; medicines already on the prescription are not repeated.
   const addItems = (items) => setRows((rs) => [...rs, ...rowsFrom(items, rs.map((r) => r.drug)).map((x) => ({ ...blankRow(), ...x }))]);
   const applyRxTemplate = (t) => {
@@ -189,11 +165,6 @@ function WriteStep({ patient, onDone, onCancel }) {
     setAdvice((a) => mergeText(a, t.advice));
     setDos((x) => mergeList(x, t.dos)); setDonts((x) => mergeList(x, t.donts));
     setTests((ts) => [...ts, ...(t.labTests || []).map((l) => l.code).filter((c) => !ts.includes(c) && LAB_TESTS.some((x) => x.code === c))]);
-  };
-  const repeatLast = (rx) => {
-    addItems(rx.items);
-    if (!diagnosis.trim() && rx.diagnosis) setDiagnosis(rx.diagnosis);
-    toast('Last prescription added — review doses before signing');
   };
   const tplForm = { diagnosis, advice, dos, donts, labTests: tests.map((code) => ({ code, name: LAB_TESTS.find((x) => x.code === code)?.name || code })), items: rows.map(({ drug, dose, freq, days, food }) => ({ drug, dose, freq, days, food })) };
   const uploadPaper = async (file) => {
@@ -210,20 +181,11 @@ function WriteStep({ patient, onDone, onCancel }) {
       items: rows.map(({ drug, dose, freq, days, food, note }) => ({ drug, dose, freq, days, ...(food ? { food } : {}), ...(note ? { note } : {}) })), labTests: tests.map((code) => ({ code })),
       pharmacyId: pharmacyId || undefined, labId: labId || undefined, shareRxWithLab,
     });
-    setSent(true); clearDraft(draftKey);
     onDone(r);
   }, 'Prescription signed and shared');
-  // Ctrl/Cmd+Enter signs (once the confirmation is ticked).
-  const onKey = (e) => {
-    if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey)) return;
-    e.preventDefault();
-    if (canSign) { if (busy !== 'send') submit(); return; }
-    signRef.current?.focus(); signRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    toast(rows.length || tests.length || paper ? 'Tick the confirmation, then Ctrl+Enter again to sign.' : 'Add a medicine or test first.', 'error');
-  };
 
   return (
-    <div className="stack lg" onKeyDown={onKey}>
+    <div className="stack lg">
       <Card className="dr-pr-patient">
         <Avatar name={patient.name} />
         <div className="grow">
@@ -238,13 +200,8 @@ function WriteStep({ patient, onDone, onCancel }) {
         <Button variant="ghost" size="sm" icon={X} onClick={onCancel}>Change</Button>
       </Card>
 
-      <Card title={<h4 className="row mb-0" style={{ gap: 8 }}><Pill size={17} />Prescription</h4>} action={<span className="row wrap" style={{ gap: 8 }}>{draftShown && <DraftNote onDiscard={discardDraft} />}{doctor?.affiliation && <span className="tiny muted">Issued from {doctor.affiliation}</span>}</span>}>
-        <Field label="Diagnosis / impression">
-          <input className="input" value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} placeholder="e.g. Acute viral fever" />
-          <DiagnosisChips kit={kit} value={diagnosis} onPick={setDiagnosis} onApplyTemplate={applyRxTemplate} />
-        </Field>
-        <QuickEntry kit={kit} onAdd={addLine} existing={rows.map((r) => r.drug)} autoFocus />
-        <RepeatLast lastRx={lastRx} count={rows.length} onRepeat={repeatLast} />
+      <Card title={<h4 className="row mb-0" style={{ gap: 8 }}><Pill size={17} />Prescription</h4>} action={doctor?.affiliation && <span className="tiny muted">Issued from {doctor.affiliation}</span>}>
+        <Field label="Diagnosis / impression"><input className="input" value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} placeholder="e.g. Acute viral fever" /></Field>
         <DrugSearch onPick={addDrug} onAddNew={(name) => setNewMed(blankMed(name))} />
         <RxTemplateTools form={tplForm} onApply={applyRxTemplate} onAddItems={addItems} />
         {allergyHits.map((w) => <div key={w.msg} className="callout rose mt-1"><ShieldAlert /><div><strong>Allergy alert.</strong> {w.msg}</div></div>)}
@@ -254,7 +211,7 @@ function WriteStep({ patient, onDone, onCancel }) {
             <div className="dr-rx-row head"><span>Medicine</span><span>Dose</span><span>How often</span><span>Days</span><span /></div>
             {rows.map((r) => (
               <div key={r.key} className="dr-rx-row">
-                <div className="dr-rx-drug"><strong className="small" translate="no">{r.drug}</strong><TypedBadge row={r} /></div>
+                <strong className="small" translate="no">{r.drug}</strong>
                 <input className="input sm" value={r.dose} onChange={(e) => update(r.key, { dose: e.target.value })} aria-label="Dose" />
                 <input className="input sm" value={r.freq} onChange={(e) => update(r.key, { freq: e.target.value, timing: parseFreq(e.target.value) || r.timing })} aria-label="Frequency" />
                 <input className="input sm" type="number" min="0" value={r.days} onChange={(e) => update(r.key, { days: e.target.value })} aria-label="Days" />
@@ -325,11 +282,11 @@ function WriteStep({ patient, onDone, onCancel }) {
 
       <div className="dr-sign">
         <label className="check">
-          <input ref={signRef} type="checkbox" checked={signed} onChange={(e) => setSigned(e.target.checked)} />
+          <input type="checkbox" checked={signed} onChange={(e) => setSigned(e.target.checked)} />
           <PenLine size={17} />
           <span>I have examined this patient and this prescription is clinically appropriate. Sign digitally as <strong translate="no">{doctor?.name}</strong> ({doctor?.regNo}).</span>
         </label>
-        <Button size="lg" icon={Send} disabled={!canSign} loading={busy === 'send'} onClick={submit} title="Ctrl+Enter">Sign & share</Button>
+        <Button size="lg" icon={Send} disabled={!canSign} loading={busy === 'send'} onClick={submit}>Sign & share</Button>
       </div>
 
       <Modal open={!!newMed} onClose={() => setNewMed(null)} wide title="Add a medicine" subtitle="Set the dose and timing"

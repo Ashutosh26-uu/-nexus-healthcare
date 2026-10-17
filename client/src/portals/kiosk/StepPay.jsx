@@ -33,7 +33,7 @@ function MockQR({ seed = 'omnicare', size = 29 }) {
 
 export default function StepPay() {
   const { t, say, flow, setFlow, kiosk } = useKiosk();
-  const { data: c } = useLive(flow.consultId ? `/consults/${flow.consultId}` : null, ['prescriptions', `consult:${flow.consultId}`], [], { cache: false });
+  const { data: c } = useLive(flow.consultId ? `/consults/${flow.consultId}` : null, ['prescriptions', `consult:${flow.consultId}`]);
   const [method, setMethod] = useState(flow.payment?.method || 'pilot');
   const [paid, setPaid] = useState(Boolean(flow.payment?.done));
   const [printed, setPrinted] = useState(false);

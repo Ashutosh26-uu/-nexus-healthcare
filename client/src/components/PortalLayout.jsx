@@ -6,21 +6,14 @@ import LanguagePicker from './LanguagePicker';
 import { LocationChip, openCookieSettings, openLocationSettings } from '../consent';
 import { useAuth, ROLE_LABEL } from '../auth';
 import { api, subscribe } from '../api';
-import { prefetchLive, useRefreshing } from '../live';
 import { Avatar, timeAgo, cx, Modal, Field, Button, useToast } from './ui';
 import ResetPassword from './ResetPassword';
 import './portal.css';
 
 /**
  * Shared shell for every portal.
- * nav: [{ to, label, icon, end, badge, preload, warm }] — preload() fetches the page's lazy chunk and warm
- * (an API url or list) its data, both on hover/focus/touch: by the time the tap lands, the page is ready.
+ * nav: [{ to, label, icon, end, badge }]
  */
-const intent = (item) => {
-  item.preload?.().catch(() => {}); // a failed preload is retried by the real navigation
-  [].concat(item.warm || []).forEach(prefetchLive);
-};
-
 export default function PortalLayout({ portal, nav, children, headerExtra }) {
   const { user, facility, signOut } = useAuth();
   const [open, setOpen] = useState(false);
@@ -28,15 +21,12 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
   const [notes, setNotes] = useState([]);
-  const [seenNew, setSeenNew] = useState(() => new Set()); // unread when the bell was opened: still highlighted
   const location = useLocation();
   const navigate = useNavigate();
-  const refreshing = useRefreshing();
   const bellRef = useRef(null);
   const menuRef = useRef(null);
 
   useEffect(() => { setOpen(false); setBellOpen(false); setMenuOpen(false); }, [location.pathname]);
-  useEffect(() => { if (!bellOpen) setSeenNew(new Set()); }, [bellOpen]);
 
   // Popovers close on a tap anywhere else or Escape, like every other dropdown in the app.
   useEffect(() => {
@@ -68,14 +58,7 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
   const openBell = () => {
     setBellOpen((v) => !v);
     setMenuOpen(false);
-    // Optimistic: the badge clears at once (the popover keeps showing which ones were new until it closes);
-    // on failure they're marked unread again — quietly, a toast for this would be noise.
-    if (unread) {
-      const ids = new Set(notes.filter((n) => !n.read).map((n) => n.id));
-      setSeenNew(ids);
-      setNotes((n) => n.map((x) => ({ ...x, read: true })));
-      api.post('/notifications/read').catch(() => setNotes((n) => n.map((x) => (ids.has(x.id) ? { ...x, read: false } : x))));
-    }
+    if (unread) api.post('/notifications/read').then(() => setNotes((n) => n.map((x) => ({ ...x, read: true })))).catch(() => {});
   };
 
   return (
@@ -87,7 +70,7 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
         </div>
         <nav className="side-nav">
           {nav.map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.end} onPointerEnter={() => intent(item)} onPointerDown={() => intent(item)} onFocus={() => intent(item)} className={({ isActive }) => cx('side-link', isActive && 'active')}>
+            <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => cx('side-link', isActive && 'active')}>
               {item.icon && <item.icon />}
               <span className="grow">{item.label}</span>
               {item.badge ? <span className="side-badge">{item.badge}</span> : null}
@@ -111,7 +94,6 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
 
       <div className="portal-main">
         <header className="topbar">
-          {refreshing && <div className="refresh-bar" role="progressbar" aria-label="Refreshing" />}
           <button className="icon-btn only-mobile" onClick={() => setOpen(true)} aria-label="Open menu"><Menu /></button>
           <div className="grow topbar-extra">{headerExtra}</div>
           {['patient', 'caregiver'].includes(user?.role) && <LocationChip />}
@@ -127,7 +109,7 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
                 <div className="notif-list">
                   {notes.length === 0 && <p className="muted small center" style={{ padding: 24 }}>You&apos;re all caught up.</p>}
                   {notes.map((n) => (
-                    <div key={n.id} className={cx('notif', (!n.read || seenNew.has(n.id)) && 'unread', n.kind)}>
+                    <div key={n.id} className={cx('notif', !n.read && 'unread', n.kind)}>
                       <div className="small"><strong>{n.title}</strong></div>
                       <div className="small muted">{n.body}</div>
                       <div className="tiny muted mt-1">{timeAgo(n.at)}</div>

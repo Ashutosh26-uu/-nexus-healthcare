@@ -6,7 +6,6 @@ import { Button, StatusBadge, cx, fmtDateTime } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient } from './shared';
 import { getLocale } from '../../i18n';
-import { prefetchLive } from '../../live';
 
 /* ---------- date + time slot picker ---------- */
 function buildDays() {
@@ -95,7 +94,7 @@ export default function Consult() {
       {upcoming.length > 0 && (
         <div className="pt-upcoming-strip">
           {upcoming.map((c) => (
-            <button key={c.id} className="pt-upcoming-pill" onPointerEnter={() => prefetchLive(`/consults/${c.id}`)} onClick={() => navigate(`/patient/consult/${c.id}`)}>
+            <button key={c.id} className="pt-upcoming-pill" onClick={() => navigate(`/patient/consult/${c.id}`)}>
               <StatusBadge status={c.status} />
               <span className="small strong" translate="no">{c.doctorName}</span>
               <span className="tiny muted">{c.status === 'scheduled' ? fmtDateTime(c.scheduledAt) : c.status === 'queued' ? 'in queue' : 'live now'}</span>

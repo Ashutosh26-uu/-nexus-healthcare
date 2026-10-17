@@ -40,9 +40,7 @@ export default function LabApp() {
   if (live.loading && !live.data) body = <Loading />;
   else if (!live.data) body = <Empty title="Couldn't load your orders">{live.error || 'Please refresh in a moment.'}</Empty>;
   else {
-    // Optimistic status steps (mark collected / received / processing): the row moves on at once.
-    const patchOrder = (id, changes) => live.setData((d) => (d ? { ...d, orders: d.orders.map((o) => (o.id === id ? { ...o, ...changes } : o)) } : d));
-    const props = { home: live.data, orders, reload: live.reload, onReport: setReportFor, patchOrder };
+    const props = { home: live.data, orders, reload: live.reload, onReport: setReportFor };
     body = (
       <>
         {feed && <FeedBanner feed={feed} onClose={() => setFeed(null)} />}

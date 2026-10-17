@@ -7,7 +7,7 @@ import { KButton, StepFrame } from './KUi';
 
 export default function StepPickup() {
   const { t, say, flow, reset, home } = useKiosk();
-  const { data: c } = useLive(flow.consultId ? `/consults/${flow.consultId}` : null, ['prescriptions', 'pharmacy'], [], { cache: false });
+  const { data: c } = useLive(flow.consultId ? `/consults/${flow.consultId}` : null, ['prescriptions', 'pharmacy']);
   const pharmacies = (home.data?.pharmacies || []).slice().sort((a, b) => (a.distanceKm ?? 99) - (b.distanceKm ?? 99));
   const rx = c?.prescription;
   const chosen = pharmacies.find((p) => p.id === rx?.pharmacyId);

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Search, Plus, Trash2, Pill, AlertTriangle, ShieldAlert, FlaskConical, Hospital, BedDouble, CalendarClock, PenLine, CheckCircle2, ArrowLeft, Package, Printer, ShieldCheck, Sparkles, UserRound } from 'lucide-react';
+import { Search, Plus, Trash2, Pill, AlertTriangle, ShieldAlert, FlaskConical, Hospital, BedDouble, CalendarClock, PenLine, CheckCircle2, ArrowLeft, Package, Printer, ShieldCheck, Sparkles } from 'lucide-react';
 import { api } from '../../api';
 import { Button, Card, Field, Modal, Pills, useAction, useToast, fmtDate, cx } from '../../components/ui';
 import { TimingPicker, freqText, parseFreq } from './medTiming';
@@ -9,9 +8,6 @@ import DosDonts from './DosDonts';
 import RxTemplateTools from './RxTemplates';
 import { rowsFrom, mergeList, mergeText } from './rxTemplateUtils';
 import { useDebounced, LAB_TESTS } from './shared';
-import { useDoctorHome } from './context';
-import { QuickEntry, RepeatLast, DiagnosisChips, DraftNote, AutoNextToggle } from './RxQuick';
-import { useRxKit, startValues, stockFor, readDraft, clearDraft, useDraftAutosave, readAutoNext, lc } from './rxKit';
 
 const TEMPLATES = [
   { label: '1-0-1 after food × 5 days', dose: '1 tablet', freq: '1-0-1 after food', days: 5 },
@@ -32,13 +28,6 @@ const BED_TYPES = [
 
 const emptyRow = () => ({ key: Math.random().toString(36).slice(2), drug: '', dose: '', freq: '', days: '', stock: null, tier: null, timing: null, food: 'after food' });
 const foodOf = (freq = '') => ['before food', 'after food', 'with food', 'empty stomach'].find((f) => freq.toLowerCase().includes(f)) || (/bedtime|any time/i.test(freq) ? 'any time' : 'after food');
-
-// A shorthand line the formulary didn't recognise — added as typed, so the doctor double-checks it.
-export function TypedBadge({ row }) {
-  if (row.unknown) return <span className="badge sun" title="Not in the formulary or your list — check the spelling before signing"><AlertTriangle />Not in list</span>;
-  if (row.strengthOff) return <span className="badge sun" title="This strength isn't in the formulary"><AlertTriangle />Check strength</span>;
-  return null;
-}
 
 function StockBadge({ qty, tier }) {
   if (qty === null || qty === undefined) return null;
@@ -105,42 +94,7 @@ export function DrugSearch({ onPick, onAddNew }) {
   );
 }
 
-// After signing: the next waiting patient (server queue order), opened automatically after 3 s if the doctor
-// turned that on — with Cancel — or with one tap.
-function NextPatient({ consultId, on, setOn }) {
-  const home = useDoctorHome();
-  const navigate = useNavigate();
-  const [target, setTarget] = useState(null);
-  const [cancelled, setCancelled] = useState(false);
-  const next = home?.data?.queue?.find((c) => c.status === 'queued' && c.id !== consultId) || null;
-  useEffect(() => { if (on && !cancelled && next && !target) setTarget(next); }, [on, cancelled, next, target]);
-  useEffect(() => {
-    if (!target) return undefined;
-    let alive = true;
-    const t = setTimeout(() => {
-      api.post(`/consults/${target.id}/start`).catch(() => {}).finally(() => alive && navigate(`/doctor/consult/${target.id}`));
-    }, 3000);
-    return () => { alive = false; clearTimeout(t); };
-  }, [target, navigate]);
-  const cancel = () => { setCancelled(true); setTarget(null); };
-  return (
-    <div className="dr-next">
-      {target ? (
-        <div className="dr-next-go" role="status">
-          <UserRound size={16} />
-          <span className="grow">Next patient: <strong translate="no">{target.patientName}</strong> — opening…</span>
-          <Button size="sm" variant="secondary" onClick={cancel}>Cancel</Button>
-          <span className="dr-next-bar" aria-hidden />
-        </div>
-      ) : next ? (
-        <div className="dr-next-go idle"><UserRound size={16} /><span className="grow">Next in queue: <strong translate="no">{next.patientName}</strong></span><Button size="sm" onClick={() => { setCancelled(false); setTarget(next); }}>Open now</Button></div>
-      ) : <p className="small muted mb-0">No one else is waiting.</p>}
-      <AutoNextToggle value={on} onChange={(v) => { setOn(v); if (v) setCancelled(false); else cancel(); }} />
-    </div>
-  );
-}
-
-function Success({ done, consult, onBack, autoNext, setAutoNext }) {
+function Success({ done, consult, onBack }) {
   const { prescription: rx, summary } = done;
   const sentName = done.pharmacyName || rx?.pharmacyName || null;
   const [pharmacy, setPharmacy] = useState(null);
@@ -167,7 +121,6 @@ function Success({ done, consult, onBack, autoNext, setAutoNext }) {
         <div><span className="tiny muted">Follow-up</span><strong>{summary.followUpDays ? `${fmtDate(new Date(Date.now() + summary.followUpDays * 86400000).toISOString())}` : 'Not needed'}</strong></div>
       </div>
       {rx?.warnings?.length > 0 && <div className="callout small mt-2"><AlertTriangle />Signed with {rx.warnings.length} acknowledged warning{rx.warnings.length > 1 ? 's' : ''}.</div>}
-      <NextPatient consultId={consult.id} on={autoNext} setOn={setAutoNext} />
       {rx?.signature && <p className="tiny muted mt-2 mb-0"><ShieldCheck size={13} style={{ display: 'inline', verticalAlign: '-2px' }} /> Digitally signed · {rx.signature}</p>}
       <div className="row mt-3" style={{ justifyContent: 'center' }}>
         <Button icon={ArrowLeft} onClick={onBack}>Back to queue</Button>
@@ -178,23 +131,20 @@ function Success({ done, consult, onBack, autoNext, setAutoNext }) {
 }
 
 export default function RxComposer({ consult, record, override, done, onDone, onBack }) {
-  // A half-written prescription survives a reload, a dropped call or a closed tab (24 h, this device only).
-  const [draft] = useState(() => (consult.status === 'completed' ? null : readDraft(consult.id)));
-  const [draftShown, setDraftShown] = useState(!!draft);
-  const [rows, setRows] = useState(draft?.rows || []);
+  const [rows, setRows] = useState([]);
   const [activeKey, setActiveKey] = useState(null);
-  const [diagnosis, setDiagnosis] = useState(draft?.diagnosis || '');
+  const [diagnosis, setDiagnosis] = useState('');
   const [notes, setNotes] = useState('');
-  const [advice, setAdvice] = useState(draft?.advice || '');
-  const [dos, setDos] = useState(draft?.dos || []);
-  const [donts, setDonts] = useState(draft?.donts || []);
-  const [labs, setLabs] = useState(draft?.tests || []);
+  const [advice, setAdvice] = useState('');
+  const [dos, setDos] = useState([]);
+  const [donts, setDonts] = useState([]);
+  const [labs, setLabs] = useState([]);
   const [referOn, setReferOn] = useState(false);
   const [bedType, setBedType] = useState('general');
   const [hospitals, setHospitals] = useState(null);
   const [hospitalId, setHospitalId] = useState('');
   const [referReason, setReferReason] = useState('');
-  const [followUp, setFollowUp] = useState(draft?.followUp || 0);
+  const [followUp, setFollowUp] = useState(0);
   const [labId, setLabId] = useState('');
   const [shareRxWithLab, setShareRxWithLab] = useState(true);
   const [labTargets, setLabTargets] = useState(null);
@@ -205,20 +155,6 @@ export default function RxComposer({ consult, record, override, done, onDone, on
   const toast = useToast();
   const [newMed, setNewMed] = useState(null);
   const [saveToList, setSaveToList] = useState(true);
-  const kit = useRxKit();
-  const [lastRx, setLastRx] = useState(null);
-  const [autoNext, setAutoNext] = useState(readAutoNext);
-  const qeRef = useRef(null);
-  const dxRef = useRef(null);
-  const signRef = useRef(null);
-  useDraftAutosave(consult.id, { rows, diagnosis, advice, dos, donts, tests: labs, followUp }, !done && consult.status !== 'completed');
-
-  // Same access rule as the record: any doctor's last prescription when the history is open to me, else only mine.
-  useEffect(() => {
-    let alive = true;
-    api.get(`/doctor/last-rx?patientId=${encodeURIComponent(consult.patientId)}`).then((r) => alive && setLastRx(r.lastRx)).catch(() => {});
-    return () => { alive = false; };
-  }, [consult.patientId]);
 
   const checkKey = useMemo(() => JSON.stringify(rows.filter((r) => r.drug).map((r) => r.drug)), [rows]);
   const debouncedKey = useDebounced(checkKey, 450);
@@ -252,7 +188,7 @@ export default function RxComposer({ consult, record, override, done, onDone, on
     return () => { alive = false; };
   }, [referOn, bedType]);
 
-  if (done) return <Success done={done} consult={consult} onBack={onBack} autoNext={autoNext} setAutoNext={setAutoNext} />;
+  if (done) return <Success done={done} consult={consult} onBack={onBack} />;
 
   if (consult.status === 'completed') {
     return (
@@ -265,30 +201,22 @@ export default function RxComposer({ consult, record, override, done, onDone, on
   }
 
   const update = (key, patch) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  // Smart defaults: the doctor's last dose of this drug → their saved medicine → the usual adult dose.
   const addDrug = (d) => {
-    const row = { ...emptyRow(), drug: d.name, stock: d.nearbyStock, tier: d.nearestTier, ...startValues(kit, d.name, d.defaults) };
+    const row = { ...emptyRow(), drug: d.name, stock: d.nearbyStock, tier: d.nearestTier };
+    if (d.defaults) {
+      // The doctor's own medicine: dose, timing and duration fill in automatically.
+      const m = d.defaults;
+      Object.assign(row, { dose: m.dose, freq: freqText(m) + (m.note ? ` · ${m.note}` : ''), days: m.days, timing: m.sos ? null : m.timing, food: m.food });
+      setRows((rs) => [...rs, row]);
+      setActiveKey(row.key);
+      return;
+    }
+    const isInhaler = /inhaler/i.test(d.name);
+    const isSachet = /sachet/i.test(d.name);
+    const t = isInhaler ? TEMPLATES[5] : isSachet ? TEMPLATES[6] : TEMPLATES[0];
+    Object.assign(row, { dose: t.dose, freq: t.freq, days: t.days, timing: parseFreq(t.freq), food: foodOf(t.freq) });
     setRows((rs) => [...rs, row]);
     setActiveKey(row.key);
-  };
-  // Shorthand line: retyping a drug that's already listed updates that line instead of adding it twice.
-  const addLine = (l) => {
-    const fields = { drug: l.drug, dose: l.dose, freq: l.freq, days: l.days, food: l.food, timing: l.timing, unknown: !!l.unknown, strengthOff: !!l.strengthMismatch };
-    const hit = rows.find((r) => lc(r.drug) === lc(l.drug));
-    if (hit) { update(hit.key, fields); setActiveKey(hit.key); return; }
-    const row = { ...emptyRow(), ...fields };
-    setRows((rs) => [...rs, row]);
-    setActiveKey(row.key);
-    if (!l.unknown) stockFor(l.drug).then((st) => st && update(row.key, st));
-  };
-  const repeatLast = (rx) => {
-    addItems(rx.items);
-    if (!diagnosis.trim() && rx.diagnosis) setDiagnosis(rx.diagnosis);
-    toast('Last prescription added — review doses before signing');
-  };
-  const discardDraft = () => {
-    setRows([]); setDiagnosis(''); setAdvice(''); setDos([]); setDonts([]); setLabs([]); setFollowUp(0);
-    clearDraft(consult.id); setDraftShown(false);
   };
   const applyTemplate = (t) => {
     const key = activeKey && rows.some((r) => r.key === activeKey) ? activeKey : rows[rows.length - 1]?.key;
@@ -332,35 +260,23 @@ export default function RxComposer({ consult, record, override, done, onDone, on
       followUpDays: followUp || undefined,
       triageOverride: override || undefined,
     });
-    clearDraft(consult.id);
     onDone({ ...res, summary: { diagnosis, labs, followUpDays: followUp, referral: referOn && hospital ? { name: hospital.name, bedType } : null } });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, 'Prescription signed and sent');
-  // Ctrl/Cmd+Enter anywhere in the composer signs — or points at what's still missing.
-  const onComposerKey = (e) => {
-    if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey) || e.target.closest?.('[role="dialog"], .modal')) return; // not from the add-medicine pop-up
-    e.preventDefault();
-    if (canSubmit) { if (busy !== 'complete') complete(); return; }
-    if (consult.status !== 'in_progress') toast('Start the consult to sign.', 'error');
-    else if (!diagnosis.trim()) { dxRef.current?.focus(); toast('Add a diagnosis to sign.', 'error'); }
-    else { signRef.current?.focus(); signRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }); toast('Tick the confirmation, then Ctrl+Enter again to sign.', 'error'); }
-  };
 
   return (
-    <Card className="dr-rx" onKeyDown={onComposerKey}>
+    <Card className="dr-rx">
       <div className="dr-rx-head">
         <div>
           <div className="eyebrow">E-prescription</div>
           <h3 className="mb-0">Write the plan</h3>
         </div>
-        {draftShown && <DraftNote onDiscard={discardDraft} />}
         <span className="tiny muted">{record?.patient?.allergies?.length ? `Allergies on file: ${record.patient.allergies.join(', ')}` : record?.restricted ? 'History locked — allergy check still runs on the server' : 'No known allergies on file'}</span>
       </div>
 
       <div className="grid two">
         <Field label="Diagnosis / impression">
-          <input ref={dxRef} className="input" value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} placeholder="e.g. Infective exacerbation of COPD" />
-          <DiagnosisChips kit={kit} value={diagnosis} onPick={setDiagnosis} onApplyTemplate={applyRxTemplate} />
+          <input className="input" value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} placeholder="e.g. Infective exacerbation of COPD" />
         </Field>
         <Field label="Clinical notes" hint="Private to the care team">
           <textarea className="textarea" rows={notes.includes('\n') ? 5 : 2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Findings, reasoning, what you asked the patient" />
@@ -375,8 +291,6 @@ export default function RxComposer({ consult, record, override, done, onDone, on
           {checking && <span className="tiny muted row" style={{ gap: 6 }}><span className="spinner sm" />Checking allergies & interactions…</span>}
           {!checking && rows.some((r) => r.drug) && !warnings.length && <span className="badge green"><ShieldCheck />No allergy or interaction found</span>}
         </div>
-        <QuickEntry kit={kit} onAdd={addLine} existing={rows.map((r) => r.drug)} inputRef={qeRef} />
-        <RepeatLast lastRx={lastRx} count={rows.filter((r) => r.drug).length} onRepeat={repeatLast} />
         <DrugSearch onPick={addDrug} onAddNew={(name) => setNewMed(blankMed(name))} />
         <RxTemplateTools form={tplForm} onApply={applyRxTemplate} onAddItems={addItems} />
 
@@ -388,7 +302,7 @@ export default function RxComposer({ consult, record, override, done, onDone, on
         ))}
 
         {rows.length === 0 ? (
-          <p className="small muted mt-2 mb-0">Type a line in quick add, or search above. Stock in pharmacies near the patient shows next to each one.</p>
+          <p className="small muted mt-2 mb-0">Search above to add a medicine. Stock in pharmacies near the patient shows next to each one.</p>
         ) : (
           <div className="dr-rx-rows">
             <div className="dr-rx-row head"><span>Medicine</span><span>Dose</span><span>How often</span><span>Days</span><span /></div>
@@ -399,7 +313,6 @@ export default function RxComposer({ consult, record, override, done, onDone, on
                   <div className="dr-rx-drug">
                     <strong className="small" translate="no">{r.drug}</strong>
                     <StockBadge qty={r.stock} tier={r.tier} />
-                    <TypedBadge row={r} />
                   </div>
                   <input className="input sm" value={r.dose} onChange={(e) => update(r.key, { dose: e.target.value })} aria-label="Dose" />
                   <input className="input sm" value={r.freq} onChange={(e) => update(r.key, { freq: e.target.value })} aria-label="Frequency" />
@@ -488,15 +401,14 @@ export default function RxComposer({ consult, record, override, done, onDone, on
 
       <div className="dr-sign">
         <label className="check">
-          <input ref={signRef} type="checkbox" checked={signed} onChange={(e) => setSigned(e.target.checked)} />
+          <input type="checkbox" checked={signed} onChange={(e) => setSigned(e.target.checked)} />
           <PenLine size={17} />
           <span>I confirm I have examined this patient by teleconsultation and this prescription is clinically appropriate. Sign as <strong translate="no">{consult.doctorName}</strong>.</span>
         </label>
         <div className="row wrap" style={{ gap: 10 }}>
-          <AutoNextToggle value={autoNext} onChange={setAutoNext} />
           {consult.status !== 'in_progress' && <span className="tiny muted">Start the consult to sign.</span>}
           {allergyHits.length > 0 && signed && <span className="tiny" style={{ color: 'var(--rose)' }}>Signing with an allergy alert — please be sure.</span>}
-          <Button size="lg" icon={CheckCircle2} disabled={!canSubmit} loading={busy === 'complete'} onClick={complete} title="Ctrl+Enter">Sign & complete consult</Button>
+          <Button size="lg" icon={CheckCircle2} disabled={!canSubmit} loading={busy === 'complete'} onClick={complete}>Sign & complete consult</Button>
         </div>
       </div>
       <Modal open={!!newMed} onClose={() => setNewMed(null)} title="Add a new medicine" subtitle="Set its dose and timing once — it fills in automatically next time." wide

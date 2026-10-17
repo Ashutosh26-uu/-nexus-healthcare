@@ -203,7 +203,4 @@ function nextSteps(results = [], { doctorName } = {}) {
   return steps;
 }
 
-// Brand name → generic, for the doctor's shorthand entry ("dolo 650" → Paracetamol 650mg).
-const brandAliases = () => Object.entries(SALTS).flatMap(([name, s]) => s.brands.map(([alias]) => ({ name, alias })));
-
-module.exports = { brandAliases, DRUG_PRICES, TESTS, unitsFor, priceOf, nameOfTest, round, interpret, nextSteps, substitutesFor, sameSalt, genericKeyOf, gstOf };
+module.exports = { DRUG_PRICES, TESTS, unitsFor, priceOf, nameOfTest, round, interpret, nextSteps, substitutesFor, sameSalt, genericKeyOf, gstOf };

@@ -30,14 +30,8 @@
   background: rgba(251, 247, 240, 0.86); backdrop-filter: saturate(1.4) blur(10px); position: sticky; top: 0; z-index: 50;
 }
 .topbar-extra { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.portal-content { padding: 28px; max-width: 1320px; width: 100%; margin: 0 auto; animation: fadeOnly 0.16s ease backwards; }
-/* Short, from 60%: a cached page is ready at once, so a long fade from blank only made it feel slower. */
-@keyframes fadeOnly { from { opacity: 0.6; } }
-/* Cached data on screen, fresh copy on its way. Appears only after 400 ms, so quick refreshes never blink. */
-.refresh-bar { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden; pointer-events: none; opacity: 0; animation: refreshIn 0.2s ease 0.4s forwards; }
-.refresh-bar::after { content: ''; position: absolute; inset: 0; width: 40%; background: var(--green); border-radius: 2px; animation: refreshSlide 1.1s var(--ease) infinite; }
-@keyframes refreshIn { to { opacity: 0.7; } }
-@keyframes refreshSlide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+.portal-content { padding: 28px; max-width: 1320px; width: 100%; margin: 0 auto; animation: fadeOnly 0.3s ease backwards; }
+@keyframes fadeOnly { from { opacity: 0; } }
 .page-header { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
 /* Never let action buttons squeeze the title into a one-letter column: below this width they wrap under it. */
 .page-header > .grow { flex: 1 1 260px; min-width: min(100%, 260px); }

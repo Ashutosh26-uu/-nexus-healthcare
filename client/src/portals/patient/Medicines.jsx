@@ -131,8 +131,7 @@ function RxCard({ rx, onOrder, past }) {
 /* ---------- running low: regular medicines about to run out ---------- */
 function RunningLow() {
   const { patient } = usePatient();
-  // Not 'notifications': reminder/automation nudges don't change refills; the refill sweep also sends 'prescriptions'.
-  const { data } = usePatientLive('/patient/refills', ['medorders', 'prescriptions']);
+  const { data } = usePatientLive('/patient/refills', ['medorders', 'prescriptions', 'notifications']);
   const navigate = useNavigate();
   if (!patient || !data?.length) return null;
   return (
