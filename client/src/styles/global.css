@@ -426,10 +426,13 @@ table { max-width: 100%; }
 .chip-select .chip .pt-chip-count { margin: 0; min-width: 20px; padding: 1px 6px; border-radius: 99px; background: rgba(0, 0, 0, .07); font-size: .72rem; opacity: 1; text-align: center; }
 .chip-select .chip.on .pt-chip-count { background: rgba(255, 255, 255, .22); }
 @media (max-width: 760px) {
-  .page-header { flex-direction: column; align-items: stretch; gap: 12px; }
-  .page-header .page-actions { width: 100%; }
-  .page-header .page-actions > .btn { flex: 1 1 auto; justify-content: center; }
   .chip-select { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding: 2px 16px 6px; scroll-padding-inline: 16px; }
   .chip-select::-webkit-scrollbar { display: none; }
   .chip-select .chip { flex: none; padding: 7px 12px; font-size: .84rem; }
 }
+
+/* Camera barcode scanner */
+.bc-scan { position: relative; border-radius: 16px; overflow: hidden; background: #000; aspect-ratio: 3 / 4; max-height: 60vh; margin: 0 auto; }
+.bc-scan video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.bc-frame { position: absolute; inset: 22% 14%; border: 3px solid rgba(255, 255, 255, .9); border-radius: 14px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .35); }
+

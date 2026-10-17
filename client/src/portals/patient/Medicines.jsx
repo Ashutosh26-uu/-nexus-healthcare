@@ -4,6 +4,7 @@ import { Pill, Truck, Store, ScanLine, BadgeCheck, AlertTriangle, PenLine, Packa
 import WhereToBuy from './WhereToBuy';
 import { api } from '../../api';
 import { Button, Card, Empty, StatusBadge, cx, fmtDate, fmtMoney, useAction } from '../../components/ui';
+import BarcodeScanner, { canScan, packCodeFrom } from '../../components/BarcodeScanner';
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, usePatientLive, firstName, RxTracker, PageSkeleton } from './shared';
 import { rxStatusLabel } from './Home';
@@ -209,9 +210,10 @@ function AuthenticityCard() {
   const seq = useRef(0); // editing the code while a check is in flight discards that answer
 
   // Same check as the "Check a medicine" page — a verdict is only ever shown from the server's answer.
-  const check = async (e) => {
-    e.preventDefault();
-    const c = code.trim();
+  const [scanning, setScanning] = useState(false);
+  const check = async (e, value) => {
+    e?.preventDefault();
+    const c = (value ?? code).trim();
     if (!c || busy) return;
     const id = ++seq.current;
     setBusy(true); setResult(null);
@@ -229,7 +231,7 @@ function AuthenticityCard() {
         <span className="pt-ic-tile green"><ScanLine size={18} /></span>
         <div className="grow">
           <strong>Is this medicine genuine?</strong>
-          <p className="small muted mb-1">Type the code printed under the barcode on the strip or box.</p>
+          <p className="small muted mb-1">{canScan() ? 'Scan the barcode on the strip or box, or type the code printed under it.' : 'Type the code printed under the barcode on the strip or box.'}</p>
         </div>
       </div>
       <form className="row" onSubmit={check}>
@@ -237,6 +239,9 @@ function AuthenticityCard() {
         <input id="pack-code" className="input sm mono" placeholder="e.g. 8XK29PL4" value={code} onChange={(e) => { setCode(e.target.value); setResult(null); seq.current++; }} />
         <Button size="sm" type="submit" loading={busy} disabled={!code.trim()}>Check</Button>
       </form>
+      {canScan() && <Button variant="secondary" block icon={ScanLine} className="mt-1" onClick={() => setScanning(true)}>Scan barcode with camera</Button>}
+      <BarcodeScanner open={scanning} onClose={() => setScanning(false)} title="Scan the medicine pack"
+        onResult={(raw) => { setScanning(false); const c = packCodeFrom(raw); setCode(c); seq.current++; check(null, c); }} />
       {result && (result.status === 'genuine' ? (
         <div className="pt-genuine fade-in" role="status">
           <BadgeCheck size={22} />

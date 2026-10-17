@@ -33,6 +33,13 @@
 .portal-content { padding: 28px; max-width: 1320px; width: 100%; margin: 0 auto; animation: fadeOnly 0.3s ease backwards; }
 @keyframes fadeOnly { from { opacity: 0; } }
 .page-header { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+/* Phones: the title gets the full width and actions drop to their own full-width row (kept here, right
+   after the base rule, so stylesheet load order can never let the desktop layout win). */
+@media (max-width: 760px) {
+  .page-header { flex-direction: column; align-items: stretch; gap: 12px; }
+  .page-header > .page-actions { width: 100%; }
+  .page-header > .page-actions > .btn { flex: 1 1 auto; justify-content: center; }
+}
 .page-title { font-size: clamp(1.6rem, 2.6vw, 2.05rem); margin-bottom: 4px; }
 .eyebrow { font-size: 0.78rem; font-weight: 700; color: var(--clay); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
 
