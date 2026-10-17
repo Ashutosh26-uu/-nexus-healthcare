@@ -6,6 +6,7 @@ import { Card, Tabs, Pills, Empty, Button, Modal, Field, Avatar, StatusBadge, us
 import { useLive } from '../../live';
 import { LiveGate } from './shared';
 import { ProtectedImg } from '../../components/Availability';
+import { AadhaarBadge } from '../../components/AadhaarVerify';
 
 // The council a registration prefix usually belongs to — only a hint for where to look, not a check.
 const councilFor = (regNo = '') => ({ UPMC: 'UP Medical Council', KMC: 'Karnataka Medical Council', BMC: 'Bihar Medical Council' }[String(regNo).split('-')[0]] || null);
@@ -78,6 +79,8 @@ function DoctorCard({ d, onApprove, onReject, busy }) {
               <span className="ad-partner-tag">Profile</span>
               <span>Age {k.age}</span>
               {k.aadhaarLast4 ? <span className="mono">Aadhaar XXXX XXXX {k.aadhaarLast4}{k.aadhaarChecksumOk ? ' ✓' : ''}</span> : <span className="muted">Aadhaar not given (optional)</span>}
+              {k.aadhaarVerification?.verified && <AadhaarBadge v={k.aadhaarVerification} admin />}
+              {k.aadhaarVerification?.verified && k.aadhaarLast4 && k.aadhaarVerification.last4 !== k.aadhaarLast4 && <span className="badge rose">{`Aadhaar QR ends ${k.aadhaarVerification.last4}, typed number ends ${k.aadhaarLast4}`}</span>}
               <span>Latest degree: {k.latestDegree}{k.degreeNumber ? ` · ${k.degreeNumber}` : ''}</span>
               {d.patientsLifetime ? <span>~{Number(d.patientsLifetime).toLocaleString()} patients seen</span> : null}
               <span>Proposed fee ₹{d.fee}</span>
@@ -146,6 +149,7 @@ function FacilityCard({ f, rejected, onApprove, onReject, onResolve, busy }) {
             {f.type === 'lab' && !f.selfApplied && <span>NABL certificate on file</span>}
             {f.licenceNo && <span className="mono">Licence {f.licenceNo}</span>}
             {f.ownerName && <span>Owner: <span translate="no">{f.ownerName}</span></span>}
+            {f.staffAadhaar?.verified && <span className="row" style={{ gap: 6 }}><span translate="no">{f.staffAadhaar.name}</span> <AadhaarBadge v={f.staffAadhaar} admin /></span>}
             {f.address && <span><MapPin size={13} /> {f.address}</span>}
           </div>
           {(f.storePhotoFileId || f.licenceFileId) && (

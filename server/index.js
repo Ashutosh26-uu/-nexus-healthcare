@@ -21,6 +21,7 @@ const catalog = require('./catalog');
 const payments = require('./payments');
 const geo = require('./geo');
 const automation = require('./automation');
+const aadhaarQr = require('./aadhaarQr');
 
 const { OtpError, normalizePhone, samePhone } = otp;
 
@@ -79,7 +80,7 @@ const APP_TZ = process.env.APP_TZ || 'Asia/Kolkata';
 const istDay = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: APP_TZ }); // YYYY-MM-DD in the network's time zone
 const ageOf = (dob) => (dob ? Math.floor((Date.now() - new Date(dob)) / (365.25 * 86400000)) : null);
 // tokenVersion is session-revocation state — never part of what a screen (or the admin list) sees.
-const publicUser = ({ passwordHash: _h, tokenVersion: _tv, ...u }) => u;
+const publicUser = ({ passwordHash: _h, tokenVersion: _tv, aadhaarRefHash: _ar, ...u }) => u;
 
 function sign(user) {
   return jwt.sign({ sub: user.id, role: user.role, tv: user.tokenVersion || 0 }, JWT_SECRET, { algorithm: 'HS256', expiresIn: '7d' });
@@ -87,8 +88,8 @@ function sign(user) {
 // Every verify pins the one algorithm we sign with — a token can't pick its own ('none', or an asymmetric alg).
 const JWT_VERIFY = { algorithms: ['HS256'] };
 
-const UNVERIFIED_DOCTOR_PATHS = ['/api/auth/', '/api/doctor/home', '/api/doctor/me', '/api/doctor/profile', '/api/doctor/medicines', '/api/files', '/api/notifications', '/api/events', '/api/i18n', '/api/drugs', '/api/geo/'];
-const UNVERIFIED_PHARMACY_PATHS = ['/api/auth/', '/api/pharmacy/home', '/api/pharmacy/profile', '/api/files', '/api/notifications', '/api/events', '/api/i18n', '/api/geo/'];
+const UNVERIFIED_DOCTOR_PATHS = ['/api/auth/', '/api/doctor/home', '/api/doctor/me', '/api/doctor/profile', '/api/doctor/medicines', '/api/files', '/api/notifications', '/api/events', '/api/i18n', '/api/drugs', '/api/geo/', '/api/identity/'];
+const UNVERIFIED_PHARMACY_PATHS = ['/api/auth/', '/api/pharmacy/home', '/api/pharmacy/profile', '/api/files', '/api/notifications', '/api/events', '/api/i18n', '/api/geo/', '/api/identity/'];
 
 // Id indexes for the hot lookups (every request finds its user; every consult / prescription / lab row on a
 // screen finds its patient and doctor) — O(1) instead of a scan of the whole collection per row. Each entry
@@ -1140,6 +1141,8 @@ app.put('/api/patient/profile/complete', auth, role('patient', 'caregiver'), (re
   });
   if (!p.dob || p.dobApprox) { p.dob = `${new Date().getFullYear() - age}-07-01`; p.dobApprox = true; }
   if (aadhaar) p.aadhaarLast4 = aadhaar.slice(-4);
+  // A different number typed later means the QR-verified badge no longer describes what's on file.
+  if (aadhaar && p.aadhaarVerification && p.aadhaarVerification.last4 !== p.aadhaarLast4) { delete p.aadhaarVerification; delete p.aadhaarRefHash; }
   if (govId) p.govIds = [govId, ...(p.govIds || []).filter((g) => g.type !== govId.type)];
   if (govId?.type === 'ABHA health ID' && !p.abha) p.abha = govId.number;
   if (clean(b.symptoms, 500)) p.currentSymptoms = { text: clean(b.symptoms, 500), days: symptomDays, department: SPECIALTIES.includes(b.department) ? b.department : null, at: nowIso(), via: b.symptomsVia === 'voice' ? 'voice' : 'text' };
@@ -2980,7 +2983,10 @@ app.put('/api/doctor/profile', auth, role('doctor'), async (req, res) => {
   // Fee is the doctor's to propose while they're under review; after verification only an admin changes it.
   if (!doc.verified) doc.fee = Math.max(100, Math.min(5000, parseInt(b.fee, 10) || doc.fee || 200));
   // Identity: we keep only the last 4 Aadhaar digits (full number is never stored).
-  doc.kyc = { age, aadhaarLast4: aadhaar ? aadhaar.slice(-4) : (doc.kyc?.aadhaarLast4 || null), aadhaarChecksumOk: Boolean(aadhaar || doc.kyc?.aadhaarLast4), latestDegree: clean(b.latestDegree), degreeNumber: clean(b.degreeNumber, 40), degreeFileId: b.degreeFileId || null, photoFileId: b.photoFileId };
+  // A QR verification survives re-submitting the form — unless a different Aadhaar number was typed.
+  const last4 = aadhaar ? aadhaar.slice(-4) : (doc.kyc?.aadhaarLast4 || null);
+  const qrKept = doc.kyc?.aadhaarVerification?.last4 === last4 ? { aadhaarVerification: doc.kyc.aadhaarVerification, aadhaarRefHash: doc.kyc.aadhaarRefHash } : {};
+  doc.kyc = { age, aadhaarLast4: last4, aadhaarChecksumOk: Boolean(aadhaar || doc.kyc?.aadhaarLast4), latestDegree: clean(b.latestDegree), degreeNumber: clean(b.degreeNumber, 40), degreeFileId: b.degreeFileId || null, photoFileId: b.photoFileId, ...qrKept };
   audit(req.user, 'doctor_profile_submitted', null, 'doctor', `${doc.name} · ${doc.specialty}`);
   automation.emit('onboarding.submitted', { kind: 'doctor', stage: 'ready_for_review', id: doc.id, name: doc.name, specialty: doc.specialty || null });
   d.users.filter((u) => u.role === 'super_admin').forEach((a) => notify(a.id, 'Doctor profile ready for review', `${doc.name} (${doc.specialty}) completed onboarding.`));
@@ -3308,7 +3314,7 @@ app.get('/api/doctor/patient/:id', auth, role('doctor'), (req, res) => {
     return res.json({ emergency: true, expiresAt: new Date(new Date(bg.at).getTime() + 60 * 60000).toISOString(), patient: { id: p.id, name: p.name, age: ageOf(p.dob), gender: p.gender, bloodGroup: p.bloodGroup, allergies: p.allergies, conditions: p.conditions, currentMeds: p.currentMeds, emergencyContacts: p.emergencyContacts } });
   }
   // Account-level settings (privacy choices, deletion requests, kiosk session) are the patient's own — not part of the clinical record.
-  const { privacy: _priv, deletionRequest: _del, kioskSeen: _ks, ...clinical } = p;
+  const { privacy: _priv, deletionRequest: _del, kioskSeen: _ks, aadhaarRefHash: _ar, ...clinical } = p;
   res.json({
     patient: { ...clinical, age: ageOf(p.dob) },
     visits: d.consults.filter((c) => c.patientId === p.id && c.status === 'completed').map(enrichConsult),
@@ -3825,7 +3831,8 @@ app.post('/api/kiosk/identify', auth, role('kiosk_operator'), identifyLimiter, (
   audit(req.user, 'identified_patient', p.id, 'passport', 'Kiosk check-in');
   store.save();
   // Only what the kiosk needs for triage — no government IDs, address or contacts.
-  res.json({ id: p.id, name: p.name, age: ageOf(p.dob), dob: p.dob, gender: p.gender, language: p.language, bloodGroup: p.bloodGroup, allergies: p.allergies || [], conditions: p.conditions || [], currentMeds: p.currentMeds || [], district: p.district });
+  res.json({ id: p.id, name: p.name, age: ageOf(p.dob), dob: p.dob, gender: p.gender, language: p.language, bloodGroup: p.bloodGroup, allergies: p.allergies || [], conditions: p.conditions || [], currentMeds: p.currentMeds || [], district: p.district,
+    aadhaarVerification: p.aadhaarVerification?.verified ? { verified: true, last4: p.aadhaarVerification.last4, yob: p.aadhaarVerification.yob } : null });
 });
 
 app.post('/api/kiosk/register', auth, role('kiosk_operator'), (req, res) => {
@@ -3910,7 +3917,8 @@ const deskDoctorsOf = (d, fid) => d.doctors.filter((x) => x.facilityId === fid &
 const maskPhone = (ph) => (ph ? `••••••${String(ph).replace(/\D/g, '').slice(-4)}` : null);
 const patientPhone = (d, p) => userById(p.userId)?.phone || p.emergencyContacts?.find((e) => e.relation === 'Mobile')?.phone || null;
 // Reception sees who someone is — never their records: name, age, sex, masked mobile, passport id only.
-const deskPatient = (d, p) => ({ id: p.id, name: p.name, age: ageOf(p.dob), gender: p.gender, phone: maskPhone(patientPhone(d, p)) });
+const deskPatient = (d, p) => ({ id: p.id, name: p.name, age: ageOf(p.dob), gender: p.gender, phone: maskPhone(patientPhone(d, p)),
+  aadhaarVerification: p.aadhaarVerification?.verified ? { verified: true, last4: p.aadhaarVerification.last4, yob: p.aadhaarVerification.yob } : null });
 const RECEPTION_SEEN_MS = 30 * 60000;
 const receptionLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 150, key: (r) => r.headers.authorization || '', message: 'Too many patient searches from this desk. Please wait a while.' });
 
@@ -3976,6 +3984,80 @@ app.post('/api/hospital/reception/patients', auth, role('hospital_admin'), (req,
   store.save();
   broadcast('patients', 'admin');
   res.json(deskPatient(d, p));
+});
+
+// ---------- Aadhaar Secure QR verification (an optional trust badge — never required for anything) ----------
+// The QR is checked offline against UIDAI's public certificates (aadhaarQr.js). We keep only: verified, last 4
+// digits, year of birth, gender and whether the card name matched — never the QR, card name, photo, address,
+// full date of birth or the mobile/email hashes. The QR text is never logged or audited.
+// The reuse hash survives restarts only with a stable secret; set AADHAAR_REF_SECRET to keep it across JWT rotations.
+const AADHAAR_REF_SECRET = process.env.AADHAAR_REF_SECRET || crypto.createHmac('sha256', JWT_SECRET).update('aadhaar-ref').digest('hex');
+const aadhaarLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 20, key: (r) => r.user?.id || '', message: 'Too many Aadhaar checks from this account. Please try again in an hour.' });
+// Whose Aadhaar is this? Patients / caregivers: their own or a family profile. Kiosk: a patient it identified or
+// registered in the last 30 min. Reception: a patient found or registered at this desk in the last 30 min.
+// Doctors and facility staff: themselves only.
+function aadhaarSubject(req) {
+  const u = req.user;
+  const target = req.body?.target ? clean(req.body.target, 40) : null;
+  if (['patient', 'caregiver'].includes(u.role)) {
+    const p = target ? profilesFor(u).find((x) => x.id === target) : activePatient(req);
+    if (!p) throw new HttpError(403, 'You can verify Aadhaar only for your own or your family\'s profiles.');
+    return { kind: 'patient', rec: p, name: p.name, patientId: p.id };
+  }
+  if (u.role === 'kiosk_operator' || (u.role === 'hospital_admin' && target)) {
+    const p = target ? patientById(target) : null;
+    if (!p) throw new HttpError(404, 'Patient not found.');
+    const ok = u.role === 'kiosk_operator'
+      ? p.kioskSeen?.kioskId === u.facilityId && Date.now() - Date.parse(p.kioskSeen.at) <= 30 * 60000
+      : p.receptionSeen?.facilityId === u.facilityId && Date.now() - Date.parse(p.receptionSeen.at) <= RECEPTION_SEEN_MS;
+    if (!ok) throw new HttpError(403, u.role === 'kiosk_operator' ? 'Identify the patient at this kiosk first.' : 'Search for the patient at this desk first.');
+    return { kind: 'patient', rec: p, name: p.name, patientId: p.id };
+  }
+  if (target) throw new HttpError(403, 'You can verify only your own Aadhaar here.');
+  if (u.role === 'doctor') { const doc = doctorFor(u); return { kind: 'doctor', rec: doc, name: doc.name, patientId: null }; }
+  return { kind: 'user', rec: u, name: u.name, patientId: null }; // pharmacist, lab_tech, hospital_admin
+}
+
+app.post('/api/identity/aadhaar-qr', auth, role('patient', 'caregiver', 'doctor', 'pharmacist', 'lab_tech', 'hospital_admin', 'kiosk_operator'), aadhaarLimiter, (req, res) => {
+  const b = req.body || {};
+  if (b.consent !== true) return res.status(400).json({ error: 'Please read and agree to the Aadhaar check first.', code: 'consent' });
+  if (typeof b.qr !== 'string' || !b.qr.trim()) return res.status(400).json({ error: aadhaarQr.MESSAGES.empty, code: 'empty' });
+  if (b.qr.length > aadhaarQr.MAX_DIGITS) return res.status(400).json({ error: aadhaarQr.MESSAGES.too_long, code: 'too_long' });
+  const s = aadhaarSubject(req);
+  const r = aadhaarQr.verifySecureQr(b.qr);
+  const subjectRef = s.kind === 'patient' ? null : `${s.kind}:${s.rec.id}`;
+  if (!r.ok) {
+    audit(req.user, 'aadhaar_verify_failed', s.patientId, 'identity', [subjectRef, r.reason].filter(Boolean).join(' · '));
+    store.save();
+    return res.status(r.reason === 'bad_signature' ? 422 : 400).json({ error: r.message, code: r.reason });
+  }
+  const f = r.fields;
+  const nameMatch = aadhaarQr.nameMatch(f.name, s.name);
+  const v = { verified: true, method: 'uidai_secure_qr', last4: f.last4, yob: f.yob, gender: f.gender, nameMatch, verifiedAt: nowIso(), verifiedBy: req.user.id };
+  const hash = aadhaarQr.refHash(AADHAAR_REF_SECRET, f.last4, f.referenceTs);
+  // Same QR already verified on another person's record? Warn admins (audit) — don't block: families share
+  // phones and screenshots get re-sent, so this is a review signal, not proof of fraud.
+  const d = db();
+  const me = `${s.kind}:${s.rec.id}`;
+  const reused = [
+    ...d.patients.filter((x) => x.aadhaarRefHash === hash).map((x) => `patient:${x.id}`),
+    ...d.doctors.filter((x) => x.kyc?.aadhaarRefHash === hash).map((x) => `doctor:${x.id}`),
+    ...d.users.filter((x) => x.aadhaarRefHash === hash).map((x) => `user:${x.id}`),
+  ].filter((k) => k !== me);
+  if (s.kind === 'doctor') {
+    s.rec.kyc = { ...(s.rec.kyc || {}), aadhaarLast4: s.rec.kyc?.aadhaarLast4 || f.last4, aadhaarVerification: v, aadhaarRefHash: hash };
+  } else {
+    if (!s.rec.aadhaarLast4) s.rec.aadhaarLast4 = f.last4;
+    s.rec.aadhaarVerification = v;
+    s.rec.aadhaarRefHash = hash;
+  }
+  const typedOther = (s.kind === 'doctor' ? s.rec.kyc.aadhaarLast4 : s.rec.aadhaarLast4) !== f.last4;
+  audit(req.user, 'aadhaar_verified', s.patientId, 'identity', [subjectRef, `name ${nameMatch}`, typedOther ? 'differs from the number typed earlier' : '', r.testKey ? 'TEST key (dev)' : ''].filter(Boolean).join(' · '));
+  if (reused.length) audit(req.user, 'aadhaar_qr_reused', s.patientId, 'identity', `The same Aadhaar QR is already verified on: ${reused.slice(0, 5).join(', ')}`);
+  store.save();
+  if (s.kind === 'patient') touch(patientOwnerUserIds(s.rec));
+  broadcast(s.kind === 'patient' ? 'patients' : 'admin');
+  res.json({ verified: true, nameMatch, last4: f.last4, yob: f.yob, gender: f.gender });
 });
 
 // Queue a walk-in for one of this facility's doctors: an in-person consult, checked in now, with today's next token.
@@ -5292,12 +5374,15 @@ app.get('/api/admin/home', auth, role('super_admin'), (_req, res) => {
 
 app.get('/api/admin/onboarding', auth, role('super_admin'), (_req, res) => {
   const d = db();
+  // Facility staff who verified their own Aadhaar QR (badge + name-match flag for review) — one pass over users.
+  const staffAadhaar = new Map();
+  for (const u of d.users) if (u.facilityId && u.aadhaarVerification && !staffAadhaar.has(u.facilityId)) staffAadhaar.set(u.facilityId, { name: u.name, role: u.role, ...u.aadhaarVerification });
   res.json({
     doctors: d.doctors.map((x) => ({
       ...x, email: userById(x.userId)?.email,
       eClinicNames: (x.eClinicIds || []).map((id) => facilityName(id)).filter(Boolean),
     })),
-    facilities: d.facilities,
+    facilities: d.facilities.map((f) => (staffAadhaar.has(f.id) ? { ...f, staffAadhaar: staffAadhaar.get(f.id) } : f)),
   });
 });
 

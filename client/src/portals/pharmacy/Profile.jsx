@@ -5,9 +5,10 @@ import { Card, Button, Modal, fmtDate, useAction } from '../../components/ui';
 import { api } from '../../api';
 import { useAuth } from '../../auth';
 import { ProtectedImg } from '../../components/Availability';
+import AadhaarVerify from '../../components/AadhaarVerify';
 
 export default function Profile({ home, reload }) {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const [asking, setAsking] = useState(false);
   const p = home.pharmacy;
   // Only what the store record really holds — an empty field says so instead of showing a sample value.
@@ -60,6 +61,11 @@ export default function Profile({ home, reload }) {
               <dt>Pharmacist reg. no.</dt><dd className={p.pharmacistRegNo ? 'mono' : ''}>{licence.regNo}</dd>
             </dl>
           </div>
+
+          <Card title="Owner identity">
+            <p className="tiny muted">Optional. Scanning the QR on your Aadhaar proves the card is genuine — we keep only &lsquo;verified&rsquo;, the last 4 digits and year of birth.</p>
+            <AadhaarVerify verification={user?.aadhaarVerification} onVerified={() => refresh()} />
+          </Card>
 
           <Card title="Store details">
             <div className="stack">

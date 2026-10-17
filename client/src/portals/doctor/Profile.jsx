@@ -6,6 +6,7 @@ import { api } from '../../api';
 import { useAuth } from '../../auth';
 import { Button, Card, Field, Loading, Progress, useAction, cx } from '../../components/ui';
 import { ProtectedImg } from '../../components/Availability';
+import AadhaarVerify from '../../components/AadhaarVerify';
 import { useDoctorHome } from './context';
 import { INDIAN_LANGUAGES } from './shared';
 import { COUNTRIES } from '../../i18n/countries';
@@ -155,6 +156,10 @@ export default function Profile() {
           <div className="grid two">
             <Field label={<span>Aadhaar number <span className="badge">Optional</span></span>} hint={doctor.kyc?.aadhaarLast4 ? `On file: XXXX XXXX ${doctor.kyc.aadhaarLast4}. We only keep the last 4 digits.` : 'Indian doctors: we check it and keep only the last 4 digits.'}>
               <input className="input mono" inputMode="numeric" dir="ltr" autoComplete="off" value={locked ? `XXXX XXXX ${doctor.kyc?.aadhaarLast4 || '····'}` : form.aadhaar} onChange={(e) => set('aadhaar', fmtAadhaar(e.target.value))} placeholder="1234 5678 9012" />
+            </Field>
+            <Field label={<span>Aadhaar QR check <span className="badge">Optional</span></span>} hint="Scan the QR on your Aadhaar — it proves the card is genuine and speeds up our review.">
+              <AadhaarVerify verification={doctor.kyc?.aadhaarVerification}
+                onVerified={(r) => home.setData((d) => (d?.doctor ? { ...d, doctor: { ...d.doctor, kyc: { ...(d.doctor.kyc || {}), aadhaarLast4: d.doctor.kyc?.aadhaarLast4 || r.last4, aadhaarVerification: { ...r, verified: true } } } } : d))} />
             </Field>
           </div>
         </Card>

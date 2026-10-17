@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/PortalLayout';
 import { Button, Card, Field, Modal, Empty, Loading, StatusBadge, Pills, fmtTime, useAction, useToast, cx } from '../../components/ui';
 import { useLive } from '../../live';
 import { api } from '../../api';
+import AadhaarVerify from '../../components/AadhaarVerify';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
@@ -135,6 +136,9 @@ function NewToken({ desk, defaultFee, onIssued }) {
       {patient && (
         <div className="stack mt-2 rcp-issue">
           <div className="small">Token for <strong translate="no">{patient.name}</strong></div>
+          {/* Optional identity check with the patient's own Aadhaar card — never needed to issue a token. */}
+          <AadhaarVerify key={patient.id} target={patient.id} forPatient verification={patient.aadhaarVerification} label="Verify Aadhaar QR (optional)"
+            onVerified={(r) => setPatient((p) => (p?.id === patient.id ? { ...p, aadhaarVerification: { ...r, verified: true } } : p))} />
           {desk.doctors.length === 0 ? <p className="small muted mb-0">No verified doctors are listed at this facility yet — add them under Staff roster.</p> : (
             <div className="rcp-docs" role="radiogroup" aria-label="Doctor">
               {desk.doctors.map((x) => (

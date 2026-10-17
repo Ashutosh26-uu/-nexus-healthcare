@@ -3,6 +3,7 @@ import { Printer, Phone, Droplet, AlertTriangle, HeartPulse, Pill, Smartphone, P
 import { useNavigate } from 'react-router-dom';
 import { Button, Card, Empty, timeAgo, useToast } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
+import { AadhaarBadge } from '../../components/AadhaarVerify';
 import { api } from '../../api';
 import { usePatient, firstName, PassportQR, PageSkeleton } from './shared';
 
@@ -30,6 +31,7 @@ export default function EmergencyCard() {
               <div className="pt-ecard-eyebrow">Nexus Healthcare · Emergency health card</div>
               <div className="pt-ecard-name" translate="no">{p.name}</div>
               <div className="pt-ecard-sub">{p.age != null ? `${p.age} yrs` : ''}{p.gender ? ` · ${p.gender}` : ''} · {p.district}, {p.state}</div>
+              {p.aadhaarVerification?.verified && <div style={{ marginTop: 6 }}><AadhaarBadge v={p.aadhaarVerification} /></div>}
             </div>
             <div className="pt-ecard-blood" aria-label={`Blood group ${p.bloodGroup}`}>
               <Droplet size={16} />

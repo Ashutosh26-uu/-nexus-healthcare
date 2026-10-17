@@ -278,7 +278,7 @@
 .dr-pr-shared svg { flex: none; }
 .dr-pr-recent { display: grid; gap: 6px; }
 .dr-pr-recent-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line-2); }
-.block { display: block; }
+.block:not(.btn) { display: block; }
 @media (max-width: 720px) { .dr-pr-shared { grid-template-columns: 1fr; } }
 
 /* ---------- new booking pop-up & check-in ---------- */

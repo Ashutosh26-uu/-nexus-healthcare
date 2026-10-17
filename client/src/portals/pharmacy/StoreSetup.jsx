@@ -5,6 +5,7 @@ import { api } from '../../api';
 import { useAuth } from '../../auth';
 import { Button, Card, Field, Progress, useAction, cx } from '../../components/ui';
 import { ProtectedImg } from '../../components/Availability';
+import AadhaarVerify from '../../components/AadhaarVerify';
 import { COUNTRIES } from '../../i18n/countries';
 
 function PhotoBox({ label, hint, fileId, onUploaded, accept = 'image/*', icon }) {
@@ -37,7 +38,7 @@ function PhotoBox({ label, hint, fileId, onUploaded, accept = 'image/*', icon })
 // After the quick sign-up (name, email, mobile, store name) the chemist completes the store profile:
 // location, a photo of the store and a photo of the drug licence. Orders unlock after verification.
 export default function StoreSetup({ home, reload }) {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const p = home.pharmacy;
   const [run, busy] = useAction();
   const [error, setError] = useState('');
@@ -75,6 +76,9 @@ export default function StoreSetup({ home, reload }) {
           <Field label="Email"><div className="input readonly" dir="ltr" translate="no"><Mail size={15} />{user?.email}</div></Field>
           <Field label="Mobile"><div className="input readonly" dir="ltr" translate="no"><Phone size={15} />{user?.phone}</div></Field>
         </div>
+        <Field label={<span>Owner&apos;s Aadhaar <span className="badge">Optional</span></span>} hint="Scanning the QR on your Aadhaar proves who runs the store and speeds up our review.">
+          <AadhaarVerify verification={user?.aadhaarVerification} onVerified={() => refresh()} />
+        </Field>
       </Card>
 
       <Card title={<h4 className="row mb-0" style={{ gap: 8 }}><MapPin size={17} />Store &amp; location</h4>} action={<Button size="sm" variant={locState === 'ok' ? 'soft' : 'secondary'} icon={LocateFixed} onClick={locate} disabled={locState === 'asking'}>{locState === 'ok' ? 'Store location saved ✓' : locState === 'asking' ? 'Finding…' : 'I’m at the store — use my location'}</Button>}>

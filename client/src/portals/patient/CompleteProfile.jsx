@@ -6,6 +6,7 @@ import { api } from '../../api';
 import { useAuth } from '../../auth';
 import { Button, Card, Field, Progress, useToast, cx } from '../../components/ui';
 import VoiceInput from '../../components/VoiceInput';
+import AadhaarVerify from '../../components/AadhaarVerify';
 import { COUNTRIES } from '../../i18n/countries';
 import { usePatient, PageSkeleton } from './shared';
 import NearbyDoctors, { useDeviceLocation, LocationButton } from './NearbyDoctors';
@@ -202,6 +203,7 @@ export default function CompleteProfile() {
             <div className="pt-or-id tiny muted">Any one ID is enough — or skip this for now.</div>
           </div>
         )}
+        {india && <div className="mb-1"><AadhaarVerify verification={patient.aadhaarVerification} onVerified={() => reloadHome()} /></div>}
         <div className="grid two">
           <Field label={<span className="row" style={{ gap: 6 }}><IdCard size={14} />{india ? 'Government ID / health scheme card' : 'ID document'}</span>} hint={india ? 'An Ayushman card helps hospitals process cashless treatment.' : 'Used by the clinic to confirm who you are.'}>
             <select className="select" value={form.govIdType} onChange={(e) => set('govIdType', e.target.value)}>

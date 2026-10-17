@@ -3,7 +3,7 @@
 .pt-root, .pt-switch { --pt-radius: 18px; }
 /* Modals portal to <body>, outside .pt-root, so the helpers must reach them too. */
 .pt-root .strong, .pt-switch .strong, .modal .strong { font-weight: 650; }
-.pt-root .block, .pt-switch .block { display: block; }
+.pt-root .block:not(.btn), .pt-switch .block:not(.btn) { display: block; } /* full-width buttons keep their inline-flex icon+label layout */
 .pt-root .inline-ic { display: inline-block; vertical-align: -2px; }
 .pt-green { color: var(--green); }
 .pt-clay { color: var(--clay); }
@@ -506,7 +506,7 @@ button.pt-wtb-head { cursor: pointer; }
 .pt-lab-opt.on { border-color: var(--green-2); background: #f3fbf6; }
 .pt-lab-lines { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; color: var(--ink-2); }
 .pt-lab-home { padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line-2); gap: 10px; }
-.block { display: block; }
+.block:not(.btn) { display: block; }
 @media (max-width: 640px) { .pt-lab-steps { grid-template-columns: 1fr 1fr; } }
 
 /* ---------- doctor profile ---------- */

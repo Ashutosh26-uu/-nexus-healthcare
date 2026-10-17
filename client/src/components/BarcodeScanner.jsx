@@ -4,6 +4,34 @@ import { Modal, Button } from './ui';
 
 const WANTED = ['data_matrix', 'qr_code', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39'];
 export const canScan = () => typeof window !== 'undefined' && 'BarcodeDetector' in window && !!navigator.mediaDevices?.getUserMedia;
+// QR codes only: iPhone Safari has no BarcodeDetector, so QR scanning falls back to jsQR (lazy-loaded) on video frames.
+export const canScanQr = () => typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
+
+// Decode a QR from an image / canvas / bitmap. BarcodeDetector first (fast, native); jsQR otherwise or if it missed.
+// Dense codes (Aadhaar) read better at a few scales, so the jsQR pass tries the full size, then smaller ones.
+export async function decodeQrFrom(source, w, h) {
+  if ('BarcodeDetector' in window) {
+    try {
+      const formats = (await window.BarcodeDetector.getSupportedFormats?.()) || ['qr_code'];
+      if (formats.includes('qr_code')) {
+        const hit = (await new window.BarcodeDetector({ formats: ['qr_code'] }).detect(source))[0]?.rawValue;
+        if (hit) return hit;
+      }
+    } catch { /* fall through to jsQR */ }
+  }
+  const { default: jsQR } = await import('jsqr');
+  for (const scale of [1, 0.75, 0.5]) {
+    const cw = Math.round(w * scale); const ch = Math.round(h * scale);
+    if (cw < 200 || ch < 200) break;
+    const canvas = document.createElement('canvas');
+    canvas.width = cw; canvas.height = ch;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(source, 0, 0, cw, ch);
+    const hit = jsQR(ctx.getImageData(0, 0, cw, ch).data, cw, ch, { inversionAttempts: 'attemptBoth' });
+    if (hit?.data) return hit.data;
+  }
+  return null;
+}
 
 // Indian medicine packs carry GS1 codes: (01) GTIN, (17) expiry, (10) batch, (21) unique serial.
 // The "code under the barcode" a patient would type is the serial — fall back to the batch, then the raw text.
@@ -29,7 +57,8 @@ export function packCodeFrom(raw) {
 }
 
 // Full-screen camera scanner. onResult(text) gets the raw barcode text; the caller decides what to do with it.
-export default function BarcodeScanner({ open, onClose, onResult, title = 'Scan the barcode' }) {
+// `qrOnly` (Aadhaar and other dense QRs): asks for the sharpest camera and works without BarcodeDetector via jsQR.
+export default function BarcodeScanner({ open, onClose, onResult, title = 'Scan the barcode', subtitle = 'Hold the barcode or square code inside the frame — it scans by itself.', qrOnly = false }) {
   const videoRef = useRef(null);
   const [error, setError] = useState('');
   const resultRef = useRef(onResult); // the camera must not restart just because the parent re-rendered
@@ -43,19 +72,23 @@ export default function BarcodeScanner({ open, onClose, onResult, title = 'Scan 
     setError('');
     (async () => {
       try {
-        const supported = (await window.BarcodeDetector.getSupportedFormats?.()) || WANTED;
-        const detector = new window.BarcodeDetector({ formats: WANTED.filter((f) => supported.includes(f)) });
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        const native = 'BarcodeDetector' in window;
+        const supported = native ? (await window.BarcodeDetector.getSupportedFormats?.()) || WANTED : [];
+        const wanted = qrOnly ? ['qr_code'] : WANTED;
+        const detector = native && wanted.some((f) => supported.includes(f)) ? new window.BarcodeDetector({ formats: wanted.filter((f) => supported.includes(f)) }) : null;
+        if (!detector && !qrOnly) throw new Error('unsupported');
+        stream = await navigator.mediaDevices.getUserMedia({ video: qrOnly ? { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } : { facingMode: 'environment' } });
         if (stopped) { stream.getTracks().forEach((t) => t.stop()); return; }
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
         const tick = async () => {
           if (stopped) return;
           try {
-            const hits = await detector.detect(videoRef.current);
-            if (hits[0]?.rawValue) { stopped = true; resultRef.current(hits[0].rawValue); return; }
+            const v = videoRef.current;
+            const raw = detector ? (await detector.detect(v))[0]?.rawValue : await decodeQrFrom(v, v.videoWidth, v.videoHeight);
+            if (raw && !stopped) { stopped = true; resultRef.current(raw); return; }
           } catch { /* a frame that couldn't be read — try the next one */ }
-          timer = setTimeout(tick, 250);
+          timer = setTimeout(tick, detector ? 250 : 400);
         };
         tick();
       } catch (e) {
@@ -63,10 +96,10 @@ export default function BarcodeScanner({ open, onClose, onResult, title = 'Scan 
       }
     })();
     return () => { stopped = true; clearTimeout(timer); stream?.getTracks().forEach((t) => t.stop()); };
-  }, [open]);
+  }, [open, qrOnly]);
 
   return (
-    <Modal open={open} onClose={onClose} title={title} subtitle="Hold the barcode or square code inside the frame — it scans by itself." footer={<Button variant="ghost" onClick={onClose}>Cancel</Button>}>
+    <Modal open={open} onClose={onClose} title={title} subtitle={subtitle} footer={<Button variant="ghost" onClick={onClose}>Cancel</Button>}>
       {error ? <div className="callout rose"><Camera /><span className="small">{error}</span></div> : (
         <div className="bc-scan">
           <video ref={videoRef} playsInline muted aria-label="Camera preview" />

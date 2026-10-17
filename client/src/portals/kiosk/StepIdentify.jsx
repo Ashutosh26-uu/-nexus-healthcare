@@ -3,6 +3,7 @@ import { QrCode, Smartphone, Fingerprint, Delete, Search, ArrowRight, UserPlus, 
 import { api } from '../../api';
 import { usePublicConfig } from '../../config';
 import { Avatar, cx } from '../../components/ui';
+import AadhaarVerify from '../../components/AadhaarVerify';
 import { useKiosk } from './context';
 import { langOf, LANGS } from './i18n';
 import { KButton, KError, StepFrame } from './KUi';
@@ -47,6 +48,8 @@ function PatientConfirm({ p, onYes, onNo, t, fresh }) {
           <div><small>Allergies</small>{p.allergies?.length ? <strong className="k-allergy"><AlertTriangle size={16} /> <span translate="no">{p.allergies.join(', ')}</span></strong> : <strong>None known</strong>}</div>
           <div><small>Conditions</small><strong>{p.conditions?.length ? <span translate="no">{p.conditions.join(', ')}</span> : 'None recorded'}</strong></div>
         </div>
+        {/* Optional: the operator scans the patient's own Aadhaar card, with their permission. Never needed to continue. */}
+        <div style={{ marginTop: 12 }}><AadhaarVerify key={p.id} target={p.id} forPatient verification={p.aadhaarVerification} label="Verify Aadhaar QR (optional)" /></div>
       </div>
       <div className="k-confirm-actions">
         <KButton variant="ghost" icon={RotateCcw} onClick={onNo}>{t('not_me')}</KButton>

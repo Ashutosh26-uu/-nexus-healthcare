@@ -5,6 +5,7 @@ import { api } from '../../api';
 import { useAuth } from '../../auth';
 import { Button, Card, Field, Modal, Switch, fmtDate, useAction } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
+import AadhaarVerify from '../../components/AadhaarVerify';
 import { usePatient, firstName, splitList, BLOOD_GROUPS, PageSkeleton } from './shared';
 import { LANGUAGES as APP_LANGUAGES, useI18n, codeForName } from '../../i18n';
 
@@ -134,6 +135,9 @@ export default function Settings() {
             <Field label="PIN code"><input className="input" inputMode="numeric" maxLength={6} value={form.pincode} onChange={(e) => set('pincode', e.target.value.replace(/\D/g, ''))} /></Field>
             <Field label="ABHA number" hint="Your national health ID. Links records from government hospitals." className="pt-span-2">
               <input className="input mono" dir="ltr" value={form.abha} onChange={(e) => set('abha', e.target.value)} placeholder="91-XXXX-XXXX-XXXX" />
+            </Field>
+            <Field label="Aadhaar" hint="Optional. Scanning the QR on the card proves it's genuine — we keep only 'verified', the last 4 digits and year of birth." className="pt-span-2">
+              <AadhaarVerify verification={patient.aadhaarVerification} onVerified={() => reloadHome()} />
             </Field>
           </div>
         </Card>
