@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-10-17T12:40:00.450Z",
+ "generatedAt": "2026-10-17T13:09:15.308Z",
  "strings": [
   "% at the lowest point,",
   "% complete",
@@ -4497,6 +4497,7 @@
   "Please keep the file under {0} MB.",
   "Prescription {0} · {1}",
   "Previous {0} on {1}",
+  "Profile: {0} — switch family profile",
   "Push {0}",
   "QR code for health passport {0}",
   "Quantity of {0} to order",
