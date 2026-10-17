@@ -41,10 +41,13 @@ export default function Landing() {
   useEffect(() => {
     let alive = true;
     // Real numbers only — an error page must not render as "0 doctors".
-    fetch('/api/public/stats').then((r) => (r.ok ? r.json() : Promise.reject())).then((s) => alive && setStats(s)).catch(() => alive && setStats(false));
+    // Refreshed every 30 s while the tab is visible, so the counts stay live; a failed refresh keeps the last real numbers.
+    const load = (first) => fetch('/api/public/stats', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : Promise.reject())).then((s) => alive && setStats(s)).catch(() => alive && first && setStats(false));
+    load(true);
+    const timer = setInterval(() => { if (document.visibilityState === 'visible') load(false); }, 30000);
     const onScroll = () => setScrolled(window.scrollY > 12);
     window.addEventListener('scroll', onScroll, { passive: true });
-    return () => { alive = false; window.removeEventListener('scroll', onScroll); };
+    return () => { alive = false; clearInterval(timer); window.removeEventListener('scroll', onScroll); };
   }, []);
 
   const home = user ? ROLE_HOME[user.role] : null;

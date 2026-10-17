@@ -392,21 +392,13 @@ app.get('/api/public/config', (_req, res) => {
 
 app.get('/api/public/stats', (_req, res) => {
   const d = db();
-  if (DATA_MODE === 'live') {
-    // A real network shows real numbers only.
-    return res.json({
-      doctorsOnline: d.doctors.filter((x) => x.verified && withAvail(x).online).length,
-      kiosks: d.facilities.filter((f) => f.type === 'kiosk' && f.verified).length,
-      passports: d.patients.length,
-      states: new Set(d.facilities.map((f) => f.state).filter(Boolean)).size,
-      languages: i18n.LANGUAGES.length,
-    });
-  }
+  // Real counts only, in every mode — no padded or illustrative figures on the public page.
+  res.set('Cache-Control', 'no-store');
   res.json({
-    doctorsOnline: d.doctors.filter((x) => x.online).length + d.regions.reduce((s, r) => s + r.doctorsOnline, 0),
-    kiosks: d.regions.reduce((s, r) => s + r.kiosks, 0),
-    passports: 48210 + d.patients.length,
-    states: d.regions.length,
+    doctorsOnline: d.doctors.filter((x) => x.verified && withAvail(x).online).length,
+    kiosks: d.facilities.filter((f) => f.type === 'kiosk' && f.verified).length,
+    passports: d.patients.length,
+    states: new Set([...d.facilities.map((f) => f.state), ...d.patients.map((p) => p.state)].filter(Boolean)).size,
     languages: i18n.LANGUAGES.length,
   });
 });
