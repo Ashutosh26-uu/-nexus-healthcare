@@ -153,7 +153,7 @@ function ProfileSwitcher() {
 
   return (
     <div className="pt-switch" ref={ref}>
-      <button className={cx('pt-switch-btn', !isSelf && 'other')} onClick={() => setOpen((v) => !v)} aria-haspopup="listbox" aria-expanded={open}>
+      <button className={cx('pt-switch-btn', !isSelf && 'other')} onClick={() => setOpen((v) => !v)} aria-haspopup="listbox" aria-expanded={open} aria-label={`Profile: ${patient.name} — switch family profile`}>
         <Avatar name={patient.name} size="sm" />
         <span className="pt-switch-meta">
           <span className="tiny muted">{isSelf ? 'Your profile' : 'Looking after'}</span>

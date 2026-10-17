@@ -338,7 +338,9 @@
   .pt-contact-row > .field:first-child { grid-column: span 2; }
   .pt-savebar { border-radius: 16px; bottom: 76px; }
   .pt-switch-meta .tiny { display: none; }
-  .pt-switch-meta .small { max-width: 76px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } /* long first names end in … instead of being clipped */
+  /* Phones: the name crowded the top bar — keep just the avatar (still opens the family switcher). */
+  .pt-switch-meta { display: none; }
+  .pt-switch-btn { padding: 3px 8px 3px 3px; gap: 4px; }
   .pt-tl-item { padding: 10px 12px; gap: 10px; }
   .pt-tl-item > .tiny { display: none; }
 }
