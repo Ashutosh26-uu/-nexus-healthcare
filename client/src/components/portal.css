@@ -33,6 +33,8 @@
 .portal-content { padding: 28px; max-width: 1320px; width: 100%; margin: 0 auto; animation: fadeOnly 0.3s ease backwards; }
 @keyframes fadeOnly { from { opacity: 0; } }
 .page-header { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+/* Never let action buttons squeeze the title into a one-letter column: below this width they wrap under it. */
+.page-header > .grow { flex: 1 1 260px; min-width: min(100%, 260px); }
 /* Phones: the title gets the full width and actions drop to their own full-width row (kept here, right
    after the base rule, so stylesheet load order can never let the desktop layout win). */
 @media (max-width: 760px) {
