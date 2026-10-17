@@ -139,7 +139,7 @@ function InCall({ c, t, vitals, onSend }) {
 export default function StepConsult() {
   const { t, say, flow, setFlow, goto } = useKiosk();
   const id = flow.consultId;
-  const { data: c, error, reload } = useLive(id ? `/consults/${id}` : null, ['queue', 'consults', `consult:${id}`]);
+  const { data: c, error, reload } = useLive(id ? `/consults/${id}` : null, ['queue', 'consults', `consult:${id}`], [], { cache: false });
   const [err, setErr] = useState('');
   const [cancelling, setCancelling] = useState(false);
   const lastStatus = useRef(null);

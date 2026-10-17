@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api, session, disconnectLive } from './api';
+import { clearLiveCache } from './live';
 
 const AuthContext = createContext(null);
 
@@ -52,7 +53,7 @@ export function AuthProvider({ children }) {
     } catch (e) {
       if (session.token !== token) return null;
       // Only a real 401 means the token is bad.
-      if (e.status === 401) { session.token = null; retry.current.attempt = 0; setState(SIGNED_OUT); return null; }
+      if (e.status === 401) { session.token = null; clearLiveCache(); retry.current.attempt = 0; setState(SIGNED_OUT); return null; }
       // Server restarting or a network blip: the token is probably fine, so keep whoever is signed in and
       // keep trying. With nobody loaded yet, stay on the spinner for two retries, then say what's happening
       // (App shows it) rather than bouncing a signed-in person to the login page.
@@ -75,6 +76,7 @@ export function AuthProvider({ children }) {
   const signIn = useCallback(async (token) => {
     session.token = token;
     session.profile = null;
+    clearLiveCache();
     retry.current.attempt = 0;
     return refresh();
   }, [refresh]);
@@ -82,6 +84,7 @@ export function AuthProvider({ children }) {
   const signOut = useCallback(() => {
     session.token = null;
     session.profile = null;
+    clearLiveCache(); // the next person on this phone must not see a flash of the last one's screens
     clearTimeout(retry.current.timer);
     retry.current.timer = null;
     retry.current.attempt = 0;

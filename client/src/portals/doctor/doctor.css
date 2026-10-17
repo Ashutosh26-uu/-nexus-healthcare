@@ -403,3 +403,36 @@
 /* Statement link on Earnings */
 .dr-statement-pick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .dr-statement-pick .input { width: auto; min-width: 170px; }
+
+/* Prescribing speed: shorthand quick entry, repeat-last, diagnosis chips, drafts, next patient */
+.dr-qe { margin-bottom: 10px; }
+.dr-qe .input-wrap .input { font-family: var(--sans); font-size: 1rem; }
+.dr-qe .input-wrap { border-radius: var(--radius-sm); }
+.dr-qe-preview { margin-top: 6px; padding: 8px 10px; border: 1px dashed var(--green-2); border-radius: var(--radius-sm); background: var(--green-soft); display: flex; flex-direction: column; gap: 6px; }
+.dr-qe-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 0.9rem; }
+.dr-qe-line > span:not(.badge):not(.tiny)::before { content: '·'; margin-right: 10px; color: var(--ink-3); }
+.dr-qe-def { color: var(--ink-3); }
+.dr-qe-add { margin-left: auto; }
+.dr-qe-matches { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: thin; padding-bottom: 2px; }
+.dr-qe-matches .chip { white-space: nowrap; font-size: 0.78rem; padding: 4px 10px; flex-shrink: 0; }
+.dr-qe-hint { margin-top: 4px; }
+.dr-qe-keys { display: inline-flex; align-items: center; gap: 4px; }
+@media (hover: none) { .dr-qe-keys { display: none; } }
+.dr-repeat { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 10px; }
+.dr-repeat > .tiny { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; flex: 1 1 200px; }
+.dr-repeat-confirm { flex-basis: 100%; }
+.dr-dx { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
+.dr-dx-offer { align-items: center; }
+.dr-draft-note { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--sun-soft); color: var(--ink-2); }
+.dr-rxspeed { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dr-next { margin: 14px auto 0; max-width: 520px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.dr-next-go { position: relative; overflow: hidden; width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--green-soft); text-align: left; }
+.dr-next-go.idle { background: var(--paper); border: 1px solid var(--line); }
+.dr-next-bar { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: var(--green-2); transform-origin: left; animation: dr-next-fill 3s linear forwards; }
+@keyframes dr-next-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .dr-next-bar { animation: none; } }
+.dr-autonext-toggle { color: var(--ink-2); }
+@media (max-width: 520px) {
+  .dr-qe-add { margin-left: 0; flex-basis: 100%; justify-content: center; }
+  .dr-dx-offer { flex-wrap: wrap; }
+}

@@ -1,34 +1,36 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Home as HomeIcon, HeartPulse, Video, FolderHeart, Pill, ShieldCheck, Users, IdCard, Settings as SettingsIcon, ChevronDown, Check, UserPlus, Activity, Coins, Dna, ScanLine, UserRoundPen, MapPin, Stethoscope, FileUp, FlaskConical, CalendarClock, Repeat } from 'lucide-react';
 import PortalLayout from '../../components/PortalLayout';
 import { Avatar, Button, Modal, cx, useToast } from '../../components/ui';
 import { session } from '../../api';
-import { useLive } from '../../live';
+import { useLive, clearLiveCache } from '../../live';
+import { lazyPage, whenIdle } from '../../lazyPage';
 import { PatientContext, HOME_TOPICS, PageSkeleton, firstName, greeting, relationOf, usePatient } from './shared';
 import Home from './Home';
-import Triage from './Triage';
-import Consult from './Consult';
-import ConsultRoom from './ConsultRoom';
-import Records from './Records';
-import Medicines from './Medicines';
-import Settings from './Settings';
-import CompleteProfile from './CompleteProfile';
-import FollowUps from './FollowUps';
+import Consult from './Consult'; // eager: Home's VisitChange and BookingFlow import from it anyway
 import { useI18n, codeForName } from '../../i18n';
 import './patient.css';
 
-// Less-used pages load on demand to keep the patient bundle small.
-const Twin = lazy(() => import('./Twin'));
-const Wallet = lazy(() => import('./Wallet'));
-const FamilyGraph = lazy(() => import('./FamilyGraph'));
-const MedicineScan = lazy(() => import('./MedicineScan'));
-const ChangeDoctor = lazy(() => import('./ChangeDoctor'));
-const OrderMedicines = lazy(() => import('./OrderMedicines'));
-const Tests = lazy(() => import('./Tests'));
-const EmergencyCard = lazy(() => import('./EmergencyCard'));
-const Consents = lazy(() => import('./Consents'));
-const Family = lazy(() => import('./Family'));
+// Less-used pages load on demand to keep the patient bundle small; nav hover/touch preloads them, and the
+// likeliest next screens preload once the first one has painted (see PatientApp).
+const Records = lazyPage(() => import('./Records'));
+const Medicines = lazyPage(() => import('./Medicines'));
+const Triage = lazyPage(() => import('./Triage'));
+const ConsultRoom = lazyPage(() => import('./ConsultRoom'));
+const FollowUps = lazyPage(() => import('./FollowUps'));
+const Settings = lazyPage(() => import('./Settings'));
+const CompleteProfile = lazyPage(() => import('./CompleteProfile'));
+const Twin = lazyPage(() => import('./Twin'));
+const Wallet = lazyPage(() => import('./Wallet'));
+const FamilyGraph = lazyPage(() => import('./FamilyGraph'));
+const MedicineScan = lazyPage(() => import('./MedicineScan'));
+const ChangeDoctor = lazyPage(() => import('./ChangeDoctor'));
+const OrderMedicines = lazyPage(() => import('./OrderMedicines'));
+const Tests = lazyPage(() => import('./Tests'));
+const EmergencyCard = lazyPage(() => import('./EmergencyCard'));
+const Consents = lazyPage(() => import('./Consents'));
+const Family = lazyPage(() => import('./Family'));
 
 // Keyed by id so state from one consult never carries into the next.
 function ConsultRoomById() {
@@ -57,6 +59,7 @@ export default function PatientApp() {
     const profiles = home.data?.profiles || [];
     const target = profiles.find((p) => p.id === id);
     session.profile = target?.self ? null : id;
+    clearLiveCache(); // nothing cached for one family member may ever render under another
     setProfileKey(target?.self ? 'self' : id);
     if (!quiet && target) toast(target.self ? 'Back to your own profile' : `Now looking after ${firstName(target.name)}`);
     if (!stay) navigate('/patient');
@@ -73,28 +76,32 @@ export default function PatientApp() {
     switchProfile,
   }), [home.data, home.loading, home.error, home.reload, profileKey, switchProfile]);
 
+  // The most used next screens, fetched while the phone is idle after first paint (chunks only — their
+  // data is per-profile and changes, so it's warmed on nav hover instead).
+  useEffect(() => whenIdle(() => { [Medicines, Records, Triage, ConsultRoom, FollowUps].forEach((P) => P.preload().catch(() => {})); }), []);
+
   const pending = home.data?.pendingConsents || 0;
   const activeRx = (home.data?.prescriptions || []).filter((r) => ['issued', 'dispensed', 'out_for_delivery'].includes(r.status)).length;
 
   const incomplete = home.data?.patient?.profileComplete === false || (home.data?.patient?.bookingMissing || []).length > 0;
   const nav = [
     { to: '/patient', label: 'Home', icon: HomeIcon, end: true },
-    ...(incomplete ? [{ to: '/patient/complete-profile', label: 'Complete profile', icon: UserRoundPen, badge: '!' }] : []),
-    { to: '/patient/symptoms', label: 'Check symptoms', icon: HeartPulse },
+    ...(incomplete ? [{ to: '/patient/complete-profile', label: 'Complete profile', icon: UserRoundPen, badge: '!', preload: CompleteProfile.preload }] : []),
+    { to: '/patient/symptoms', label: 'Check symptoms', icon: HeartPulse, preload: Triage.preload },
     { to: '/patient/consult', label: 'Talk to a doctor', icon: Video },
-    { to: '/patient/follow-ups', label: 'Follow-ups', icon: CalendarClock, badge: (home.data?.upcoming || []).length || null },
-    { to: '/patient/twin', label: 'Health Twin', icon: Activity },
-    { to: '/patient/records', label: 'My records', icon: FolderHeart },
-    { to: '/patient/medicines', label: 'Medicines', icon: Pill, badge: (activeRx + (home.data?.medicineOrders || 0)) || null },
-    { to: '/patient/change-doctor', label: 'Change doctor', icon: Repeat },
-    { to: '/patient/tests', label: 'Tests & reports', icon: FlaskConical },
-    { to: '/patient/consents', label: 'Who sees my data', icon: ShieldCheck, badge: pending || null },
-    { to: '/patient/wallet', label: 'Data Wallet', icon: Coins },
-    { to: '/patient/family', label: 'Family', icon: Users },
-    { to: '/patient/family-graph', label: 'Family health', icon: Dna },
-    { to: '/patient/scan', label: 'Check a medicine', icon: ScanLine },
-    { to: '/patient/emergency', label: 'Emergency card', icon: IdCard },
-    { to: '/patient/settings', label: 'Settings', icon: SettingsIcon },
+    { to: '/patient/follow-ups', label: 'Follow-ups', icon: CalendarClock, badge: (home.data?.upcoming || []).length || null, preload: FollowUps.preload, warm: '/patient/follow-ups' },
+    { to: '/patient/twin', label: 'Health Twin', icon: Activity, preload: Twin.preload },
+    { to: '/patient/records', label: 'My records', icon: FolderHeart, preload: Records.preload, warm: '/patient/records' },
+    { to: '/patient/medicines', label: 'Medicines', icon: Pill, badge: (activeRx + (home.data?.medicineOrders || 0)) || null, preload: Medicines.preload, warm: ['/patient/medicine-orders', '/patient/refills'] },
+    { to: '/patient/change-doctor', label: 'Change doctor', icon: Repeat, preload: ChangeDoctor.preload },
+    { to: '/patient/tests', label: 'Tests & reports', icon: FlaskConical, preload: Tests.preload, warm: '/patient/tests' },
+    { to: '/patient/consents', label: 'Who sees my data', icon: ShieldCheck, badge: pending || null, preload: Consents.preload, warm: '/consents' },
+    { to: '/patient/wallet', label: 'Data Wallet', icon: Coins, preload: Wallet.preload },
+    { to: '/patient/family', label: 'Family', icon: Users, preload: Family.preload },
+    { to: '/patient/family-graph', label: 'Family health', icon: Dna, preload: FamilyGraph.preload },
+    { to: '/patient/scan', label: 'Check a medicine', icon: ScanLine, preload: MedicineScan.preload },
+    { to: '/patient/emergency', label: 'Emergency card', icon: IdCard, preload: EmergencyCard.preload },
+    { to: '/patient/settings', label: 'Settings', icon: SettingsIcon, preload: Settings.preload },
   ];
 
   return (

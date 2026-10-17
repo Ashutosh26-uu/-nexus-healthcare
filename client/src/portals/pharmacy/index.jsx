@@ -20,6 +20,8 @@ export default function PharmacyApp() {
   const alertCount = home ? new Set([...home.lowStock, ...home.expiring].map((i) => i.id)).size : 0;
   const toAct = home?.transfersOut.filter((t) => ['requested', 'accepted'].includes(t.status)).length || 0;
 
+  // Optimistic accept/decline: the order moves on at once; RespondButtons puts it back if the server says no.
+  const patchOrder = (id, changes) => live.setData((d) => (d ? { ...d, orders: d.orders.map((o) => (o.id === id ? { ...o, ...changes } : o)) } : d));
   const newOrders = home?.orders?.filter((o) => o.status === 'requested').length || 0;
   const onboarding = !!home?.onboarding;
   const nav = onboarding ? [{ to: '/pharmacy', label: 'Store setup', icon: Store, end: true, badge: home?.pharmacy?.profileComplete ? null : '!' }] : [
@@ -36,7 +38,7 @@ export default function PharmacyApp() {
   if (live.loading && !home) body = <Loading />;
   else if (!home) body = <Empty title="Couldn't load your pharmacy">{live.error || 'Please refresh in a moment.'}</Empty>;
   else {
-    const props = { home, reload: live.reload };
+    const props = { home, reload: live.reload, patchOrder };
     body = onboarding ? (
       <Routes>
         <Route index element={<StoreSetup {...props} />} />
@@ -59,7 +61,7 @@ export default function PharmacyApp() {
   return (
     <PortalLayout portal="Pharmacy Portal" nav={nav} headerExtra={home && <OpenChip hours={home.pharmacy?.hours} />}>
       {body}
-      {home && !onboarding && <NewOrderPopup home={home} reload={live.reload} />}
+      {home && !onboarding && <NewOrderPopup home={home} reload={live.reload} patchOrder={patchOrder} />}
     </PortalLayout>
   );
 }

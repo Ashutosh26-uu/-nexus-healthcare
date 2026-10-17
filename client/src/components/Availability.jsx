@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Clock, MapPin, CircleCheck, Moon } from 'lucide-react';
 import { api } from '../api';
 import { cx } from './ui';
@@ -41,15 +41,25 @@ export function AvailLine({ a }) {
 }
 
 // Protected image (e.g. a doctor's profile photo) loaded through the authenticated API.
+// Fetched only when it comes near the screen (long store/doctor lists), like loading="lazy" does for a
+// plain <img>; the placeholder carries the same class, so its size is reserved and nothing shifts.
 export function ProtectedImg({ fileId, alt, className }) {
   const [src, setSrc] = useState(null);
+  const [near, setNear] = useState(() => typeof IntersectionObserver === 'undefined');
+  const ph = useRef(null);
   useEffect(() => {
-    if (!fileId) return undefined;
+    if (near || !ph.current) return undefined;
+    const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) setNear(true); }, { rootMargin: '300px' });
+    io.observe(ph.current);
+    return () => io.disconnect();
+  }, [near]);
+  useEffect(() => {
+    if (!fileId || !near) return undefined;
     let url; let alive = true;
     // Resolved after unmount → nobody will revoke it later, so free the blob right away.
     api.fileObjectUrl(fileId).then((u) => { if (!alive) { URL.revokeObjectURL(u); return; } url = u; setSrc(u); }).catch(() => {});
     return () => { alive = false; if (url) URL.revokeObjectURL(url); };
-  }, [fileId]);
-  if (!src) return <span className={cx('protected-img ph', className)} />;
-  return <img src={src} alt={alt} className={cx('protected-img', className)} />;
+  }, [fileId, near]);
+  if (!src) return <span ref={ph} className={cx('protected-img ph', className)} />;
+  return <img src={src} alt={alt} decoding="async" className={cx('protected-img', className)} />;
 }

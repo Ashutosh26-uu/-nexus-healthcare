@@ -10,13 +10,14 @@ const LABEL = { requested: 'New', accepted: 'Accepted', packed: 'Packed', out_fo
 const openFile = (id) => { const w = window.open('', '_blank'); api.fileObjectUrl(id).then((u) => { if (w) w.location.href = u; setTimeout(() => URL.revokeObjectURL(u), 60000); }).catch(() => w?.close()); };
 
 // Accept (choosing who delivers) or decline an order — shared by the pop-up and the list.
-export function RespondButtons({ o, reload, pharmacy, onDone }) {
+export function RespondButtons({ o, reload, pharmacy, onDone, patchOrder }) {
   const [run, busy] = useAction();
   const [mode, setMode] = useState(null); // 'accept' | 'decline'
   const [deliveryBy, setDeliveryBy] = useState(pharmacy?.delivery ? 'store' : 'nexus');
   const [reason, setReason] = useState('Out of stock');
   const respond = (action) => run(`r-${o.id}`, async () => {
-    await api.post(`/medicine-orders/${o.id}/respond`, { action, deliveryBy, reason });
+    patchOrder?.(o.id, { status: action === 'accept' ? 'accepted' : 'declined' });
+    try { await api.post(`/medicine-orders/${o.id}/respond`, { action, deliveryBy, reason }); } catch (e) { patchOrder?.(o.id, { status: 'requested' }); reload(); throw e; }
     reload(); onDone?.();
   }, action === 'accept' ? `Order ${o.orderNo} accepted` : 'Order declined');
   if (mode === 'accept' && o.fulfilment === 'delivery') {
@@ -74,7 +75,7 @@ function OrderBody({ o }) {
 }
 
 // "New demand" pop-up: the moment a patient orders a medicine from this store (or asks all nearby stores).
-export function NewOrderPopup({ home, reload }) {
+export function NewOrderPopup({ home, reload, patchOrder }) {
   const [seen, setSeen] = useState(() => new Set());
   const chimed = useRef(new Set());
   const o = (home?.orders || []).find((x) => x.status === 'requested' && !seen.has(x.id));
@@ -87,7 +88,7 @@ export function NewOrderPopup({ home, reload }) {
       {/* Keyed so accept/decline sub-state never carries over to the next order shown in this pop-up. */}
       <div className="stack" key={o.id}>
         <OrderBody o={o} />
-        <RespondButtons o={o} reload={reload} pharmacy={home.pharmacy} onDone={close} />
+        <RespondButtons o={o} reload={reload} pharmacy={home.pharmacy} onDone={close} patchOrder={patchOrder} />
       </div>
     </Modal>
   );
@@ -116,7 +117,7 @@ function Advance({ o, reload }) {
   ) : <Button size="sm" icon={PackageCheck} onClick={() => setAsking(true)}>{final === 'collected' ? 'Handed over' : 'Delivered'}</Button>;
 }
 
-export default function Orders({ home, reload }) {
+export default function Orders({ home, reload, patchOrder }) {
   const [tab, setTab] = useState('active');
   const orders = home.orders || [];
   const active = orders.filter((o) => ['requested', 'accepted', 'packed', 'out_for_delivery'].includes(o.status));
@@ -145,7 +146,7 @@ export default function Orders({ home, reload }) {
               </div>
               <OrderBody o={o} />
               <div className="row" style={{ justifyContent: 'flex-end', marginTop: 8 }}>
-                {o.status === 'requested' ? <RespondButtons o={o} reload={reload} pharmacy={home.pharmacy} /> : <Advance o={o} reload={reload} />}
+                {o.status === 'requested' ? <RespondButtons o={o} reload={reload} pharmacy={home.pharmacy} patchOrder={patchOrder} /> : <Advance o={o} reload={reload} />}
               </div>
             </Card>
           ))}

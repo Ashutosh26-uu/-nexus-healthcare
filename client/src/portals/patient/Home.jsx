@@ -5,8 +5,11 @@ import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, greeting, firstName, PageSkeleton, PassportQR } from './shared';
 import { getLocale } from '../../i18n';
 import { LateNotice, VisitChangeActions } from './VisitChange';
+import { prefetchLive } from '../../live';
 
 const MODE_ICON = { video: Video, audio: Phone, chat: MessageCircle };
+// Fetch the consult on hover/touch-down, so the room opens with it already there.
+const warm = (c) => () => prefetchLive(`/consults/${c.id}`);
 
 export default function Home() {
   const { home, homeLoading, homeError, profiles, reloadHome } = usePatient();
@@ -115,9 +118,9 @@ export default function Home() {
                         <VisitChangeActions c={c} onChanged={reloadHome} />
                       </div>
                       {live ? (
-                        <Button size="sm" variant="clay" onClick={() => navigate(`/patient/consult/${c.id}`)}>Join now</Button>
+                        <Button size="sm" variant="clay" onPointerEnter={warm(c)} onPointerDown={warm(c)} onClick={() => navigate(`/patient/consult/${c.id}`)}>Join now</Button>
                       ) : (
-                        <Button size="sm" variant={c.status === 'queued' ? 'primary' : 'secondary'} onClick={() => navigate(`/patient/consult/${c.id}`)}>
+                        <Button size="sm" variant={c.status === 'queued' ? 'primary' : 'secondary'} onPointerEnter={warm(c)} onPointerDown={warm(c)} onClick={() => navigate(`/patient/consult/${c.id}`)}>
                           {c.status === 'queued' ? 'Open waiting room' : 'Details'}
                         </Button>
                       )}

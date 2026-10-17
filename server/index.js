@@ -2709,6 +2709,15 @@ function doctorWeek(consults, doc) {
   return days.map((date) => { const r = byDay.get(date); return { ...r, earnings: catalog.round(r.earnings) }; });
 }
 
+// Median time from opening a consult to signing it, over the last 7 days (median: one long case doesn't skew it).
+function rxSpeedOf(consults) {
+  const since = Date.now() - 7 * 86400000;
+  const secs = consults.filter((c) => c.status === 'completed' && c.rxSeconds > 0 && Date.parse(c.completedAt) >= since).map((c) => c.rxSeconds).sort((a, b) => a - b);
+  if (!secs.length) return { medianSeconds: null, count: 0 };
+  const m = secs.length >> 1;
+  return { medianSeconds: Math.round(secs.length % 2 ? secs[m] : (secs[m - 1] + secs[m]) / 2), count: secs.length };
+}
+
 app.get('/api/doctor/home', auth, role('doctor'), (req, res) => {
   const d = db();
   const doc = doctorFor(req.user);
@@ -2755,6 +2764,7 @@ app.get('/api/doctor/home', auth, role('doctor'), (req, res) => {
     clinicVisits, // upcoming visits for doctors listed at my clinic who have no login yet
     completed: mine.filter((c) => c.status === 'completed').map(enrichConsult).sort((a, b) => (a.completedAt < b.completedAt ? 1 : -1)).slice(0, 20),
     week: doctorWeek(mine, doc), // [{ date: 'YYYY-MM-DD', consults, earnings }] × 7, oldest first, today last
+    rxSpeed: rxSpeedOf(mine), // { medianSeconds, count } — time-to-sign, last 7 days
     stats: {
       today: mine.filter((c) => c.status === 'completed' && c.completedAt && istDay(c.completedAt) === today).length,
       waiting: queue.filter((c) => c.status === 'queued').length,
@@ -2983,6 +2993,31 @@ app.get('/api/doctor/rx-templates', auth, role('doctor'), (req, res) => {
   const have = new Set(mine.map((t) => t.starterId).filter(Boolean));
   res.json({ templates: mine, starters: RX_STARTERS.filter((s) => !have.has(s.id)), frequent: frequentDrugs(doc) });
 });
+// The doctor's 10 most frequent diagnoses (teleconsults + clinic prescriptions, each visit counted once).
+function frequentDiagnoses(doc, limit = 10) {
+  const byDx = new Map();
+  const add = (text, at) => {
+    const t = clean(text, 200); const key = t.toLowerCase();
+    if (!key) return;
+    const e = byDx.get(key) || { text: t, count: 0, at: '' };
+    e.count += 1;
+    if ((at || '') >= e.at) Object.assign(e, { text: t, at: at || '' }); // most recent spelling wins
+    byDx.set(key, e);
+  };
+  for (const c of db().consults) if (c.doctorId === doc.id && c.status === 'completed') add(c.diagnosis, c.completedAt);
+  for (const r of db().prescriptions) if (r.doctorId === doc.id && !r.consultId) add(r.diagnosis, r.createdAt);
+  return [...byDx.values()].sort((a, b) => b.count - a.count || (a.at < b.at ? 1 : -1)).slice(0, limit).map(({ text, count }) => ({ text, count }));
+}
+// Everything the composer's quick entry needs in ONE request, so typing shorthand never waits on the network:
+// product names (+ brand → generic aliases), saved medicines, the doctor's last dose of every drug they've
+// prescribed (smart defaults), their frequent diagnoses and templates (diagnosis chip → "apply template?").
+app.get('/api/doctor/rx-kit', auth, role('doctor'), (req, res) => {
+  const doc = doctorFor(req.user);
+  res.json({
+    drugs: db().drugMaster.filter((x) => typeof x === 'string'), aliases: catalog.brandAliases(),
+    saved: doc.myMedicines || [], lastUse: frequentDrugs(doc, 300), diagnoses: frequentDiagnoses(doc), templates: doc.rxTemplates || [],
+  });
+});
 app.post('/api/doctor/rx-templates', auth, role('doctor'), (req, res) => {
   const doc = doctorFor(req.user);
   doc.rxTemplates = doc.rxTemplates || [];
@@ -3200,6 +3235,31 @@ app.get('/api/doctor/patient/:id', auth, role('doctor'), (req, res) => {
 // Pre-call summary card: only what the doctor needs in the first minute, for the treating doctor of this consult,
 // under exactly the record view's access rules (recordAccess). Without access: just age/sex and what the patient
 // told us when booking (already on the consult itself).
+// Latest prescription for "Repeat last prescription": any doctor's while the record is open to this doctor (consent,
+// or the read-only copy up to its date); otherwise only ones this doctor wrote — already in their own Prescriptions list.
+function lastRxFor(doc, p, { consented, copy } = {}, exceptConsultId = null) {
+  const d = db();
+  const upTo = copy ? copy.copyUntil : null;
+  const rx = d.prescriptions.filter((r) => r.patientId === p.id && (r.items || []).length && (!exceptConsultId || r.consultId !== exceptConsultId)
+    && (r.doctorId === doc.id || ((consented || copy) && (!upTo || (r.createdAt || '') <= upTo))))
+    .sort((a, b) => ((a.createdAt || '') < (b.createdAt || '') ? 1 : -1))[0];
+  if (!rx) return null;
+  return {
+    id: rx.id, date: rx.createdAt, withYou: rx.doctorId === doc.id, doctorName: d.doctors.find((y) => y.id === rx.doctorId)?.name || null,
+    diagnosis: rx.diagnosis || (rx.consultId ? d.consults.find((x) => x.id === rx.consultId)?.diagnosis : null) || null,
+    items: rx.items.map(({ drug, dose, freq, days, food, note }) => ({ drug, dose, freq, days, ...(food ? { food } : {}), ...(note ? { note } : {}) })),
+  };
+}
+// Walk-in prescribing (no consult yet) — same access rule as above.
+app.get('/api/doctor/last-rx', auth, role('doctor'), (req, res) => {
+  const doc = doctorFor(req.user);
+  const p = db().patients.find((x) => x.id === clean(req.query.patientId, 40));
+  if (!p) return res.status(404).json({ error: 'Patient not found.' });
+  const access = recordAccess(req.user, doc, p);
+  const last = lastRxFor(doc, p, access);
+  if (last && !last.withYou) { audit(req.user, access.consented ? 'viewed_last_rx' : 'viewed_last_rx_copy', p.id, 'prescription', last.id); store.save(); }
+  res.json({ lastRx: last });
+});
 app.get('/api/consults/:id/summary', auth, role('doctor'), (req, res) => {
   const d = db();
   const doc = doctorFor(req.user);
@@ -3210,11 +3270,11 @@ app.get('/api/consults/:id/summary', auth, role('doctor'), (req, res) => {
   if (!p) return res.status(404).json({ error: 'Patient not found.' });
   const base = { consultId: c.id, patient: { id: p.id, name: p.name, age: ageOf(p.dob), gender: p.gender }, symptoms: { text: c.triage?.symptoms || null, days: c.triage?.symptomDays ?? null } };
   const { consented, bg, copy } = recordAccess(req.user, doc, p);
-  if (!consented && !bg && !copy) return res.json({ ...base, access: 'restricted', pendingRequest: d.consents.some((x) => x.patientId === p.id && x.granteeId === doc.id && x.status === 'pending') });
+  if (!consented && !bg && !copy) return res.json({ ...base, access: 'restricted', lastRx: lastRxFor(doc, p, {}, c.id), pendingRequest: d.consents.some((x) => x.patientId === p.id && x.granteeId === doc.id && x.status === 'pending') });
   audit(req.user, consented ? 'viewed_summary' : copy ? 'viewed_summary_copy' : 'viewed_summary_emergency', p.id, 'summary', consented ? 'Consent' : copy ? 'Read-only copy after care transfer' : 'Break-glass');
   store.save();
   const critical = { bloodGroup: p.bloodGroup && p.bloodGroup !== 'Unknown' ? p.bloodGroup : null, allergies: p.allergies || [], conditions: p.conditions || [], currentMeds: p.currentMeds || [] };
-  if (!consented && !copy) return res.json({ ...base, access: 'emergency', expiresAt: new Date(new Date(bg.at).getTime() + 60 * 60000).toISOString(), ...critical });
+  if (!consented && !copy) return res.json({ ...base, access: 'emergency', expiresAt: new Date(new Date(bg.at).getTime() + 60 * 60000).toISOString(), ...critical, lastRx: lastRxFor(doc, p, {}, c.id) });
   const upTo = copy ? copy.copyUntil : null;
   const visits = d.consults.filter((x) => x.patientId === p.id && x.id !== c.id && x.status === 'completed' && x.completedAt && (!upTo || x.completedAt <= upTo))
     .sort((a, b) => (a.completedAt < b.completedAt ? 1 : -1)).slice(0, 3)
@@ -3234,7 +3294,7 @@ app.get('/api/consults/:id/summary', auth, role('doctor'), (req, res) => {
     const a = num(l.value); const b = l.prev ? num(l.prev.value) : null;
     return { ...l, abnormal: !['normal', 'negative', ''].includes(String(l.flag).toLowerCase()), trend: a === null || b === null ? null : a > b ? 'up' : a < b ? 'down' : 'same' };
   }).sort((x, y) => Number(y.abnormal) - Number(x.abnormal) || (x.date < y.date ? 1 : -1)).slice(0, 8);
-  res.json({ ...base, access: consented ? 'full' : 'copy', copyUntil: upTo, ...critical, visits, labs });
+  res.json({ ...base, access: consented ? 'full' : 'copy', copyUntil: upTo, ...critical, visits, labs, lastRx: lastRxFor(doc, p, { consented, copy }, c.id) });
 });
 
 const lookupLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 120, key: (r) => r.headers.authorization || r.ip, message: 'Too many patient searches. Please wait a while.' });
@@ -3536,12 +3596,23 @@ app.post('/api/consults/:id/start', auth, role('doctor'), (req, res) => {
   if (!['queued', 'scheduled', 'in_progress'].includes(c.status)) return res.status(409).json({ error: c.status === 'awaiting_payment' ? 'The patient hasn\'t paid for this booking yet.' : 'This consult can\'t be started.' });
   c.status = 'in_progress';
   c.startedAt = c.startedAt || nowIso();
+  c.rxStartedAt = c.rxStartedAt || nowIso(); // time-to-sign clock (see /opened and /complete)
   if (c.token && !c.calledAt) c.calledAt = c.startedAt; // the waiting-room display's "Now seeing" follows the doctor
   const p = db().patients.find((x) => x.id === c.patientId);
   patientOwnerUserIds(p).forEach((u) => notify(u, 'Your doctor is ready', `${req.user.name} has started your consult. Join now.`));
   store.save();
   broadcast('consults', 'queue', `consult:${c.id}`);
   res.json(enrichConsult(c));
+});
+
+// The consult page was opened: starts the time-to-sign clock for consults started before it existed (or elsewhere).
+// Idempotent and silent — no save/broadcast when the clock is already running.
+app.post('/api/consults/:id/opened', auth, role('doctor'), (req, res) => {
+  const c = db().consults.find((x) => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: 'Consult not found.' });
+  if (doctorFor(req.user)?.id !== c.doctorId) return res.status(403).json({ error: 'This patient isn\'t in your queue.' });
+  if (c.status === 'in_progress' && !c.rxStartedAt) { c.rxStartedAt = nowIso(); store.save(); }
+  res.json({ rxStartedAt: c.rxStartedAt || null });
 });
 
 app.post('/api/prescriptions/check', auth, role('doctor'), (req, res) => {
@@ -3565,6 +3636,9 @@ app.post('/api/consults/:id/complete', auth, role('doctor'), (req, res) => {
   const p = d.patients.find((x) => x.id === c.patientId);
   c.status = 'completed';
   c.completedAt = nowIso();
+  // Time from opening the consult to signing. Over 2 h means the tab sat open — not a prescribing time, so not recorded.
+  const rxSecs = c.rxStartedAt ? Math.round((Date.parse(c.completedAt) - Date.parse(c.rxStartedAt)) / 1000) : NaN;
+  if (rxSecs > 0 && rxSecs <= 7200) c.rxSeconds = rxSecs;
   c.notes = clean(notes, 4000);
   c.diagnosis = clean(diagnosis, 200);
   if (triageOverride && triageOverride !== c.triage.level) {

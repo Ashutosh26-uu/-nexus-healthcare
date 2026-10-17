@@ -8,17 +8,21 @@ import ScanBox from './Scan';
 const mins = (from) => Math.max(0, Math.round((Date.now() - new Date(from).getTime()) / 60000));
 const dur = (m) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`);
 
-export default function Tracking({ orders, reload, onReport }) {
+export default function Tracking({ orders, reload, onReport, patchOrder }) {
   const [run, busy] = useAction();
   const active = orders.filter((o) => o.status !== 'reported').sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   const reportedToday = orders.filter((o) => o.status === 'reported' && o.reportedAt && new Date(o.reportedAt).toDateString() === new Date().toDateString());
   const tat = orders.filter((o) => o.reportedAt).map((o) => (new Date(o.reportedAt) - new Date(o.createdAt)) / 60000);
   const avgTat = tat.length ? Math.round(tat.reduce((s, v) => s + v, 0) / tat.length) : null;
 
+  // Optimistic: the step shows done at once; put back (useAction toasts the error) if the server refuses.
+  // Always reload after — the server adds fields (sample ID, timestamps) the guess can't know.
   const advance = async (o) => {
     const n = NEXT[o.status];
+    patchOrder?.(o.id, { status: n.status });
     const ok = await run(o.id, () => api.put(`/lab-orders/${o.id}/status`, { status: n.status }), n.done);
-    if (ok) reload();
+    if (!ok) patchOrder?.(o.id, { status: o.status });
+    reload();
   };
 
   return (

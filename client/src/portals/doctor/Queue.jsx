@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckInModal } from './BookingAlerts';
-import { Clock, Users, Route, Star, Video, MessageSquare, Phone, Building2, MapPin, Play, CalendarClock, Coffee, ArrowRight, Monitor, UserRound, CheckCircle2, Circle, Hourglass, ShieldCheck, Pill, AlertTriangle, ScanLine, FlaskConical, FileText, Repeat } from 'lucide-react';
+import { Clock, Users, Route, Star, Video, MessageSquare, Phone, Building2, MapPin, Play, CalendarClock, Coffee, ArrowRight, Monitor, UserRound, CheckCircle2, Circle, Hourglass, ShieldCheck, Pill, AlertTriangle, ScanLine, FlaskConical, FileText, Repeat, Timer } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
 import { Avatar, Button, Card, Empty, Loading, Stat, TriageBadge, StatusBadge, timeAgo, fmtDateTime, useAction, cx } from '../../components/ui';
@@ -64,6 +64,11 @@ export default function Queue() {
         <Stat label="Overflow cases" value={stats.overflow} icon={Route} sub="routed from other regions" />
         <Stat label="Your rating" value={stats.rating?.toFixed ? stats.rating.toFixed(1) : stats.rating} icon={Star} sub={`${doctor.consultsDone?.toLocaleString(getLocale())} consults so far`} />
       </div>
+      {home.data.rxSpeed?.count > 0 && (
+        <p className="small muted dr-rxspeed mb-0" title={`Median of ${home.data.rxSpeed.count} consult${home.data.rxSpeed.count === 1 ? '' : 's'} in the last 7 days, from opening the consult to signing`}>
+          <Timer size={15} /> Your average time per prescription this week: <strong>{fmtSecs(home.data.rxSpeed.medianSeconds)}</strong>
+        </p>
+      )}
 
       <div className="grid side">
         <div className="stack">
@@ -172,6 +177,8 @@ export default function Queue() {
     </div>
   );
 }
+
+const fmtSecs = (s) => (s < 90 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60 ? `${s % 60} s` : ''}`.trim());
 
 /* ---------- what the doctor needs at a glance on a card ---------- */
 const MODES = { video: [Video, 'Video'], audio: [Phone, 'Audio call'], chat: [MessageSquare, 'Chat'], in_person: [Building2, 'In person'] };

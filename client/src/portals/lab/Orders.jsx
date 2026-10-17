@@ -10,7 +10,7 @@ import { getLocale } from '../../i18n';
 
 const TABS = ['all', ...ORDER];
 
-export default function Orders({ home, orders, reload, onReport }) {
+export default function Orders({ home, orders, reload, onReport, patchOrder }) {
   const [tab, setTab] = useState(() => (orders.some((o) => o.status === 'ordered') ? 'ordered' : 'all'));
   const [q, setQ] = useState('');
   const [run, busy] = useAction();
@@ -21,10 +21,14 @@ export default function Orders({ home, orders, reload, onReport }) {
     .filter((o) => !q || `${o.patientName} ${o.patientId} ${o.sampleId || ''} ${o.tests.map((t) => `${t.name} ${t.code}`).join(' ')}`.toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
+  // Optimistic: the step shows done at once; put back (useAction toasts the error) if the server refuses.
+  // Always reload after — the server adds fields (sample ID, timestamps) the guess can't know.
   const advance = async (o) => {
     const n = NEXT[o.status];
+    patchOrder?.(o.id, { status: n.status });
     const ok = await run(o.id, () => api.put(`/lab-orders/${o.id}/status`, { status: n.status }), `${n.done} · ${o.patientName}`);
-    if (ok) reload();
+    if (!ok) patchOrder?.(o.id, { status: o.status });
+    reload();
   };
 
   return (

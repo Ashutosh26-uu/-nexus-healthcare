@@ -211,6 +211,9 @@ export default function Consult() {
   const [override, setOverride] = useState('');
   const [run, busy] = useAction();
   const [done, setDone] = useState(null);
+  const status = consult?.status;
+  // Time-to-sign clock for consults started elsewhere (the server ignores it once the clock is running).
+  useEffect(() => { if (status === 'in_progress') api.post(`/consults/${id}/opened`).catch(() => {}); }, [id, status]);
 
   if (loading && !consult) return <Loading />;
   if (error && !consult) return <Empty title="Consult not found">{error} <Link to="/doctor">Back to queue</Link></Empty>;
