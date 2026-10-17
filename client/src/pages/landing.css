@@ -151,9 +151,14 @@
   .l-journey, .l-caps, .l-portals, .l-privacy-grid { grid-template-columns: 1fr; }
   .l-footer-grid { grid-template-columns: 1fr 1fr; }
   .l-cta { padding: 34px 24px; }
-  .l-hero-art { height: 420px; transform: scale(0.86); transform-origin: top center; margin-bottom: -50px; }
-  .art-call { left: 0; width: 300px; }
-  .art-vitals { right: -10px; }
+  /* Phones: the floating collage overlapped itself — stack the cards in a tidy column instead. */
+  .l-hero-art { height: auto; transform: none; margin: 8px 0 0; display: flex; flex-direction: column; gap: 12px; max-width: 420px; }
+  .l-hero-art .blob { display: none; }
+  .art-card, .art-pill { position: relative; inset: auto; width: 100%; animation: none; }
+  .art-pill { order: -1; align-self: flex-start; width: auto; }
+  .art-video { height: 120px; }
+  .art-vitals-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .art-vitals-grid div { padding: 6px 8px; }
   .l-underline { white-space: normal; }
 }
 
