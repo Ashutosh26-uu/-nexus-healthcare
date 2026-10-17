@@ -105,7 +105,7 @@ export default function Signup() {
               {inviter && (
                 <div className="callout green small"><Gift size={16} /><div>You were invited by <strong translate="no">{inviter.firstName}</strong> — you&apos;ll get ₹{inviter.reward} Nexus credit after your first consult.</div></div>
               )}
-              <Field label="Your full name"><input className="input" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Sunita Devi" autoFocus autoComplete="name" /></Field>
+              <Field label="Your full name"><input className="input" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Your full name" autoFocus autoComplete="name" /></Field>
               <Field label="Email">
                 <input className="input" type="email" dir="ltr" value={form.email} onChange={(e) => set('email', e.target.value.trim())} placeholder="you@example.com" readOnly={lockedEmail} autoComplete="email" />
               </Field>

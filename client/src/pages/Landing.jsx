@@ -115,27 +115,27 @@ export default function Landing() {
             <div className="blob" />
             <div className="art-card art-call">
               <div className="row" style={{ gap: 10 }}>
-                <div className="art-ava">MI</div>
+                <div className="art-ava"><Stethoscope size={18} /></div>
                 <div className="grow">
-                  <div className="small" style={{ fontWeight: 700 }}>Dr. Meera Iyer</div>
-                  <div className="tiny muted">General Medicine · Hindi, Tamil</div>
+                  <div className="small" style={{ fontWeight: 700 }}>Verified doctor</div>
+                  <div className="tiny muted">Video, audio or chat · in your language</div>
                 </div>
-                <span className="badge green"><Video size={12} /> Live</span>
+                <span className="badge green"><Video size={12} /> Consult</span>
               </div>
               <div className="art-video">
                 <div className="art-video-inner">
                   <Stethoscope size={34} />
-                  <span>“Namaste Ramesh-ji, I can see your oxygen is a little low…”</span>
+                  <span>See a registered doctor from home or a nearby E-Clinic.</span>
                 </div>
               </div>
             </div>
             <div className="art-card art-vitals">
-              <div className="tiny muted" style={{ fontWeight: 700, letterSpacing: '.05em' }}>FROM DEWA E-CLINIC</div>
+              <div className="tiny muted" style={{ fontWeight: 700, letterSpacing: '.05em' }}>VITALS SHARED WITH YOUR DOCTOR</div>
               <div className="art-vitals-grid">
-                <div><span>BP</span><strong>132/84</strong></div>
-                <div><span>SpO₂</span><strong className="warn">93%</strong></div>
-                <div><span>Temp</span><strong>100.2°</strong></div>
-                <div><span>Pulse</span><strong>96</strong></div>
+                <div><span>BP</span><strong>✓</strong></div>
+                <div><span>SpO₂</span><strong>✓</strong></div>
+                <div><span>Temp</span><strong>✓</strong></div>
+                <div><span>Pulse</span><strong>✓</strong></div>
               </div>
             </div>
             <div className="art-card art-passport">
@@ -143,10 +143,10 @@ export default function Landing() {
                 <span className="tiny" style={{ fontWeight: 700, letterSpacing: '.08em', opacity: .8 }}>HEALTH PASSPORT</span>
                 <QrCode size={22} />
               </div>
-              <div className="serif" style={{ fontSize: '1.15rem', marginTop: 8 }}>Sunita Devi</div>
-              <div className="tiny" style={{ opacity: .8 }}>OC-2041-7783 · B+ · Allergic: Penicillin</div>
+              <div className="serif" style={{ fontSize: '1.15rem', marginTop: 8 }}>One record for your family</div>
+              <div className="tiny" style={{ opacity: .8 }}>Prescriptions · reports · allergies · vaccines</div>
             </div>
-            <div className="art-pill"><Clock size={14} /> Avg. wait today: 7 min</div>
+            <div className="art-pill"><Clock size={14} /> Reminders for visits &amp; medicines</div>
           </div>
         </div>
 
@@ -189,15 +189,15 @@ export default function Landing() {
           <div className="l-section-head">
             <span className="eyebrow">How it works</span>
             <h2>From “I don&apos;t feel well” to medicine in hand.</h2>
-            <p className="muted">Here&apos;s Ramesh-ji, 55, a farmer in Dewa. He has COPD and a cough that won&apos;t go away. The nearest chest specialist is 30 km away in Lucknow.</p>
+            <p className="muted">Whether you&apos;re at home on your phone or at an E-Clinic near you, here&apos;s what a visit looks like.</p>
           </div>
           <ol className="l-journey">
             {[
-              { icon: MapPin, t: 'He walks into the E-Clinic', d: 'Pooja, the ASHA worker, scans his Health Passport QR. The kiosk already knows his history and that he\'s on an inhaler.' },
-              { icon: Activity, t: 'Vitals in two minutes', d: 'BP, oxygen, temperature and weight are read straight from the devices. His oxygen is 93% — a little low.' },
-              { icon: HeartPulse, t: 'Triage in his own language', d: 'Saathi asks him a few questions in Hindi. Result: see a doctor now. No chest pain, so not an emergency.' },
-              { icon: Video, t: 'A doctor in 7 minutes', d: 'Dr. Meera in Lucknow already has his notes and live vitals. She prescribes an antibiotic and checks it against his allergies.' },
-              { icon: Pill, t: 'Medicine, sorted', d: 'The slip prints at the kiosk. The pharmacy 1 km away has it in stock and packs it before he arrives.' },
+              { icon: MapPin, t: 'Start on your phone or at an E-Clinic', d: 'Sign in with an email code, or let the E-Clinic staff scan your Health Passport QR. Your history comes with you.' },
+              { icon: Activity, t: 'Vitals, if you\'re at an E-Clinic', d: 'BP, oxygen, temperature and weight are read from the devices and shared with your doctor.' },
+              { icon: HeartPulse, t: 'Check symptoms in your language', d: 'Saathi asks a few simple questions and tells you whether to see a doctor now, book a visit, or call 108.' },
+              { icon: Video, t: 'See a verified doctor', d: 'Choose a doctor near you or online. They see your notes and allergies (only with your consent) and write an e-prescription.' },
+              { icon: Pill, t: 'Medicines and tests, sorted', d: 'Order from a nearby verified chemist with cheaper generic options, and book lab tests with prices shown upfront.' },
             ].map((s, i) => (
               <li key={s.t} className="l-step">
                 <span className="l-step-num">{i + 1}</span>
@@ -259,11 +259,6 @@ export default function Landing() {
               <li><Check /> Prescription printed on the spot, sent to the nearest pharmacy</li>
               <li><Check /> Keeps working offline for a full day and syncs later</li>
             </ul>
-            <div className="l-kiosk-list">
-              {['Dewa PHC', 'Barabanki Railway Station', 'Haidergarh', 'Ramnagar'].map((k) => (
-                <span key={k} className="badge"><MapPin size={12} /> {k}</span>
-              ))}
-            </div>
           </div>
         </div>
       </section>
