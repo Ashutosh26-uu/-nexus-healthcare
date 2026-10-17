@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { FileText, Boxes, BellRing, ArrowLeftRight, Store, ShoppingBag } from 'lucide-react';
+import { FileText, Boxes, BellRing, ArrowLeftRight, Store, ShoppingBag, TrendingUp } from 'lucide-react';
 import PortalLayout from '../../components/PortalLayout';
 import { Loading, Empty } from '../../components/ui';
 import { useLive } from '../../live';
@@ -10,6 +10,7 @@ import Transfers from './Transfers';
 import Profile from './Profile';
 import Orders, { NewOrderPopup } from './Orders';
 import StoreSetup from './StoreSetup';
+import Insights from './Insights';
 import './pharmacy.css';
 
 export default function PharmacyApp() {
@@ -26,6 +27,7 @@ export default function PharmacyApp() {
     { to: '/pharmacy/prescriptions', label: 'E-prescriptions', icon: FileText, badge: newRx || null },
     { to: '/pharmacy/inventory', label: 'Inventory', icon: Boxes },
     { to: '/pharmacy/alerts', label: 'Stock alerts', icon: BellRing, badge: alertCount || null },
+    { to: '/pharmacy/insights', label: 'Stock insights', icon: TrendingUp },
     { to: '/pharmacy/transfers', label: 'Transfers', icon: ArrowLeftRight, badge: toAct || null },
     { to: '/pharmacy/profile', label: 'Store & licence', icon: Store },
   ];
@@ -46,6 +48,7 @@ export default function PharmacyApp() {
         <Route path="prescriptions" element={<Inbox {...props} />} />
         <Route path="inventory" element={<Inventory {...props} />} />
         <Route path="alerts" element={<Alerts {...props} />} />
+        <Route path="insights" element={<Insights {...props} />} />
         <Route path="transfers" element={<Transfers {...props} />} />
         <Route path="profile" element={<Profile {...props} />} />
         <Route path="*" element={<Navigate to="/pharmacy" replace />} />

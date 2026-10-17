@@ -1,8 +1,9 @@
-import { Upload, ChevronRight, Timer, TestTubes } from 'lucide-react';
+import { Upload, ChevronRight, Timer, TestTubes, Barcode, Stamp } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Button, Empty, Stat, timeAgo, useAction } from '../../components/ui';
 import { api } from '../../api';
-import { NEXT, Stepper, TestChips, genderShort } from './shared';
+import { NEXT, Stepper, TestChips, genderShort, openLabel } from './shared';
+import ScanBox from './Scan';
 
 const mins = (from) => Math.max(0, Math.round((Date.now() - new Date(from).getTime()) / 60000));
 const dur = (m) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`);
@@ -23,6 +24,7 @@ export default function Tracking({ orders, reload, onReport }) {
   return (
     <>
       <PageHeader title="Sample tracking" subtitle="Every sample from collection to report. Doctors and patients see the same progress in their apps, so fewer “is it ready?” calls." />
+      <ScanBox reload={reload} onReport={onReport} />
 
       <div className="grid three mb-2">
         <Stat label="Samples in progress" icon={TestTubes} value={active.length} />
@@ -42,7 +44,7 @@ export default function Tracking({ orders, reload, onReport }) {
                   <div>
                     <div className="row" style={{ gap: 8 }}>
                       <strong translate="no">{o.patientName}</strong>
-                      <span className="small muted">{o.patientAge ?? '—'} {genderShort(o.patientGender)} · <span className="mono">{o.patientId}</span></span>
+                      <span className="small muted">{o.patientAge ?? '—'} {genderShort(o.patientGender)} · <span className="mono">{o.sampleId || o.patientId}</span></span>
                     </div>
                     <TestChips tests={o.tests} />
                   </div>
@@ -53,11 +55,16 @@ export default function Tracking({ orders, reload, onReport }) {
 
                 <div className="row between wrap lab-track-foot">
                   <span className="tiny muted">Ordered by {o.doctorName || 'network doctor'} {timeAgo(o.createdAt)}</span>
-                  {o.status === 'processing' ? (
-                    <Button variant="clay" icon={Upload} onClick={() => onReport(o)}>Upload report</Button>
-                  ) : NEXT[o.status] ? (
-                    <Button loading={busy === o.id} onClick={() => advance(o)}>{NEXT[o.status].label} <ChevronRight size={16} /></Button>
-                  ) : null}
+                  <div className="row wrap" style={{ gap: 8 }}>
+                    {o.sampleId && <Button variant="ghost" size="sm" icon={Barcode} onClick={() => openLabel(o.id)}>Label</Button>}
+                    {o.status === 'processing' ? (
+                      <Button variant="clay" icon={Upload} onClick={() => onReport(o)}>{o.draftReport ? 'Fix results' : 'Enter results'}</Button>
+                    ) : o.status === 'review' ? (
+                      <span className="badge sun"><Stamp size={12} /> Awaiting pathologist sign-off</span>
+                    ) : NEXT[o.status] ? (
+                      <Button loading={busy === o.id} onClick={() => advance(o)}>{NEXT[o.status].label} <ChevronRight size={16} /></Button>
+                    ) : null}
+                  </div>
                 </div>
               </article>
             );

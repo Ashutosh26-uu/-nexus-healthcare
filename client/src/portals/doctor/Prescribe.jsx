@@ -10,6 +10,8 @@ import { DrugSearch } from './RxComposer';
 import { TimingPicker, freqText, parseFreq } from './medTiming';
 import { MedicineForm, blankMed } from './Medicines';
 import DosDonts from './DosDonts';
+import RxTemplateTools from './RxTemplates';
+import { rowsFrom, mergeList, mergeText } from './rxTemplateUtils';
 
 const blankRow = (drug = '') => ({ key: Math.random().toString(36).slice(2), drug, dose: '1 tablet', freq: '1-0-1 after food', days: 5, timing: { morning: 1, afternoon: 0, evening: 0, night: 1 }, food: 'after food' });
 
@@ -155,6 +157,16 @@ function WriteStep({ patient, onDone, onCancel }) {
     const m = d.defaults;
     setRows((rs) => [...rs, m ? { ...blankRow(d.name), dose: m.dose, freq: freqText(m) + (m.note ? ` · ${m.note}` : ''), days: m.days, timing: m.sos ? null : m.timing, food: m.food } : blankRow(d.name)]);
   };
+  // Templates and favourite chips add lines; medicines already on the prescription are not repeated.
+  const addItems = (items) => setRows((rs) => [...rs, ...rowsFrom(items, rs.map((r) => r.drug)).map((x) => ({ ...blankRow(), ...x }))]);
+  const applyRxTemplate = (t) => {
+    addItems(t.items);
+    if (!diagnosis.trim() && t.diagnosis) setDiagnosis(t.diagnosis);
+    setAdvice((a) => mergeText(a, t.advice));
+    setDos((x) => mergeList(x, t.dos)); setDonts((x) => mergeList(x, t.donts));
+    setTests((ts) => [...ts, ...(t.labTests || []).map((l) => l.code).filter((c) => !ts.includes(c) && LAB_TESTS.some((x) => x.code === c))]);
+  };
+  const tplForm = { diagnosis, advice, dos, donts, labTests: tests.map((code) => ({ code, name: LAB_TESTS.find((x) => x.code === code)?.name || code })), items: rows.map(({ drug, dose, freq, days, food }) => ({ drug, dose, freq, days, food })) };
   const uploadPaper = async (file) => {
     if (!file) return;
     setUploading(true);
@@ -191,6 +203,7 @@ function WriteStep({ patient, onDone, onCancel }) {
       <Card title={<h4 className="row mb-0" style={{ gap: 8 }}><Pill size={17} />Prescription</h4>} action={doctor?.affiliation && <span className="tiny muted">Issued from {doctor.affiliation}</span>}>
         <Field label="Diagnosis / impression"><input className="input" value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} placeholder="e.g. Acute viral fever" /></Field>
         <DrugSearch onPick={addDrug} onAddNew={(name) => setNewMed(blankMed(name))} />
+        <RxTemplateTools form={tplForm} onApply={applyRxTemplate} onAddItems={addItems} />
         {allergyHits.map((w) => <div key={w.msg} className="callout rose mt-1"><ShieldAlert /><div><strong>Allergy alert.</strong> {w.msg}</div></div>)}
         {warnings.filter((w) => w.type !== 'allergy').map((w) => <div key={w.msg} className="callout mt-1"><AlertTriangle /><div><strong>Interaction.</strong> {w.msg}</div></div>)}
         {rows.length > 0 && (

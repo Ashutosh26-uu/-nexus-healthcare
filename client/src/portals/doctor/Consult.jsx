@@ -10,6 +10,7 @@ import { Avatar, Button, Card, Empty, Loading, Tabs, TriageBadge, TRIAGE, Status
 import { VitalsChips, VITAL_META, useLiveVitals, useNow, routeInfo } from './shared';
 import { useRecord, AccessGate, EmergencyBanner, CriticalCard, HistoryPanel, VisitsPanel, LabsPanel, AllergyList } from './Record';
 import RxComposer from './RxComposer';
+import PatientSummary from './PatientSummary';
 
 function CallTimer({ since }) {
   const now = useNow(1000);
@@ -260,6 +261,8 @@ export default function Consult() {
           {consult.kioskName && <span className="badge"><Monitor />{consult.kioskName}</span>}
         </div>
       </div>
+
+      {!done && consult.status !== 'completed' && <PatientSummary consultId={consult.id} />}
 
       {!done && translated && (
         <div className="dr-translate"><Languages size={15} />Patient speaks {consult.patientLanguage}. Symptoms, notes and chat are auto-translated {consult.patientLanguage} → {docFirstLang}. Your prescription will be printed in {consult.patientLanguage}.</div>

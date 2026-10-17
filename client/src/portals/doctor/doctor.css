@@ -361,3 +361,45 @@
   .dr-controls { gap: 8px; }
   .dr-media-retry { top: auto; bottom: 140px; }
 }
+
+/* Prescription templates & frequent medicines */
+.dr-tpl-tools { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.dr-fav { display: flex; gap: 6px; align-items: center; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
+.dr-fav .chip { white-space: nowrap; font-size: 0.78rem; padding: 5px 11px; flex-shrink: 0; }
+.dr-fav .chip:disabled { opacity: 0.55; cursor: default; }
+.dr-fav > span { flex-shrink: 0; }
+.dr-tpl-list { display: flex; flex-direction: column; gap: 8px; }
+.dr-tpl { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--card); }
+.dr-tpl.starter { background: var(--paper); }
+.dr-tpl-drugs { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dr-tpl-confirm { position: sticky; top: 0; z-index: 2; }
+@media (max-width: 520px) {
+  .dr-tpl { flex-wrap: wrap; }
+  .dr-tpl > .grow { flex-basis: 100%; }
+  .dr-tpl-drugs { white-space: normal; }
+}
+
+/* Pre-call patient summary */
+.dr-psum { padding: 12px 16px; }
+.dr-psum.loading { display: flex; gap: 10px; align-items: center; }
+.dr-psum-head { display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: 0; padding: 0; cursor: pointer; text-align: start; color: inherit; font: inherit; }
+.dr-psum-head .eyebrow { margin: 0; }
+.dr-psum-chev { margin-inline-start: auto; transition: transform 0.2s; color: var(--ink-3); }
+.dr-psum-chev.open { transform: rotate(180deg); }
+.dr-psum-body { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.dr-psum-say { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; background: var(--paper); border-radius: var(--radius-sm); }
+.dr-psum-say svg { flex-shrink: 0; margin-top: 2px; color: var(--ink-3); }
+.dr-psum-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.dr-psum-meds { display: flex; gap: 6px; align-items: flex-start; color: var(--ink-2); }
+.dr-psum-meds svg { flex-shrink: 0; margin-top: 1px; }
+.dr-psum-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.dr-psum-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.dr-psum-list li { line-height: 1.35; }
+.dr-psum-list li.abn strong { color: var(--rose); }
+.dr-psum-trend { display: inline; vertical-align: -2px; margin-inline: 3px; color: var(--ink-3); }
+.dr-psum-list li.abn .dr-psum-trend { color: var(--rose); }
+@media (max-width: 640px) { .dr-psum-grid { grid-template-columns: 1fr; } }
+
+/* Statement link on Earnings */
+.dr-statement-pick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.dr-statement-pick .input { width: auto; min-width: 170px; }

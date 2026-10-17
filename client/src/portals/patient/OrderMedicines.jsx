@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Pill, FileText, Search, Plus, Trash2, Store, Truck, MapPin, Clock, Check, ChevronDown, ArrowLeft, ArrowRight, Megaphone, Upload, CheckCircle2, Package, ShieldCheck, Phone } from 'lucide-react';
+import { Pill, FileText, Search, Plus, Trash2, Store, Truck, MapPin, Clock, Check, ChevronDown, ArrowLeft, ArrowRight, Megaphone, Upload, CheckCircle2, Package, ShieldCheck, Phone, Info, BadgeIndianRupee } from 'lucide-react';
 import { api } from '../../api';
 import { Button, Card, Empty, Field, Pills, cx, fmtDate, fmtMoney, useDebounced } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
@@ -70,6 +70,9 @@ export default function OrderMedicines() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const fileRef = useRef(null);
+  const [subs, setSubs] = useState({}); // prescribed drug → cheaper same-salt option info
+  const [confirmSub, setConfirmSub] = useState(null); // drug whose switch is waiting for the patient's yes
+  const refill = params.get('refill') === '1';
 
   useEffect(() => { if (!rxId && prescriptions.length && source === 'rx') setRxId(prescriptions[0].id); }, [prescriptions, rxId, source]);
   useEffect(() => { if (!prescriptions.length && !homeLoading) setSource('other'); }, [prescriptions.length, homeLoading]);
@@ -79,15 +82,30 @@ export default function OrderMedicines() {
   useEffect(() => {
     if (!rx) return undefined;
     let alive = true; // switching prescriptions quickly must not tick the previous one's medicines
-    api.post('/medicine-orders/quote', { rxId: rx.id }).then((q) => alive && setPicks(Object.fromEntries(q.items.map((i) => [i.drug, { on: true, qty: i.qty, unit: i.unit }])))).catch(() => {
+    // A refill ticks only the regular medicines (28+ day courses, not "when needed").
+    const regular = (drug) => { const it = rx.items.find((i) => i.drug === drug); return !refill || (Number(it?.days) >= 28 && !/sos|when needed|when breathless/i.test(it?.freq || '')); };
+    api.post('/medicine-orders/quote', { rxId: rx.id }).then((q) => alive && setPicks(Object.fromEntries(q.items.map((i) => [i.drug, { on: regular(i.drug), qty: i.qty, unit: i.unit }])))).catch(() => {
       if (alive) setPicks(Object.fromEntries(rx.items.map((i) => [i.drug, { on: true, qty: 10, unit: 'unit' }])));
+    });
+    return () => { alive = false; };
+  }, [rx?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Cheaper same-salt-same-strength options, only for lines the doctor didn't mark "no substitution".
+  useEffect(() => {
+    setSubs({}); setConfirmSub(null);
+    if (!rx) return undefined;
+    let alive = true;
+    rx.items.filter((it) => !it.noSub).forEach((it) => {
+      api.get(`/medicines/substitutes?drug=${encodeURIComponent(it.drug)}`).then((s) => {
+        const best = !s.noSwap && s.options.find((o) => o.saving > 0);
+        if (alive && best) setSubs((m) => ({ ...m, [it.drug]: best }));
+      }).catch(() => {});
     });
     return () => { alive = false; };
   }, [rx?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (homeLoading) return <PageSkeleton />;
 
-  const items = source === 'rx' ? Object.entries(picks).filter(([, v]) => v.on).map(([drug, v]) => ({ drug, qty: v.qty })) : others.filter((o) => o.drug.trim().length >= 2).map((o) => ({ drug: o.drug.trim(), qty: o.qty }));
+  const items = source === 'rx' ? Object.entries(picks).filter(([, v]) => v.on).map(([drug, v]) => ({ drug, qty: v.qty, ...(v.sub ? { sub: v.sub } : {}) })) : others.filter((o) => o.drug.trim().length >= 2).map((o) => ({ drug: o.drug.trim(), qty: o.qty }));
   const shop = quote?.shops.find((s) => s.id === shopId);
   const open = shopId === 'any';
   const medicines = open ? quote?.estimate || 0 : shop?.total || 0;
@@ -102,7 +120,9 @@ export default function OrderMedicines() {
     try {
       const q = await api.post('/medicine-orders/quote', { ...(source === 'rx' ? { rxId } : {}), items, ...(device.loc ? { lat: device.loc.lat, lng: device.loc.lng } : {}) });
       setQuote(q);
-      setShopId(q.shops.find((s) => s.complete)?.id || q.shops[0]?.id || (q.chemistsNearby ? 'any' : null));
+      // A reorder goes back to the same chemist when it still has the medicines.
+      const same = params.get('pharmacy') && q.shops.find((s) => s.id === params.get('pharmacy'));
+      setShopId(same?.id || q.shops.find((s) => s.complete)?.id || q.shops[0]?.id || (q.chemistsNearby ? 'any' : null));
       setStep(1);
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
@@ -115,7 +135,7 @@ export default function OrderMedicines() {
     setBusy(true); setError('');
     try {
       const r = await api.post('/medicine-orders', {
-        ...(source === 'rx' ? { rxId } : {}), items: open || !shop ? items : shop.lines.filter((l) => l.inStock).map((l) => ({ drug: l.drug, qty: l.qty })),
+        ...(source === 'rx' ? { rxId } : {}), items: open || !shop ? items : shop.lines.filter((l) => l.inStock).map((l) => ({ drug: l.switchedFrom || l.drug, qty: l.qty, ...(l.switchedFrom ? { sub: l.drug } : {}) })),
         pharmacyId: shopId, fulfilment, address, rxFileId: rxFile?.id, ...(device.loc ? { lat: device.loc.lat, lng: device.loc.lng } : {}),
       });
       setResult(r); setStep(3); reloadHome();
@@ -148,16 +168,42 @@ export default function OrderMedicines() {
                 </select>
               </Field>
               <div className="tiny muted">Tick what you want to buy and set how many:</div>
+              {Object.keys(subs).length > 0 && <div className="tiny muted">Cheaper options have the same salt &amp; strength — ask your pharmacist/doctor if unsure. Prices are indicative.</div>}
               <div className="pt-om-list">
                 {Object.entries(picks).map(([drug, v]) => {
                   const it = rx?.items.find((i) => i.drug === drug);
+                  const alt = subs[drug];
+                  const setSub = (sub) => { setPicks((p) => ({ ...p, [drug]: { ...v, sub } })); setConfirmSub(null); };
                   return (
-                    <label key={drug} className={cx('pt-om-row', !v.on && 'off')}>
-                      <input type="checkbox" checked={v.on} onChange={(e) => setPicks((p) => ({ ...p, [drug]: { ...v, on: e.target.checked } }))} />
-                      <span className="grow"><strong translate="no">{drug}</strong>{it && <span className="tiny muted block">{[it.dose, it.freq, it.days ? `${it.days} days` : null].filter(Boolean).join(' · ')}</span>}</span>
-                      <Qty value={v.qty} onChange={(n) => setPicks((p) => ({ ...p, [drug]: { ...v, qty: n } }))} />
-                      <span className="tiny muted pt-om-unit">{v.unit}{v.qty > 1 ? 's' : ''}</span>
-                    </label>
+                    <div key={drug}>
+                      <label className={cx('pt-om-row', !v.on && 'off')}>
+                        <input type="checkbox" checked={v.on} onChange={(e) => setPicks((p) => ({ ...p, [drug]: { ...v, on: e.target.checked } }))} />
+                        <span className="grow"><strong translate="no">{v.sub || drug}</strong>{v.sub && <span className="tiny muted block">Instead of <span translate="no">{drug}</span></span>}{it && <span className="tiny muted block">{[it.dose, it.freq, it.days ? `${it.days} days` : null].filter(Boolean).join(' · ')}</span>}</span>
+                        <Qty value={v.qty} onChange={(n) => setPicks((p) => ({ ...p, [drug]: { ...v, qty: n } }))} />
+                        <span className="tiny muted pt-om-unit">{v.unit}{v.qty > 1 ? 's' : ''}</span>
+                      </label>
+                      {it?.noSub && <div className="tiny muted pt-om-sub">Your doctor asked for this exact medicine — no substitute offered.</div>}
+                      {!it?.noSub && alt && v.on && (
+                        <div className="pt-om-sub tiny">
+                          {v.sub ? (
+                            <span className="row wrap" style={{ gap: 6 }}><Check size={13} className="pt-green" /> Switched to the cheaper option. <button type="button" className="link-btn" onClick={() => setSub(undefined)}>Undo</button></span>
+                          ) : confirmSub === drug ? (
+                            <div className="callout sun"><Info /><span>
+                              Switch <strong translate="no">{drug}</strong> to <strong translate="no">{alt.drug}</strong>? Same salt &amp; strength — ask your pharmacist/doctor if unsure.
+                              <span className="row wrap mt-1" style={{ gap: 8 }}>
+                                <Button size="sm" variant="ghost" onClick={() => setConfirmSub(null)}>Keep prescribed</Button>
+                                <Button size="sm" onClick={() => setSub(alt.drug)}>Yes, switch</Button>
+                              </span>
+                            </span></div>
+                          ) : (
+                            <span className="row wrap" style={{ gap: 6 }}>
+                              <BadgeIndianRupee size={13} className="pt-green" /> Cheaper option: <strong translate="no">{alt.drug}</strong> — save {fmtMoney(Math.round(alt.saving * v.qty))}
+                              <button type="button" className="link-btn" onClick={() => setConfirmSub(drug)}>Switch</button>
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>

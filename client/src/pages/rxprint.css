@@ -39,3 +39,23 @@
 .rxp-food { color: #6f7c78; font-size: 0.85em; }
 .rxp-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .rxp-dos ul { margin: 4px 0 0; padding-left: 18px; }
+.rxp-totals { margin-top: 18px; max-width: 360px; margin-inline-start: auto; }
+.rxp-totals tr:last-child td { border-bottom: 0; border-top: 2px solid #0f5c4d; }
+
+/* GST invoice (InvoicePrint) */
+.inv-store { display: flex; flex-direction: column; font-size: .8rem; color: #4a5654; }
+.inv-store strong { font-family: var(--serif); font-size: 1.35rem; color: #0f5c4d; }
+.inv-party .inv-wide { grid-column: 1 / -1; }
+.inv-plain { display: inline !important; font-size: inherit !important; text-transform: none !important; letter-spacing: 0 !important; color: inherit !important; }
+.inv-scroll { overflow-x: auto; }
+.inv-table { font-size: .8rem; min-width: 640px; }
+.inv-table .r, .inv-slabs .r { text-align: right; }
+.inv-sub { font-size: .68rem; color: #6b7774; }
+.inv-bottom { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-top: 16px; flex-wrap: wrap; }
+.inv-slabs { width: auto; min-width: 260px; font-size: .78rem; }
+.inv-totals { display: grid; grid-template-columns: auto auto; gap: 4px 18px; margin: 0; font-size: .85rem; min-width: 240px; }
+.inv-totals dt { color: #4a5654; }
+.inv-totals dd { margin: 0; text-align: right; }
+.inv-totals .inv-grand { border-top: 1px solid #ddd6c8; padding-top: 6px; font-weight: 700; font-size: 1rem; color: #1d2b2a; }
+@media (max-width: 640px) { .inv-bottom { flex-direction: column-reverse; } .inv-totals, .inv-slabs { width: 100%; } }
+@media print { .inv-scroll { overflow: visible; } .inv-table { min-width: 0; } }

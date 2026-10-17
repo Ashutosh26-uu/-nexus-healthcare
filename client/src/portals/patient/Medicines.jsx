@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Pill, Truck, Store, ScanLine, BadgeCheck, AlertTriangle, PenLine, Package, Download, BadgeIndianRupee, FileText, ShoppingBag, Info } from 'lucide-react';
+import { Pill, Truck, Store, ScanLine, BadgeCheck, AlertTriangle, PenLine, Package, Download, BadgeIndianRupee, FileText, ShoppingBag, Info, Receipt, RefreshCw } from 'lucide-react';
 import WhereToBuy from './WhereToBuy';
 import { api } from '../../api';
 import { Button, Card, Empty, StatusBadge, cx, fmtDate, fmtMoney, useAction } from '../../components/ui';
@@ -32,6 +32,7 @@ export default function Medicines() {
         subtitle="E-prescriptions from your doctors. Order from a chemist within 50 km — pick it up or get it delivered — and track every step.">
         <Button variant="clay" icon={ShoppingBag} onClick={() => navigate('/patient/medicines/order')}>Order medicines</Button>
       </PageHeader>
+      <RunningLow />
       <MyOrders />
 
       <div className="grid side">
@@ -126,6 +127,31 @@ function RxCard({ rx, onOrder, past }) {
   );
 }
 
+/* ---------- running low: regular medicines about to run out ---------- */
+function RunningLow() {
+  const { patient } = usePatient();
+  const { data } = usePatientLive('/patient/refills', ['medorders', 'prescriptions', 'notifications']);
+  const navigate = useNavigate();
+  if (!patient || !data?.length) return null;
+  return (
+    <Card className="pt-low" title={<h4 className="row mb-0" style={{ gap: 8 }}><RefreshCw size={17} />Running low</h4>}>
+      <div className="stack" style={{ gap: 0 }}>
+        {data.map((r) => (
+          <div key={r.rxId} className="pt-low-item">
+            <div className="grow" style={{ minWidth: 0 }}>
+              <strong className="small">Your {r.label}{r.doctorName ? <> from <span translate="no">{r.doctorName}</span></> : null}</strong>
+              <div className="tiny muted">{r.daysLeft > 0 ? `Run out on ${fmtDate(r.runOutOn)} (${r.daysLeft} day${r.daysLeft === 1 ? '' : 's'} left)` : `Ran out on ${fmtDate(r.runOutOn)}`} · <span translate="no">{r.items.map((i) => i.drug).join(', ')}</span></div>
+              {r.pharmacyName && <div className="tiny muted">Last bought at <span translate="no">{r.pharmacyName}</span></div>}
+            </div>
+            <Button size="sm" variant="clay" icon={RefreshCw} onClick={() => navigate(`/patient/medicines/order?rx=${r.rxId}&refill=1${r.pharmacyId ? `&pharmacy=${r.pharmacyId}` : ''}`)}>Reorder</Button>
+          </div>
+        ))}
+      </div>
+      <p className="tiny muted mb-0 mt-1">Based on the days your doctor wrote. If your doctor changed the dose, follow the new prescription.</p>
+    </Card>
+  );
+}
+
 /* ---------- my medicine orders ---------- */
 const ORDER_STEPS = { pickup: ['requested', 'accepted', 'packed', 'collected'], delivery: ['requested', 'accepted', 'packed', 'out_for_delivery', 'delivered'] };
 const ORDER_LABEL = { awaiting_payment: 'Waiting for advance payment', requested: 'Waiting for the chemist', accepted: 'Accepted', packed: 'Packed', out_for_delivery: 'On the way', delivered: 'Delivered', collected: 'Collected', declined: 'Not accepted', cancelled: 'Cancelled' };
@@ -155,6 +181,12 @@ function MyOrders() {
                 <span className="small">Total <strong>{fmtMoney(o.total)}</strong>{o.fulfilment === 'delivery' ? ` · advance ${fmtMoney(o.advancePaid || 0)} paid · ${fmtMoney(o.balance)} on delivery` : ' · pay at the counter'}{o.refundDue ? ` · refund ${fmtMoney(o.refundDue)} on the way` : ''}</span>
                 {!closed && o.status !== 'awaiting_payment' && <span className="tiny">{o.fulfilment === 'delivery' ? 'Delivery code' : 'Pickup code'} <span className="pt-mo-code mono">{o.otp}</span></span>}
               </div>
+              {['accepted', 'packed', 'out_for_delivery', 'delivered', 'collected'].includes(o.status) && (
+                <div className="row wrap" style={{ gap: 8 }}>
+                  {o.items.some((i) => i.switchedFrom) && <span className="tiny muted">Cheaper same-salt option chosen for {o.items.filter((i) => i.switchedFrom).length} medicine{o.items.filter((i) => i.switchedFrom).length > 1 ? 's' : ''}</span>}
+                  <Button size="sm" variant="ghost" icon={Receipt} onClick={() => window.open(`/invoice/${o.id}`, '_blank', 'noopener')}>Bill / invoice</Button>
+                </div>
+              )}
               {o.status === 'declined' && <div className="callout rose"><Info /><span className="small">{o.declineReason}. <button type="button" className="link-btn" onClick={() => navigate('/patient/medicines/order')}>Try another chemist</button></span></div>}
               {['awaiting_payment', 'requested'].includes(o.status) && (
                 <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>

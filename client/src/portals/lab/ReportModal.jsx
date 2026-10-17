@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react';
-import { Plus, Trash2, Paperclip, AlertTriangle, CheckCircle2, Radar, FileText, X } from 'lucide-react';
+import { Plus, Trash2, Paperclip, AlertTriangle, CheckCircle2, Radar, FileText, X, FileUp, Undo2, Stamp, ShieldCheck } from 'lucide-react';
 import { Modal, Button, useAction, cx } from '../../components/ui';
 import { api } from '../../api';
-import { TestChips } from './shared';
+import { TestChips, canSign } from './shared';
 
 const TEMPLATES = {
   dengue: { label: 'Dengue NS1', rows: [{ name: 'Dengue NS1 Antigen', kind: 'qual', value: 'Negative', unit: '', range: 'Negative' }] },
@@ -50,7 +50,7 @@ function templateKeyFor(name = '') {
 }
 
 let uid = 0;
-const mkRow = (r) => ({ id: ++uid, kind: 'num', value: '', unit: '', range: '', manual: false, ...r, flag: r.kind === 'qual' ? 'negative' : 'normal' });
+const mkRow = (r) => ({ id: ++uid, kind: 'num', value: '', unit: '', range: '', manual: false, ...r, flag: r.flag || (r.kind === 'qual' ? 'negative' : 'normal') });
 
 function autoFlag(row) {
   if (row.manual) return row.flag;
@@ -70,6 +70,8 @@ function autoFlag(row) {
 }
 
 function initialRows(order) {
+  // Sent back by the pathologist (or re-opened): start from what was entered.
+  if (order.draftReport?.results?.length) return order.draftReport.results.map((r) => mkRow({ ...r, kind: /^(positive|negative)$/i.test(r.value) ? 'qual' : 'num', manual: true }));
   const rows = [];
   for (const t of order.tests) {
     const k = templateKeyFor(t.name);
@@ -79,20 +81,61 @@ function initialRows(order) {
   return rows;
 }
 
-export default function ReportModal({ order, onClose, onDone }) {
+export default function ReportModal({ order, home, onClose, onDone }) {
   const [result, setResult] = useState(null);
   const close = () => { setResult(null); onClose(); };
   return (
-    <Modal open={!!order} onClose={close} wide title={result ? 'Report sent' : 'Upload report'} subtitle={order && !result ? `${order.patientName} · ${order.patientAge ?? ''} ${order.patientGender || ''} · ${order.patientId}` : undefined}>
+    <Modal open={!!order} onClose={close} wide title={result ? (result.awaitingApproval ? 'Sent for sign-off' : 'Report signed & sent') : 'Enter results'} subtitle={order && !result ? `${order.patientName} · ${order.patientAge ?? ''} ${order.patientGender || ''} · ${order.patientId}` : undefined}>
       {order && (result
         ? <Success res={result} onClose={close} />
-        : <ReportForm key={order.id} order={order} onSent={(res) => { setResult(res); onDone(res); }} onCancel={close} />)}
+        : <ReportForm key={order.id} order={order} home={home} onSent={(res) => { setResult(res); onDone(res); }} onCancel={close} />)}
     </Modal>
   );
 }
 
-function ReportForm({ order, onSent, onCancel }) {
+// "Import CSV" from an analyser / LIS export: rows of test_code,value,unit or name,value,unit (header optional).
+function parseCsv(text, order) {
+  const byCode = new Map(order.tests.map((t) => [t.code.toLowerCase(), t.name]));
+  const out = []; const bad = [];
+  text.split(/\r?\n/).forEach((line, i) => {
+    const cells = line.split(/[,;\t]/).map((c) => c.trim().replace(/^"|"$/g, ''));
+    if (!cells.join('')) return;
+    if (i === 0 && /^(test_?code|code|name|test|parameter)$/i.test(cells[0]) && /value|result/i.test(cells[1] || '')) return;
+    const [key, value, unit = ''] = cells;
+    if (!key || value === undefined || value === '') { bad.push(i + 1); return; }
+    out.push({ name: byCode.get(key.toLowerCase()) || key, value, unit });
+  });
+  return { out, bad };
+}
+
+function ReportForm({ order, home, onSent, onCancel }) {
   const [rows, setRows] = useState(() => initialRows(order));
+  const signer = canSign(home);
+  const selfSign = signer && home?.me?.labRole !== 'pathologist';
+  const [signNow, setSignNow] = useState(signer);
+  const [sign, setSign] = useState({ confirm: false, name: '', regNo: '' });
+  const [csvMsg, setCsvMsg] = useState('');
+  const csvRef = useRef(null);
+  const importCsv = async (f) => {
+    if (!f) return;
+    const { out, bad } = parseCsv(await f.text(), order);
+    csvRef.current.value = '';
+    if (!out.length) { setCsvMsg(`No values found in ${f.name}. Use rows like "HbA1c,6.1,%".`); return; }
+    setRows((rs) => {
+      const next = rs.map((r) => ({ ...r }));
+      for (const x of out) {
+        const key = x.name.toLowerCase();
+        const hit = next.find((r) => r.name && (r.name.toLowerCase() === key || r.name.toLowerCase().startsWith(key)));
+        const row = hit || mkRow({ name: x.name, kind: /^(positive|negative)$/i.test(x.value) ? 'qual' : 'num' });
+        if (/^(positive|negative)$/i.test(x.value)) row.kind = 'qual'; // antigen tests report words, not numbers
+        Object.assign(row, { value: row.kind === 'qual' ? (/^pos/i.test(x.value) ? 'Positive' : 'Negative') : x.value, ...(x.unit ? { unit: x.unit } : {}), manual: false });
+        row.flag = autoFlag(row);
+        if (!hit) next.push(row);
+      }
+      return next.filter((r) => r.name || r.value);
+    });
+    setCsvMsg(`Imported ${out.length} value${out.length === 1 ? '' : 's'} from ${f.name}${bad.length ? ` · skipped line ${bad.join(', ')}` : ''}. Check them before sending.`);
+  };
   const [file, setFile] = useState(null);
   const [fileErr, setFileErr] = useState('');
   const [checked, setChecked] = useState(false);
@@ -119,7 +162,8 @@ function ReportForm({ order, onSent, onCancel }) {
 
   const filled = rows.filter((r) => r.name && String(r.value).trim() !== '');
   const criticals = filled.filter((r) => r.flag === 'critical');
-  const canSend = filled.length > 0 && (!criticals.length || checked);
+  const signOk = !signNow || !selfSign || (sign.confirm && sign.name.trim().length >= 3 && sign.regNo.trim().length >= 3);
+  const canSend = filled.length > 0 && (!criticals.length || checked) && signOk;
 
   const submit = async (e) => {
     e.preventDefault();
@@ -127,21 +171,26 @@ function ReportForm({ order, onSent, onCancel }) {
     // Upload the signed report first: if that fails the real error is shown and nothing is marked reported.
     const res = await run('send', async () => {
       const reportFileId = file ? (await api.upload(file)).id : null;
-      return api.post(`/lab-orders/${order.id}/report`, { results, reportFileId });
+      const signBody = signNow ? (selfSign ? { confirm: sign.confirm, name: sign.name.trim(), regNo: sign.regNo.trim() } : {}) : undefined;
+      return api.post(`/lab-orders/${order.id}/report`, { results, reportFileId, sign: signBody });
     });
     if (res) onSent({ ...res, critical: criticals.length > 0, attachment: file?.name });
   };
 
   return (
     <form onSubmit={submit} className="stack lg">
+      {order.returnNote && <div className="callout rose small"><Undo2 size={16} /><span>Sent back by {order.returnNote.by}: “{order.returnNote.text}”</span></div>}
       <div className="row wrap between" style={{ gap: 10 }}>
         <TestChips tests={order.tests} />
         <div className="row wrap lab-templates" style={{ gap: 6 }}>
+          <input ref={csvRef} type="file" accept=".csv,text/csv,text/plain" hidden onChange={(e) => importCsv(e.target.files?.[0])} />
+          <button type="button" className="chip" onClick={() => csvRef.current?.click()}><FileUp size={12} /> Import CSV</button>
           <span className="tiny muted">Quick add:</span>
           {Object.entries(TEMPLATES).map(([k, t]) => <button type="button" key={k} className="chip" onClick={() => addTemplate(k)}>{t.label}</button>)}
         </div>
       </div>
 
+      {csvMsg && <div className="tiny muted" role="status">{csvMsg}</div>}
       <div className="lab-results">
         <div className="lab-res-head">
           <span>Test / parameter</span><span>Result</span><span>Unit</span><span>Reference range</span><span>Flag</span><span />
@@ -187,16 +236,34 @@ function ReportForm({ order, onSent, onCancel }) {
           <AlertTriangle />
           <div className="grow">
             <strong>Critical value: {criticals.map((c) => `${c.name} ${c.value} ${c.unit}`).join(', ')}</strong>
-            <div>Doctor and patient will be notified immediately when you send this report.</div>
+            <div>{signNow ? 'Doctor and patient will be notified immediately when you sign this report.' : 'The pathologist is alerted now; doctor and patient the moment it is signed.'}</div>
             <label className="check mt-1"><input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} /> I have re-checked this value on the analyser</label>
           </div>
         </div>
       )}
 
+      <div className="lab-signbox">
+        {signer ? (
+          <>
+            <label className="check small"><input type="checkbox" checked={signNow} onChange={(e) => setSignNow(e.target.checked)} /> <ShieldCheck size={14} /> <strong>{selfSign ? 'Sign and release now' : `Sign now as ${home.me.name}${home.me.regNo ? ` (Reg ${home.me.regNo})` : ''}`}</strong></label>
+            {signNow && selfSign && (
+              <div className="stack">
+                <label className="check tiny"><input type="checkbox" checked={sign.confirm} onChange={(e) => setSign((s) => ({ ...s, confirm: e.target.checked }))} /> I am the reporting pathologist for this report</label>
+                <div className="lab-collect-grid">
+                  <input className="input sm" value={sign.name} onChange={(e) => setSign((s) => ({ ...s, name: e.target.value }))} placeholder="Pathologist's name" aria-label="Pathologist's name" />
+                  <input className="input sm" value={sign.regNo} onChange={(e) => setSign((s) => ({ ...s, regNo: e.target.value }))} placeholder="Registration no." aria-label="Registration number" />
+                </div>
+              </div>
+            )}
+            {!signNow && <span className="tiny muted">It will wait in Pathologist sign-off — the patient sees nothing until it&apos;s signed.</span>}
+          </>
+        ) : <span className="tiny"><Stamp size={13} /> Goes to {home?.pathologists?.join(', ')} for sign-off. The patient sees it only after that.</span>}
+      </div>
+
       <div className="row" style={{ justifyContent: 'flex-end' }}>
         <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
         <Button type="submit" variant={criticals.length ? 'danger' : undefined} loading={busy === 'send'} disabled={!canSend}>
-          {criticals.length ? 'Send critical report' : `Send report${filled.length ? ` (${filled.length} values)` : ''}`}
+          {signNow ? (criticals.length ? 'Sign & send critical report' : `Sign & send${filled.length ? ` (${filled.length} values)` : ''}`) : `Send for sign-off${filled.length ? ` (${filled.length} values)` : ''}`}
         </Button>
       </div>
     </form>
@@ -205,6 +272,20 @@ function ReportForm({ order, onSent, onCancel }) {
 
 function Success({ res, onClose }) {
   const o = res.order;
+  if (res.awaitingApproval) {
+    return (
+      <div className="stack lg lab-success">
+        <div className="lab-success-hero">
+          <Stamp size={40} />
+          <div>
+            <h3 className="mb-0">Waiting for {res.pathologists?.length ? res.pathologists.join(', ') : 'the pathologist'} to sign</h3>
+            <p className="muted small mb-0">{o.draftReport?.results.length} values saved. {o.patientName} and the doctor see the report once it&apos;s approved.</p>
+          </div>
+        </div>
+        <div className="row" style={{ justifyContent: 'flex-end' }}><Button onClick={onClose}>Done</Button></div>
+      </div>
+    );
+  }
   const alert = res.newAlerts?.[0];
   const positives = o.results.filter((r) => r.flag === 'positive' && /dengue|malaria|typhoid|widal|influenza/i.test(r.name));
   return (
@@ -213,7 +294,7 @@ function Success({ res, onClose }) {
         <CheckCircle2 size={40} />
         <div>
           <h3 className="mb-0">{o.patientName}'s report is in their Health Passport</h3>
-          <p className="muted small mb-0">{o.results.length} values · mapped to LOINC · {res.attachment ? `"${res.attachment}" attached` : 'structured values only'}</p>
+          <p className="muted small mb-0">{o.results.length} values · mapped to LOINC · {res.attachment ? `"${res.attachment}" attached` : 'structured values only'}{o.signedBy ? ` · signed by ${o.signedBy.name} (Reg ${o.signedBy.regNo})` : ''}</p>
         </div>
       </div>
 

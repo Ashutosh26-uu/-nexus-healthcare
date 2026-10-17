@@ -718,3 +718,11 @@ button.pt-wtb-head { cursor: pointer; }
   .pt-call.has-remote { min-height: min(72vh, 560px); }
   .pt-call-controls { gap: 10px; padding: 12px; }
 }
+
+/* generic substitutes + running low */
+.pt-om-sub { padding: 6px 12px 0 40px; }
+.pt-om-sub .callout { margin: 0; }
+.pt-low { border-left: 4px solid var(--sun, #d99a2b); }
+.pt-low-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-top: 1px dashed var(--line-2); }
+.pt-low-item:first-child { border-top: 0; padding-top: 0; }
+@media (max-width: 480px) { .pt-om-sub { padding-left: 12px; } .pt-low-item .btn { width: 100%; } }

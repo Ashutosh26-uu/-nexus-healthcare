@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { LayoutDashboard, BedDouble, Ambulance, Users, CalendarClock, Building2, BarChart3, FileCheck2} from 'lucide-react';
+import { LayoutDashboard, BedDouble, Ambulance, Users, CalendarClock, Building2, BarChart3, FileCheck2, Ticket, FileChartColumn } from 'lucide-react';
 import PortalLayout from '../../components/PortalLayout';
 import { Loading, Empty } from '../../components/ui';
 import { useLive } from '../../live';
@@ -12,6 +12,8 @@ import Opd from './Opd';
 import Profile from './Profile';
 import Analytics from './Analytics';
 import Claims from './Claims';
+import Reception from './Reception';
+import Reports from './Reports';
 import './hospital.css';
 
 export default function HospitalApp() {
@@ -25,9 +27,11 @@ export default function HospitalApp() {
     { to: '/hospital/beds', label: 'Live bed board', icon: BedDouble },
     { to: '/hospital/referrals', label: 'Incoming referrals', icon: Ambulance, badge: pending || null },
     { to: '/hospital/roster', label: 'Staff roster', icon: Users },
+    { to: '/hospital/reception', label: 'Reception desk', icon: Ticket },
     { to: '/hospital/opd', label: 'OPD & appointments', icon: CalendarClock },
     { to: '/hospital/profile', label: 'Facility profile', icon: Building2 },
     { to: '/hospital/analytics', label: 'Analytics', icon: BarChart3 },
+    { to: '/hospital/reports', label: 'Front-desk reports', icon: FileChartColumn },
     { to: '/hospital/claims', label: 'Insurance claims', icon: FileCheck2 },
   ];
 
@@ -46,6 +50,8 @@ export default function HospitalApp() {
         <Route path="profile" element={<Profile {...props} />} />
         <Route path="analytics" element={<Analytics {...props} />} />
         <Route path="claims" element={<Claims {...props} />} />
+        <Route path="reception" element={<Reception {...props} />} />
+        <Route path="reports" element={<Reports {...props} />} />
         <Route path="*" element={<Navigate to="/hospital" replace />} />
       </Routes>
     );

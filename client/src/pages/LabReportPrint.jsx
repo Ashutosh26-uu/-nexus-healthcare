@@ -72,7 +72,12 @@ export default function LabReportPrint() {
         {o.doctorNote && <section className="rxp-block"><h4>Doctor&apos;s advice — {o.doctorNote.by}</h4><p>{o.doctorNote.text}</p></section>}
         <footer className="rxp-foot">
           <div className="rxp-qr"><QR value={`nexus:lab:${o.id}`} size={84} label="Report QR" /><span>Scan to verify on Nexus Healthcare</span></div>
-          <div className="rxp-sign"><span>Report ID {o.id}</span><span>Electronically generated · no signature required</span></div>
+          <div className="rxp-sign">
+            <span>Report ID {o.id}{o.sampleId ? ` · Sample ${o.sampleId}` : ''}</span>
+            {reported && o.signedBy
+              ? <span><strong translate="no">Approved by {o.signedBy.name}</strong> (Reg {o.signedBy.regNo}) · {fmtDateTime(o.signedBy.at)}{o.signedBy.self ? ' · reporting pathologist' : ''}</span>
+              : <span>Electronically generated · no signature required</span>}
+          </div>
         </footer>
         <p className="rxp-note">Suggestions are general guidance generated from the reference ranges, not a diagnosis. Please discuss your results with your doctor.</p>
       </article>

@@ -19,6 +19,7 @@ export default function VisitPass({ consultId, compact }) {
       setPass(p); setLeft(p.expiresIn); setError('');
       clearTimeout(timer.current);
       if (!p.checkedInAt) timer.current = setTimeout(load, p.expiresIn * 1000 + 300);
+      else if (p.ahead != null) timer.current = setTimeout(load, 20000); // waiting with a token: keep "people ahead" fresh
     }).catch((e) => alive && setError(e.message));
     load();
     return () => { alive = false; clearTimeout(timer.current); };
@@ -38,6 +39,9 @@ export default function VisitPass({ consultId, compact }) {
       <div className="pt-pass done">
         <CheckCircle2 size={36} />
         <strong>Checked in</strong>
+        {pass.token != null && (
+          <span className="pt-pass-token">Your token: <strong>{pass.token}</strong>{pass.ahead != null ? ` · ${pass.ahead === 0 ? 'you\'re next' : `${pass.ahead} ${pass.ahead === 1 ? 'person' : 'people'} ahead of you`}` : ''}</span>
+        )}
         <span className="small muted">Please wait — {pass.doctorName} will call you shortly.</span>
       </div>
     );

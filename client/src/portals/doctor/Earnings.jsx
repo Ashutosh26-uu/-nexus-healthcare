@@ -1,8 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Wallet, Stethoscope, Star, TrendingUp, Landmark, Inbox } from 'lucide-react';
+import { Wallet, Stethoscope, Star, TrendingUp, Landmark, Inbox, FileText, Printer } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
-import { Card, Stat, Loading, BarChart, TriageBadge, Empty, Avatar, fmtMoney, fmtNum, fmtDateTime } from '../../components/ui';
+import { Button, Card, Stat, Loading, BarChart, TriageBadge, Empty, Avatar, fmtMoney, fmtNum, fmtDateTime } from '../../components/ui';
 import { useDoctorHome } from './context';
 import { getLocale } from '../../i18n';
 import { usePublicConfig } from '../../config';
@@ -15,6 +15,9 @@ export default function Earnings() {
   const data = home.data;
   const config = usePublicConfig();
   const demo = !!config?.demo;
+  // Local calendar month (not UTC), so the picker never defaults to next/last month around midnight.
+  const thisMonth = useMemo(() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`; }, []);
+  const [month, setMonth] = useState(thisMonth);
 
   // The server counts every completed consult per day (`completed` is only the latest 20) and sums what
   // patients actually paid, so free follow-ups don't inflate the earnings.
@@ -56,9 +59,17 @@ export default function Earnings() {
           <div className="row" style={{ gap: 10 }}><Landmark size={20} /><h3 className="mb-0">Next payout</h3></div>
           <div className="dr-payout">{fmtMoney(Math.round(weekEarn * 0.9))}</div>
           <p className="small mb-1" style={{ opacity: 0.85 }}>On {nextMonday.toLocaleDateString(getLocale(), { weekday: 'long', day: 'numeric', month: 'short' })} to your bank account ending ••4421, after the 10% platform fee.</p>
-          <p className="tiny mb-0" style={{ opacity: 0.7 }}>TDS under section 194J is deducted and shown on your monthly statement.</p>
+          <p className="tiny mb-0" style={{ opacity: 0.7 }}>Amounts shown are before TDS (section 194J), which is deducted at payout where applicable.</p>
         </Card>
       </div>
+
+      <Card title="Monthly statement" action={<FileText size={18} className="muted" />}>
+        <p className="small muted">Consults completed day by day, fees collected, the 10% platform fee and your payout — ready to print or save as PDF.</p>
+        <div className="dr-statement-pick">
+          <input className="input" type="month" value={month} max={thisMonth} min="2024-01" onChange={(e) => setMonth(e.target.value)} aria-label="Statement month" />
+          <Button icon={Printer} disabled={!/^\d{4}-\d{2}$/.test(month) || month > thisMonth} onClick={() => window.open(`/statement/${month}`, '_blank', 'noopener')}>Open statement</Button>
+        </div>
+      </Card>
 
       <Card title="Recently completed" action={<span className="tiny muted">last {completed.length}</span>}>
         {completed.length === 0 ? (

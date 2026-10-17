@@ -78,7 +78,7 @@ export default function RxPrint() {
                 <td>{i + 1}</td>
                 <td translate="no"><strong>{it.drug}</strong></td>
                 <td>{it.dose}</td>
-                <td>{it.freq}{it.food ? <span className="rxp-food"> · {it.food}</span> : null}{it.note ? <div className="rxp-food">{it.note}</div> : null}</td>
+                <td>{it.freq}{it.food ? <span className="rxp-food"> · {it.food}</span> : null}{it.note ? <div className="rxp-food">{it.note}</div> : null}{it.noSub ? <div className="rxp-food"><strong>No substitution</strong></div> : null}</td>
                 <td>{it.days}</td>
                 <td>{it.units} {it.unit}{it.units > 1 ? 's' : ''}</td>
               </tr>

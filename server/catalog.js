@@ -68,15 +68,80 @@ function unitsFor(item) {
 // order/quote request, and used to re-normalise all 24 names on each call.
 const PRICE_INDEX = Object.keys(DRUG_PRICES).map((k) => { const n = k.toLowerCase().replace(/\s+/g, ''); return { k, n, letters: n.replace(/\d.*$/, ''), strength: n.replace(/^\D+/, '') }; });
 const priceCache = new Map();
+function basePriceOf(drug = '') {
+  const key = String(drug).toLowerCase().replace(/\s+/g, '');
+  const e = PRICE_INDEX.find((x) => x.n === key) || PRICE_INDEX.find((x) => key.startsWith(x.letters) && x.strength === key.replace(/^\D+/, ''));
+  return e ? { name: e.k, ...DRUG_PRICES[e.k] } : null;
+}
+// A brand or Jan Aushadhi name resolves to its generic (for stock matching) at its own indicative price.
 function priceOf(drug = '') {
   const key = String(drug).toLowerCase().replace(/\s+/g, '');
   if (priceCache.has(key)) return priceCache.get(key);
-  const e = PRICE_INDEX.find((x) => x.n === key) || PRICE_INDEX.find((x) => key.startsWith(x.letters) && x.strength === key.replace(/^\D+/, ''));
-  const hit = e ? Object.freeze({ name: e.k, ...DRUG_PRICES[e.k] }) : null; // shared between callers — read-only
+  const a = ALIASES.get(key);
+  const base = a ? { name: a.key, ...DRUG_PRICES[a.key], mrp: a.mrp } : basePriceOf(drug);
+  const hit = base ? Object.freeze(base) : null; // shared between callers — read-only
   if (priceCache.size > 2000) priceCache.clear(); // bounded: keys come from user-typed drug names
   priceCache.set(key, hit);
   return hit;
 }
+
+// ---- generic substitutes ----
+// Same salt AND same strength only (a brand is listed here only when its composition and strength match the
+// generic exactly — combination products such as "Crocin Pain Relief" (+ caffeine) are deliberately left out).
+// Prices are INDICATIVE ₹ per unit for the POC, not live MRPs. `ja` = Jan Aushadhi (PMBJP) indicative price.
+// `gst` = GST % where it isn't the 12% default for medicines. `noSwap` blocks switching outright.
+const SALTS = {
+  'Paracetamol 500mg': { salt: 'Paracetamol', strength: '500 mg', brands: [['Crocin 500', 2.0], ['Calpol 500', 1.5]], ja: 0.6 },
+  'Paracetamol 650mg': { salt: 'Paracetamol', strength: '650 mg', brands: [['Dolo 650', 2.1], ['Calpol 650', 2.0]], ja: 0.8 },
+  'Metformin 500mg': { salt: 'Metformin hydrochloride', strength: '500 mg', brands: [['Glycomet 500', 2.2]], ja: 0.5 },
+  'Amlodipine 5mg': { salt: 'Amlodipine', strength: '5 mg', brands: [['Amlong 5', 3.4], ['Amlokind 5', 2.2]], ja: 0.4 },
+  'Telmisartan 40mg': { salt: 'Telmisartan', strength: '40 mg', brands: [['Telma 40', 8], ['Telmikind 40', 5.5]], ja: 1.2 },
+  'Azithromycin 500mg': { salt: 'Azithromycin', strength: '500 mg', brands: [['Azithral 500', 23.8], ['Azee 500', 24]], ja: 7 },
+  'Amoxicillin 500mg': { salt: 'Amoxicillin', strength: '500 mg', brands: [['Novamox 500', 7.5], ['Mox 500', 8]], ja: 2.5 },
+  'Amoxicillin-Clavulanate 625mg': { salt: 'Amoxicillin 500 mg + Clavulanic acid 125 mg', strength: '625 mg', brands: [['Augmentin 625 Duo', 22.5], ['Clavam 625', 20]], ja: 8 },
+  'Cetirizine 10mg': { salt: 'Cetirizine', strength: '10 mg', brands: [['Okacet 10', 1.8], ['Cetzine 10', 2.0]], ja: 0.3 },
+  'Pantoprazole 40mg': { salt: 'Pantoprazole', strength: '40 mg', brands: [['Pan 40', 10.3], ['Pantocid 40', 13]], ja: 1.0 },
+  'Ibuprofen 400mg': { salt: 'Ibuprofen', strength: '400 mg', brands: [['Brufen 400', 1.3]], ja: 0.6 },
+  'Atorvastatin 10mg': { salt: 'Atorvastatin', strength: '10 mg', brands: [['Atorva 10', 9], ['Lipitor 10', 14]], ja: 1.0 },
+  'Glimepiride 1mg': { salt: 'Glimepiride', strength: '1 mg', brands: [['Amaryl 1', 8]], ja: 1.0 },
+  'Clopidogrel 75mg': { salt: 'Clopidogrel', strength: '75 mg', brands: [['Clopilet 75', 6.5], ['Plavix 75', 17]], ja: 1.5 },
+  'Salbutamol inhaler 100mcg': { salt: 'Salbutamol', strength: '100 mcg/puff', brands: [['Asthalin inhaler 100mcg', 150]], ja: 75 },
+  'Budesonide inhaler 200mcg': { salt: 'Budesonide', strength: '200 mcg/puff', brands: [['Budecort 200 inhaler', 420]], ja: null },
+  // Biologics are not interchangeable at the counter — the doctor decides.
+  'Insulin Glargine 100IU/ml': { salt: 'Insulin glargine', strength: '100 IU/ml', brands: [['Lantus', 690], ['Basalog', 520]], ja: null, gst: 5, noSwap: 'Insulin brands are not switched at the counter — ask your doctor.' },
+};
+const JA_SUFFIX = ' (Jan Aushadhi)';
+const nk = (s) => String(s || '').toLowerCase().replace(/\s+/g, '');
+// Every brand / Jan Aushadhi name → its generic key and its own indicative price.
+const ALIASES = new Map();
+for (const [key, s] of Object.entries(SALTS)) {
+  for (const [brand, mrp] of s.brands) ALIASES.set(nk(brand), { key, mrp, type: 'brand', drug: brand });
+  if (s.ja) ALIASES.set(nk(key + JA_SUFFIX), { key, mrp: s.ja, type: 'jan_aushadhi', drug: key + JA_SUFFIX });
+}
+// Generic key for any name we know (generic, brand or Jan Aushadhi), else null.
+function genericKeyOf(drug) {
+  const a = ALIASES.get(nk(drug));
+  if (a) return a.key;
+  const p = basePriceOf(drug);
+  return p && SALTS[p.name] ? p.name : null;
+}
+// { salt, strength, current, options[], noSwap } — options are every other same-salt-same-strength product,
+// cheapest first, with the per-unit saving against what was asked for (negative = dearer).
+function substitutesFor(drug) {
+  const key = genericKeyOf(drug);
+  if (!key) return { salt: null, strength: null, current: null, options: [] };
+  const s = SALTS[key];
+  const all = [{ drug: key, type: 'generic', price: DRUG_PRICES[key].mrp }, ...s.brands.map(([b, mrp]) => ({ drug: b, type: 'brand', price: mrp })), ...(s.ja ? [{ drug: key + JA_SUFFIX, type: 'jan_aushadhi', price: s.ja }] : [])];
+  const cur = all.find((o) => nk(o.drug) === nk(drug)) || all[0];
+  const r2 = (n) => Math.round(n * 100) / 100;
+  return {
+    salt: s.salt, strength: s.strength, unit: DRUG_PRICES[key].unit, indicative: true, noSwap: s.noSwap || null,
+    current: { drug: cur.drug, type: cur.type, price: cur.price },
+    options: all.filter((o) => o !== cur).map((o) => ({ ...o, saving: r2(cur.price - o.price) })).sort((a, b) => a.price - b.price),
+  };
+}
+const sameSalt = (a, b) => { const k = genericKeyOf(a); return !!k && k === genericKeyOf(b); };
+const gstOf = (drug) => { const k = genericKeyOf(drug); return k && SALTS[k].gst ? { rate: SALTS[k].gst, indicative: false } : { rate: 12, indicative: true }; };
 
 // Plain-language suggestions for a report, so the patient understands it before the doctor calls.
 // Rule-based and conservative: it explains and advises next steps, it never diagnoses.
@@ -138,4 +203,4 @@ function nextSteps(results = [], { doctorName } = {}) {
   return steps;
 }
 
-module.exports = { DRUG_PRICES, TESTS, unitsFor, priceOf, nameOfTest, round, interpret, nextSteps };
+module.exports = { DRUG_PRICES, TESTS, unitsFor, priceOf, nameOfTest, round, interpret, nextSteps, substitutesFor, sameSalt, genericKeyOf, gstOf };

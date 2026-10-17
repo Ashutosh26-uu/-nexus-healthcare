@@ -30,7 +30,7 @@ const EVENTS = {
   'followup.scheduled': 'A doctor booked a follow-up visit',
   'lab.booked': 'A patient paid the 20% advance for a lab test',
   'lab.sample_collected': 'The lab collected the sample (report due time is known)',
-  'lab.report_ready': 'A lab report was uploaded',
+  'lab.report_ready': 'A lab report was signed by the pathologist and released to the patient',
   'medicine_order.placed': 'A medicine order reached the chemist(s)',
   'medicine_order.updated': 'A chemist accepted, declined, packed or handed over an order',
   'medicine_order.delivered': 'A rider delivered a medicine order',

@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Upload, ArrowRight, Stethoscope, AlertTriangle, MapPin, FileText, Home, CalendarClock, IndianRupee } from 'lucide-react';
+import { Search, Upload, ArrowRight, Stethoscope, AlertTriangle, MapPin, FileText, Home, CalendarClock, IndianRupee, Barcode, Stamp, Undo2, Gift } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Button, Tabs, Empty, StatusBadge, Avatar, timeAgo, useAction } from '../../components/ui';
 import { api } from '../../api';
-import { NEXT, ORDER, STATUS_LABEL, TestChips, genderShort } from './shared';
+import { NEXT, ORDER, STATUS_LABEL, TestChips, genderShort, canSign, openLabel } from './shared';
+import Collection from './Collection';
 import { getLocale } from '../../i18n';
 
 const TABS = ['all', ...ORDER];
 
-export default function Orders({ orders, reload, onReport }) {
+export default function Orders({ home, orders, reload, onReport }) {
   const [tab, setTab] = useState(() => (orders.some((o) => o.status === 'ordered') ? 'ordered' : 'all'));
   const [q, setQ] = useState('');
   const [run, busy] = useAction();
@@ -17,7 +18,7 @@ export default function Orders({ orders, reload, onReport }) {
 
   const list = orders
     .filter((o) => tab === 'all' || o.status === tab)
-    .filter((o) => !q || `${o.patientName} ${o.patientId} ${o.tests.map((t) => `${t.name} ${t.code}`).join(' ')}`.toLowerCase().includes(q.toLowerCase()))
+    .filter((o) => !q || `${o.patientName} ${o.patientId} ${o.sampleId || ''} ${o.tests.map((t) => `${t.name} ${t.code}`).join(' ')}`.toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   const advance = async (o) => {
@@ -57,22 +58,30 @@ export default function Orders({ orders, reload, onReport }) {
               <div className="lab-order-tests">
                 <TestChips tests={o.tests} />
                 <div className="row wrap tiny muted mt-1" style={{ gap: 12 }}>
-                  <span className="row" style={{ gap: 4 }}><Stethoscope size={12} /> {o.doctorName || 'Network doctor'}</span>
+                  <span className="row" style={{ gap: 4 }}><Stethoscope size={12} /> {o.doctorName || (o.packageName ? 'Booked by patient' : 'Network doctor')}</span>
                   <span className="row" style={{ gap: 4 }}><MapPin size={12} /> Pin {o.pincode}</span>
                   <span title={new Date(o.createdAt).toLocaleString(getLocale())}>Ordered {timeAgo(o.createdAt)}</span>
                   {o.referredByDoctor && <span className="lab-chip">Referred to you by the doctor</span>}
                   {o.booking?.homeCollection && <span className="lab-chip"><Home size={12} /> Home collection</span>}
                   {o.booking?.slot && <span className="row" style={{ gap: 4 }}><CalendarClock size={12} /> {new Date(o.booking.slot).toLocaleString(getLocale(), { dateStyle: 'medium', timeStyle: 'short' })}</span>}
+                  {o.packageName && <span className="lab-chip"><Gift size={12} /> {o.packageName}</span>}
+                  {o.sampleId && <span className="lab-chip mono" translate="no"><Barcode size={12} /> {o.sampleId}</span>}
                   {o.sharedRx && <button type="button" className="lab-rx-link" onClick={() => window.open(`/rx/${o.sharedRx}`, '_blank', 'noopener')}><FileText size={12} /> Prescription shared{o.sharedBy === 'patient' ? ' by patient' : ''} · View</button>}
                 </div>
                 {o.booking?.paidAt && (
                   <div className="lab-pay tiny mt-1"><IndianRupee size={12} /> ₹{o.booking.advancePaid || o.booking.advance} advance paid online · <strong>collect ₹{o.booking.balance}</strong> {o.status === 'ordered' ? 'at collection' : '(if not collected yet)'}</div>
                 )}
+                {o.booking?.homeCollection && o.status === 'ordered' && <Collection key={`${o.id}-${o.collection?.assignedAt || ''}`} order={o} collectors={home?.lab?.collectors} reload={reload} />}
+                {o.returnNote && o.status === 'processing' && <div className="callout rose tiny mt-1"><Undo2 size={14} /> <span>Sent back by {o.returnNote.by}: “{o.returnNote.text}”</span></div>}
               </div>
               <div className="lab-order-status"><StatusBadge status={o.status === 'collected' ? 'collected_sample' : o.status}>{STATUS_LABEL[o.status]}</StatusBadge></div>
               <div className="lab-order-act">
-                {NEXT[o.status] && <Button size="sm" variant={o.status === 'ordered' ? undefined : 'secondary'} loading={busy === o.id} onClick={() => advance(o)}>{NEXT[o.status].label}</Button>}
-                {o.status === 'processing' && <Button size="sm" variant="clay" icon={Upload} onClick={() => onReport(o)}>Upload report</Button>}
+                {NEXT[o.status] && !(o.status === 'ordered' && o.collection) && <Button size="sm" variant={o.status === 'ordered' ? undefined : 'secondary'} loading={busy === o.id} onClick={() => advance(o)}>{NEXT[o.status].label}</Button>}
+                {o.sampleId && o.status !== 'reported' && <Button size="sm" variant="ghost" icon={Barcode} onClick={() => openLabel(o.id)}>{o.sampleLabelPrintedAt ? 'Reprint label' : 'Print label'}</Button>}
+                {o.status === 'processing' && <Button size="sm" variant="clay" icon={Upload} onClick={() => onReport(o)}>{o.draftReport ? 'Fix results' : 'Enter results'}</Button>}
+                {o.status === 'review' && (canSign(home)
+                  ? <Link to="/lab/approvals" className="btn sm clay"><Stamp size={14} /> Review &amp; sign</Link>
+                  : <span className="tiny muted">With {home?.pathologists?.join(', ')} for sign-off</span>)}
                 {o.status === 'reported' && <Link to="/lab/reports" className="btn sm ghost">View report <ArrowRight /></Link>}
               </div>
             </article>

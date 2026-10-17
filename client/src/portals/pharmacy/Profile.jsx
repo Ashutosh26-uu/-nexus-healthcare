@@ -1,10 +1,12 @@
-import { BadgeCheck, MapPin, Clock, Phone, FileBadge, CheckCircle2, Circle, PencilLine } from 'lucide-react';
+import { useState } from 'react';
+import { BadgeCheck, MapPin, Clock, Phone, FileBadge, CheckCircle2, Circle, PencilLine, Receipt } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
-import { Card, Button, useToast } from '../../components/ui';
+import { Card, Button, useToast, useAction } from '../../components/ui';
+import { api } from '../../api';
 import { useAuth } from '../../auth';
 import { ProtectedImg } from '../../components/Availability';
 
-export default function Profile({ home }) {
+export default function Profile({ home, reload }) {
   const toast = useToast();
   const { user } = useAuth();
   const p = home.pharmacy;
@@ -51,6 +53,7 @@ export default function Profile({ home }) {
               <div className="row"><span className="muted small">Home delivery:</span> <span className="small">{p.delivery ? 'Own delivery service' : 'Via Nexus riders'}</span></div>
               <div className="row"><Clock size={17} className="muted" /> <span>Open {p.hours || 'hours not set'}, all days</span></div>
               {p.phone && <div className="row"><Phone size={17} className="muted" /> <span translate="no" dir="ltr">{p.phone}</span></div>}
+              <GstinField pharmacy={p} reload={reload} />
             </div>
           </Card>
         </div>
@@ -69,5 +72,23 @@ export default function Profile({ home }) {
         </Card>
       </div>
     </>
+  );
+}
+
+// GSTIN is optional and printed on the patients' GST bills. Checked on the server too.
+function GstinField({ pharmacy, reload }) {
+  const [value, setValue] = useState(pharmacy.gstin || '');
+  const [run, busy] = useAction();
+  const valid = !value || /^[0-9]{2}[A-Z0-9]{13}$/.test(value);
+  const save = () => run('gstin', async () => { await api.put('/pharmacy/profile', { gstin: value }); reload?.(); }, value ? 'GSTIN saved — it will appear on your bills' : 'GSTIN removed');
+  return (
+    <div className="stack" style={{ gap: 4 }}>
+      <label className="small muted row" htmlFor="ph-gstin" style={{ gap: 6 }}><Receipt size={15} /> GSTIN (optional, printed on bills)</label>
+      <div className="row" style={{ gap: 8 }}>
+        <input id="ph-gstin" className="input sm mono" dir="ltr" value={value} onChange={(e) => setValue(e.target.value.toUpperCase().replace(/\s/g, '').slice(0, 15))} placeholder="09AAACH7409R1ZZ" aria-invalid={!valid} />
+        <Button size="sm" variant="secondary" loading={busy === 'gstin'} disabled={!valid || value === (pharmacy.gstin || '')} onClick={save}>Save</Button>
+      </div>
+      {!valid && <span className="tiny" style={{ color: 'var(--rose)' }}>15 characters: 2 digits, then 13 letters or digits.</span>}
+    </div>
   );
 }

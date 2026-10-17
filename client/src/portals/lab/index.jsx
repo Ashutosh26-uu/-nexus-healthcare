@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { Inbox, Route as RouteIcon, FileText, PlugZap, Radar, X } from 'lucide-react';
+import { Inbox, Route as RouteIcon, FileText, PlugZap, Radar, X, Stamp, Users } from 'lucide-react';
 import PortalLayout from '../../components/PortalLayout';
 import { Loading, Empty } from '../../components/ui';
 import { useLive } from '../../live';
@@ -8,6 +8,8 @@ import Orders from './Orders';
 import Tracking from './Tracking';
 import Reports from './Reports';
 import Connectors from './Connectors';
+import Approvals from './Approvals';
+import Setup from './Setup';
 import ReportModal from './ReportModal';
 import './lab.css';
 
@@ -21,12 +23,15 @@ export default function LabApp() {
   const nav = [
     { to: '/lab', label: 'Orders inbox', icon: Inbox, end: true, badge: orders.filter((o) => o.status === 'ordered').length || null },
     { to: '/lab/tracking', label: 'Sample tracking', icon: RouteIcon, badge: null },
+    { to: '/lab/approvals', label: 'Pathologist sign-off', icon: Stamp, badge: orders.filter((o) => o.status === 'review').length || null },
     { to: '/lab/reports', label: 'Reports sent', icon: FileText },
+    { to: '/lab/setup', label: 'Team & packages', icon: Users },
     { to: '/lab/connectors', label: 'LIS & data feed', icon: PlugZap },
   ];
 
   const onReported = (res) => {
     live.reload();
+    if (res.awaitingApproval) return; // nothing is released (or fed to the outbreak engine) until it's signed
     const positives = res.order.results.filter((r) => r.flag === 'positive' && /dengue|malaria|typhoid|widal|influenza/i.test(r.name));
     if (res.newAlerts?.length || positives.length) setFeed({ alerts: res.newAlerts || [], order: res.order, positives });
   };
@@ -44,6 +49,8 @@ export default function LabApp() {
           <Route path="tracking" element={<Tracking {...props} />} />
           <Route path="reports" element={<Reports {...props} />} />
           <Route path="connectors" element={<Connectors {...props} />} />
+          <Route path="approvals" element={<Approvals {...props} onApproved={onReported} />} />
+          <Route path="setup" element={<Setup />} />
           <Route path="*" element={<Navigate to="/lab" replace />} />
         </Routes>
       </>
@@ -53,7 +60,7 @@ export default function LabApp() {
   return (
     <PortalLayout portal="Lab Portal" nav={nav} headerExtra={live.data && <span className="small muted lab-head">{open} sample{open === 1 ? '' : 's'} in progress · {live.data.lab?.name}</span>}>
       {body}
-      <ReportModal order={reportFor} onClose={() => setReportFor(null)} onDone={onReported} />
+      <ReportModal order={reportFor} home={live.data} onClose={() => setReportFor(null)} onDone={onReported} />
     </PortalLayout>
   );
 }

@@ -98,6 +98,7 @@ export default function Queue() {
                       </div>
                     </div>
                     <div className="row wrap" style={{ gap: 6 }}>
+                      {c.token && <span className="badge sun" title={c.walkIn ? 'Walk-in token from reception' : 'Token given at check-in'}>Token {c.token}</span>}
                       {live && <StatusBadge status="in_progress">In consult</StatusBadge>}
                       <TriageBadge level={c.triage.level} />
                     </div>

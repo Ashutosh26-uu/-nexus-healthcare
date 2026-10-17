@@ -112,7 +112,7 @@ export function ConsentProvider({ children }) {
 function CookieBanner({ onCustomize }) {
   const { consent, setConsent } = useConsent();
   const path = useLocation().pathname;
-  if (consent || path.startsWith('/kiosk') || path.startsWith('/rx/') || path.startsWith('/lab-report/')) return null;
+  if (consent || path.startsWith('/kiosk') || path.startsWith('/rx/') || path.startsWith('/lab-report/') || path.startsWith('/display/')) return null; // waiting-room TV: nobody there to answer
   return (
     <div className="nx-cookie" role="dialog" aria-label="Cookie preferences" aria-live="polite">
       <div className="nx-cookie-text">

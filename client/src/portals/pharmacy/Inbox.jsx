@@ -83,6 +83,7 @@ function RxCard({ rx, inventory, transfers = [], reload }) {
             <div className="grow">
               <strong className="small" translate="no">{l.drug}</strong>
               <div className="tiny muted">{l.dose} · {l.freq} · {l.days} days</div>
+              {l.noSub && <span className="badge sun tiny">Doctor: no substitution</span>}
             </div>
             {rx.status === 'sent' && (l.stock > 0
               ? <span className="badge green">{l.stock} in stock</span>

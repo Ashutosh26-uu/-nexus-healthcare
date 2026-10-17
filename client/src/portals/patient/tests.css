@@ -1,0 +1,15 @@
+/* Tests page: check-up packages, home-collection status, pathologist sign-off */
+.pt-pkg-cta { display: flex; align-items: center; gap: 12px; padding: 14px 16px; flex-wrap: wrap; }
+.pt-pkg-cta > svg { color: var(--clay); flex-shrink: 0; }
+.pt-pkg-icon { color: var(--clay); flex-shrink: 0; margin-top: 2px; }
+.pt-collect { align-items: center; flex-wrap: wrap; }
+.pt-collect .btn { margin-inline-start: auto; }
+.pt-signed svg { vertical-align: -2px; }
+.pt-lab-steps { grid-template-columns: repeat(6, 1fr); }
+@media (max-width: 640px) { .pt-lab-steps { grid-template-columns: repeat(3, 1fr); } }
+/* Results table on phones: let long ranges/units wrap instead of pushing the flag column off the card */
+@media (max-width: 480px) {
+  .pt-lab-card .pt-wtb-table { width: 100%; table-layout: fixed; }
+  .pt-lab-card .pt-wtb-table td { overflow-wrap: anywhere; padding-inline: 4px; }
+  .pt-lab-card .pt-wtb-table td:last-child { width: 72px; }
+}

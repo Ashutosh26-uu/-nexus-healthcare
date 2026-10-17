@@ -43,7 +43,7 @@ export default function StoreSetup({ home, reload }) {
   const [error, setError] = useState('');
   const [form, setForm] = useState(() => ({
     storeName: p.name || '', address: p.address || '', district: p.district || '', state: p.state || '', pincode: p.pincode || '', country: p.country || 'IN',
-    licenceNo: p.licenceNo || '', hours: p.hours || '', phone: p.phone || user?.phone || '', delivery: !!p.delivery, generic: !!p.generic,
+    licenceNo: p.licenceNo || '', gstin: p.gstin || '', hours: p.hours || '', phone: p.phone || user?.phone || '', delivery: !!p.delivery, generic: !!p.generic,
     storePhotoFileId: p.storePhotoFileId || null, licenceFileId: p.licenceFileId || null, lat: p.lat ?? null, lng: p.lng ?? null,
   }));
   const [locState, setLocState] = useState(p.lat ? 'ok' : 'idle');
@@ -101,6 +101,7 @@ export default function StoreSetup({ home, reload }) {
 
       <Card title={<h4 className="row mb-0" style={{ gap: 8 }}><FileBadge size={17} />Licence &amp; photos</h4>}>
         <Field label="Drug licence number" hint="e.g. Form 20B/21B retail licence number"><input className="input mono" dir="ltr" value={form.licenceNo} onChange={(e) => set('licenceNo', e.target.value.toUpperCase().slice(0, 60))} placeholder="UP-LKO-20B/21B-2019-0457" /></Field>
+        <Field label="GSTIN (optional)" hint="15 characters — printed on your patients' bills"><input className="input mono" dir="ltr" value={form.gstin} onChange={(e) => set('gstin', e.target.value.toUpperCase().replace(/\s/g, '').slice(0, 15))} placeholder="09AAACH7409R1ZZ" /></Field>
         <div className="grid two">
           <PhotoBox label="Photo of the store" hint="Front of the shop with the board visible" icon={Camera} fileId={form.storePhotoFileId} onUploaded={(id) => set('storePhotoFileId', id)} />
           <PhotoBox label="Photo of the drug licence" hint="Clear photo or PDF of the licence" accept="image/*,application/pdf" icon={FileBadge} fileId={form.licenceFileId} onUploaded={(id) => set('licenceFileId', id)} />

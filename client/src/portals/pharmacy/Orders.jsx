@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { BellRing, Check, X, Truck, Store, Package, PackageCheck, KeyRound, FileText, Megaphone, Phone, Bike, MapPin, Clock } from 'lucide-react';
+import { BellRing, Check, X, Truck, Store, Package, PackageCheck, KeyRound, FileText, Megaphone, Phone, Bike, MapPin, Clock, Receipt } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
 import { Button, Card, Empty, Field, Modal, Pills, StatusBadge, fmtMoney, timeAgo, useAction, cx } from '../../components/ui';
@@ -57,7 +57,7 @@ function OrderBody({ o }) {
   return (
     <>
       <div className="ph-mo-items">
-        {o.items.map((i) => <span key={i.drug} className="ph-mo-item"><strong translate="no">{i.drug}</strong> × {i.qty}{i.lineTotal != null ? <span className="muted"> · {fmtMoney(i.lineTotal)}</span> : null}</span>)}
+        {o.items.map((i) => <span key={i.drug} className="ph-mo-item"><strong translate="no">{i.drug}</strong> × {i.qty}{i.lineTotal != null ? <span className="muted"> · {fmtMoney(i.lineTotal)}</span> : null}{i.switchedFrom && <span className="badge green tiny" title="The patient confirmed this same-salt, same-strength option in the app">Patient chose generic · Rx: <span translate="no">{i.switchedFrom}</span></span>}</span>)}
       </div>
       <div className="tiny muted ph-mo-meta">
         <span>{o.fulfilment === 'delivery' ? <><Truck size={12} /> Home delivery</> : <><Store size={12} /> Pickup at your counter</>}</span>
@@ -68,6 +68,7 @@ function OrderBody({ o }) {
         <span><Clock size={12} /> {timeAgo(o.paidAt || o.createdAt)}</span>
       </div>
       {o.rxFileId && <button type="button" className="ph-rx-link tiny" onClick={() => openFile(o.rxFileId)}><FileText size={12} /> View prescription photo</button>}
+      {!o.open && ['accepted', 'packed', 'out_for_delivery', 'delivered', 'collected'].includes(o.status) && <button type="button" className="ph-rx-link tiny" onClick={() => window.open(`/invoice/${o.id}`, '_blank', 'noopener')}><Receipt size={12} /> GST bill / invoice</button>}
     </>
   );
 }

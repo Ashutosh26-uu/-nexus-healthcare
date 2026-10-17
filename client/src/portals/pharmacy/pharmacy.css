@@ -87,3 +87,14 @@
 .input.readonly { display: flex; align-items: center; gap: 8px; background: var(--paper-2); color: var(--ink-2); overflow: hidden; white-space: nowrap; }
 .dr-bell { color: var(--clay); }
 .ph-store-photo { width: 100%; max-height: 180px; object-fit: cover; border-radius: 12px; }
+
+/* stock insights */
+.ph-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.ph-kpi { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; text-align: left; border: 1px solid var(--line-2); font: inherit; color: inherit; cursor: pointer; }
+div.ph-kpi { cursor: default; }
+.ph-kpi strong { font-size: 1.35rem; font-family: var(--serif); }
+.ph-kpi.on { border-color: var(--green); box-shadow: 0 0 0 2px color-mix(in srgb, var(--green) 25%, transparent); }
+.ph-mo-item .badge { margin-left: 6px; }
+@media (max-width: 720px) { .ph-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ph-insights .ph-reorder { flex-wrap: wrap; } .ph-insights .ph-reorder-act { width: 100%; justify-content: flex-end; } }
+/* Printing the purchase list: only the reorder card (scoped so other pages' print layouts are untouched). */
+@media print { body:has(.ph-insights) .sidebar, body:has(.ph-insights) .topbar, body:has(.ph-insights) .page-header, .ph-insights .ph-kpis, .ph-insights .grid.two, .ph-insights .no-print { display: none !important; } }

@@ -5,6 +5,8 @@ import { Button, Card, Field, Modal, Pills, useAction, useToast, fmtDate, cx } f
 import { TimingPicker, freqText, parseFreq } from './medTiming';
 import { MedicineForm, blankMed } from './Medicines';
 import DosDonts from './DosDonts';
+import RxTemplateTools from './RxTemplates';
+import { rowsFrom, mergeList, mergeText } from './rxTemplateUtils';
 import { useDebounced, LAB_TESTS } from './shared';
 
 const TEMPLATES = [
@@ -221,6 +223,16 @@ export default function RxComposer({ consult, record, override, done, onDone, on
     if (!key) return;
     update(key, { dose: t.dose, freq: t.freq, days: t.days, timing: parseFreq(t.freq), food: foodOf(t.freq) });
   };
+  // Template / favourite lines are added after what's already there (drugs on the list are not repeated).
+  const addItems = (items) => setRows((rs) => [...rs, ...rowsFrom(items, rs.map((r) => r.drug)).map((x) => ({ ...emptyRow(), ...x }))]);
+  const applyRxTemplate = (t) => {
+    addItems(t.items);
+    if (!diagnosis.trim() && t.diagnosis) setDiagnosis(t.diagnosis);
+    setAdvice((a) => mergeText(a, t.advice));
+    setDos((x) => mergeList(x, t.dos)); setDonts((x) => mergeList(x, t.donts));
+    setLabs((ls) => [...ls, ...(t.labTests || []).filter((x) => !ls.some((l) => l.code === x.code))]);
+  };
+  const tplForm = { diagnosis, advice, dos, donts, labTests: labs.map(({ code, name }) => ({ code, name })), items: rows.filter((r) => r.drug).map(({ drug, dose, freq, days, food }) => ({ drug, dose, freq, days, food })) };
   const setTiming = (r, timing) => update(r.key, { timing, freq: freqText({ timing, food: r.food }) });
   const addNewMedicine = async () => {
     const m = newMed;
@@ -239,7 +251,7 @@ export default function RxComposer({ consult, record, override, done, onDone, on
   const hospital = hospitals?.find((h) => h.id === hospitalId);
 
   const complete = () => run('complete', async () => {
-    const items = rows.filter((r) => r.drug).map(({ drug, dose, freq, days, food, note }) => ({ drug, dose, freq, days: Number(days) || 0, ...(food ? { food } : {}), ...(note ? { note } : {}) }));
+    const items = rows.filter((r) => r.drug).map(({ drug, dose, freq, days, food, note, noSub }) => ({ drug, dose, freq, days: Number(days) || 0, ...(food ? { food } : {}), ...(note ? { note } : {}), ...(noSub ? { noSub: true } : {}) }));
     const res = await api.post(`/consults/${consult.id}/complete`, {
       notes, diagnosis, items, advice, dos, donts,
       labTests: labs.map((l) => ({ code: l.code, name: l.name })),
@@ -280,6 +292,7 @@ export default function RxComposer({ consult, record, override, done, onDone, on
           {!checking && rows.some((r) => r.drug) && !warnings.length && <span className="badge green"><ShieldCheck />No allergy or interaction found</span>}
         </div>
         <DrugSearch onPick={addDrug} onAddNew={(name) => setNewMed(blankMed(name))} />
+        <RxTemplateTools form={tplForm} onApply={applyRxTemplate} onAddItems={addItems} />
 
         {allergyHits.map((w) => (
           <div key={w.msg} className="callout rose mt-1 dr-warn"><ShieldAlert /><div><strong>Allergy alert.</strong> {w.msg}{/penicillin/i.test(w.msg) ? ' Consider a non-penicillin alternative such as Azithromycin.' : ''}</div></div>
@@ -305,7 +318,7 @@ export default function RxComposer({ consult, record, override, done, onDone, on
                   <input className="input sm" value={r.freq} onChange={(e) => update(r.key, { freq: e.target.value })} aria-label="Frequency" />
                   <input className="input sm" type="number" min="0" value={r.days} onChange={(e) => update(r.key, { days: e.target.value })} aria-label="Days" />
                   <button type="button" className="icon-btn" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))} aria-label={`Remove ${r.drug}`}><Trash2 /></button>
-                  <div className="dr-rx-timing"><span className="tiny muted">Timing</span><TimingPicker size="sm" value={r.timing} onChange={(t) => setTiming(r, t)} /></div>
+                  <div className="dr-rx-timing"><span className="tiny muted">Timing</span><TimingPicker size="sm" value={r.timing} onChange={(t) => setTiming(r, t)} /><label className="check tiny" title="The patient won't be offered a cheaper same-salt option for this medicine"><input type="checkbox" checked={!!r.noSub} onChange={(e) => update(r.key, { noSub: e.target.checked })} />No substitution</label></div>
                 </div>
               );
             })}
