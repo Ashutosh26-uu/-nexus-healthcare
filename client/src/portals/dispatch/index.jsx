@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useNavigate, useLocation } from 'react-router-dom';
-import { ListTodo, Bike, History, UserRound, LogOut, Wallet, CheckCircle2, PackageCheck, Truck, Star, ShieldCheck, Phone, Snowflake, BellRing } from 'lucide-react';
+import { ListTodo, Bike, History, UserRound, LogOut, Wallet, CheckCircle2, PackageCheck, Truck, Star, Phone, Snowflake, BellRing } from 'lucide-react';
 import { useAuth } from '../../auth';
 import { useLive } from '../../live';
 import { api } from '../../api';
-import { Avatar, Empty, Switch, fmtMoney, fmtTime, fmtDateTime, timeAgo, useAction, useToast, cx } from '../../components/ui';
-import { JobSummary, JobMeta, RouteMap, DeliverSheet, useAccepted, stage, payFor, isToday } from './parts';
+import { Avatar, Empty, Switch, fmtMoney, fmtTime, fmtDateTime, timeAgo, useAction, cx } from '../../components/ui';
+import { JobSummary, JobMeta, RouteMap, DeliverSheet, stage, payFor, isToday } from './parts';
 import LanguagePicker from '../../components/LanguagePicker';
 import './dispatch.css';
 
@@ -14,8 +14,14 @@ export default function DispatchApp() {
   const navigate = useNavigate();
   const location = useLocation();
   const live = useLive('/dispatch/jobs', ['dispatch']);
-  const [accepted, accept] = useAccepted();
-  const [online, setOnline] = useState(true);
+  const me = useLive('/dispatch/me', ['dispatch']);
+  const [run] = useAction();
+  const online = me.data ? me.data.online : true;
+  // Saved on the rider's record: while offline, new jobs aren't auto-assigned to them.
+  const setOnline = async (on) => {
+    const r = await run('online', () => api.put('/dispatch/online', { online: on }), on ? 'You\'re online — new jobs will come to you' : 'You\'re offline — no new jobs until you switch on');
+    if (r) { me.setData((m) => (m ? { ...m, online: r.online } : m)); live.reload(); }
+  };
   const jobs = live.data || [];
 
   // Lift the floating help button above the bottom tab bar while this app is open.
@@ -25,13 +31,13 @@ export default function DispatchApp() {
   }, []);
   useEffect(() => { window.scrollTo(0, 0); }, [location.pathname]);
 
-  const fresh = jobs.filter((j) => stage(j, accepted) === 'new');
-  const active = jobs.filter((j) => ['accepted', 'picked', 'in_transit'].includes(stage(j, accepted)));
+  const fresh = jobs.filter((j) => stage(j) === 'new');
+  const active = jobs.filter((j) => ['accepted', 'picked', 'in_transit'].includes(stage(j)));
   const done = jobs.filter((j) => j.status === 'delivered').sort((a, b) => new Date(b.deliveredAt || b.createdAt) - new Date(a.deliveredAt || a.createdAt));
   const today = done.filter((j) => isToday(j.deliveredAt));
   const earnedToday = today.reduce((s, j) => s + payFor(j), 0);
 
-  const props = { jobs, fresh, active, done, today, earnedToday, accepted, accept, reload: live.reload, online };
+  const props = { jobs, fresh, active, done, today, earnedToday, reload: live.reload, online, me: me.data };
 
   return (
     <div className="dj-app">
@@ -94,9 +100,15 @@ function EarningsCard({ earnedToday, today, active }) {
   );
 }
 
-function Jobs({ fresh, active, today, earnedToday, accept, online }) {
-  const toast = useToast();
+function Jobs({ fresh, active, today, earnedToday, online, reload }) {
+  const [run, busy] = useAction();
   const navigate = useNavigate();
+  // The server decides: a job someone else already took comes back 409 and simply drops off the list.
+  const accept = async (j) => {
+    const ok = await run('acc' + j.id, () => api.post(`/dispatch/jobs/${j.id}/accept`), 'Job accepted — head to the pickup');
+    reload();
+    if (ok) navigate('/dispatch/active');
+  };
   return (
     <>
       <EarningsCard earnedToday={earnedToday} today={today} active={active} />
@@ -119,8 +131,8 @@ function Jobs({ fresh, active, today, earnedToday, accept, online }) {
             </div>
             <JobSummary job={j} />
             <JobMeta job={j} />
-            <button className="dj-big-btn" onClick={() => { accept(j.id); toast('Job accepted — head to the pickup'); navigate('/dispatch/active'); }}>
-              Accept job · {fmtMoney(payFor(j))}
+            <button className="dj-big-btn" disabled={busy === 'acc' + j.id} onClick={() => accept(j)}>
+              {busy === 'acc' + j.id && <span className="spinner sm" style={{ borderTopColor: '#fff' }} />} Accept job · {fmtMoney(payFor(j))}
             </button>
           </article>
         ))
@@ -132,7 +144,7 @@ function Jobs({ fresh, active, today, earnedToday, accept, online }) {
 const STEP_LABELS = ['Accepted', 'Picked up', 'On the way', 'Delivered'];
 const STEP_IDX = { accepted: 0, picked: 1, in_transit: 2, delivered: 3 };
 
-function Active({ active, accepted, reload }) {
+function Active({ active, reload }) {
   const [run, busy] = useAction();
   const [sheetFor, setSheetFor] = useState(null);
   const navigate = useNavigate();
@@ -141,9 +153,11 @@ function Active({ active, accepted, reload }) {
     const ok = await run(j.id + status, () => api.post(`/deliveries/${j.id}/status`, { status }), msg);
     if (ok) reload();
   };
-  const deliver = async (otp) => {
+  const deliver = async (otp, photo) => {
     try {
-      await api.post(`/deliveries/${sheetFor.id}/status`, { status: 'delivered', otp });
+      // The proof photo is stored on the server first; the delivery then carries its id (only if the OTP matches).
+      const proof = photo ? await api.upload(photo) : null;
+      await api.post(`/deliveries/${sheetFor.id}/status`, { status: 'delivered', otp, proofFileId: proof?.id });
       reload();
       return null;
     } catch (e) { return e.message; }
@@ -166,7 +180,7 @@ function Active({ active, accepted, reload }) {
     <>
       <h2 className="dj-h">On the road</h2>
       {active.map((j) => {
-        const st = stage(j, accepted);
+        const st = stage(j);
         const idx = STEP_IDX[st];
         return (
           <article key={j.id} className={cx('dj-card dj-job', j.coldChain && 'cold')}>
@@ -225,30 +239,24 @@ function HistoryPage({ done, today, earnedToday }) {
   );
 }
 
-function Profile({ user, done, onSignOut }) {
-  const km = done.reduce((s, j) => s + (j.distanceKm || 0), 0);
+// Everything here comes from the rider's own record on the server — nothing is filled in for show.
+function Profile({ user, me, done, onSignOut }) {
+  const count = me ? me.deliveries : done.length;
+  const km = me ? me.km : Math.round(done.reduce((s, j) => s + (j.distanceKm || 0), 0));
   return (
     <>
       <div className="dj-card dj-profile">
         <Avatar name={user?.name} size="lg" />
         <h2 translate="no">{user?.name}</h2>
-        <div className="small muted">Delivery partner · {user?.region?.district || 'Barabanki'}</div>
-        <div className="dj-rating"><Star size={15} /> 4.8 · {done.length + 212} deliveries</div>
+        <div className="small muted">Delivery partner{(me?.district || user?.region?.district) ? ` · ${me?.district || user?.region?.district}` : ''}</div>
+        <div className="dj-rating">{me?.rating && <><Star size={15} /> {me.rating.avg} ({me.rating.count}) · </>}{count} deliver{count === 1 ? 'y' : 'ies'}</div>
       </div>
       <div className="dj-card">
         <dl className="kv">
-          <dt>Phone</dt><dd className="row" style={{ gap: 6 }}><Phone size={14} /> <bdi dir="ltr">{user?.phone || '—'}</bdi></dd>
-          <dt>Vehicle</dt><dd>Bike · UP 41 AB 2290</dd>
-          <dt>Distance logged</dt><dd>{Math.round(km)} km on Nexus Healthcare</dd>
-          <dt>Payouts</dt><dd>Every Monday to your UPI</dd>
+          <dt>Phone</dt><dd className="row" style={{ gap: 6 }}><Phone size={14} /> <bdi dir="ltr">{me?.phone || user?.phone || 'Not added'}</bdi></dd>
+          <dt>Vehicle</dt><dd>{me?.vehicle || 'Not added'}</dd>
+          <dt>Distance logged</dt><dd>{km} km on Nexus Healthcare</dd>
         </dl>
-      </div>
-      <div className="dj-card">
-        <div className="dj-badges">
-          <span className="badge sky"><Snowflake /> Cold-chain trained</span>
-          <span className="badge green"><ShieldCheck /> ID verified</span>
-        </div>
-        <p className="tiny muted mb-0 mt-1">Stuck on a delivery? Call the dispatch desk at 1800-200-4455 — we pick up 24×7.</p>
       </div>
       <button className="dj-big-btn ghost" onClick={onSignOut}><LogOut size={18} /> Sign out</button>
     </>

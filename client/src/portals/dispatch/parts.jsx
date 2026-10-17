@@ -6,24 +6,12 @@ import { fmtMoney, cx } from '../../components/ui';
 export const payFor = (job) => 30 + Math.round((job.distanceKm || 0) * 6) + (job.coldChain ? 20 : 0);
 export const isToday = (iso) => iso && new Date(iso).toDateString() === new Date().toDateString();
 
-const ACC_KEY = 'oc_dispatch_accepted';
-export function useAccepted() {
-  const [ids, setIds] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(ACC_KEY) || '[]'); } catch { return []; }
-  });
-  const accept = (id) => setIds((s) => {
-    const next = [...new Set([...s, id])];
-    try { localStorage.setItem(ACC_KEY, JSON.stringify(next)); } catch { /* private mode */ }
-    return next;
-  });
-  return [new Set(ids), accept];
-}
-
-export const stage = (job, accepted) => {
+// Acceptance lives on the server (job.acceptedAt) — two riders can never both hold one job.
+export const stage = (job) => {
   if (job.status === 'delivered') return 'delivered';
   if (job.status === 'in_transit') return 'in_transit';
   if (job.status === 'picked') return 'picked';
-  return accepted.has(job.id) ? 'accepted' : 'new';
+  return job.acceptedAt ? 'accepted' : 'new';
 };
 
 const placeIcon = (name = '') => (/store|warehouse|distribut/i.test(name) ? Warehouse : /pharmacy|kendra|medic|apollo/i.test(name) ? Store : Home);
@@ -170,7 +158,7 @@ export function DeliverSheet({ job, open, onClose, onSubmit }) {
     e.preventDefault();
     if (code.length < 4) { setError('Enter all 4 digits.'); return; }
     setBusy(true);
-    const err = await onSubmit(code, photo?.name);
+    const err = await onSubmit(code, photo?.file);
     setBusy(false);
     if (err) { setError(err); setDigits(['', '', '', '']); refs[0].current?.focus(); } else setDone(true);
   };
@@ -199,11 +187,11 @@ export function DeliverSheet({ job, open, onClose, onSubmit }) {
                   onChange={(e) => setAt(i, e.target.value)} onKeyDown={(e) => onKey(i, e)} aria-label={`OTP digit ${i + 1}`} />
               ))}
             </div>
-            {error ? <div className="dj-error">{error}</div> : <div className="tiny muted center">Demo: the OTP is shown to the recipient in their app.</div>}
+            {error ? <div className="dj-error">{error}</div> : <div className="tiny muted center">The recipient sees this code in their app.</div>}
 
             <div className="dj-photo">
               <input ref={fileRef} type="file" accept="image/*" capture="environment" hidden
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) setPhoto({ name: f.name, url: URL.createObjectURL(f) }); }} />
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) setPhoto({ file: f, url: URL.createObjectURL(f) }); }} />
               {photo ? (
                 <div className="dj-photo-preview">
                   <img src={photo.url} alt="Proof of delivery" />

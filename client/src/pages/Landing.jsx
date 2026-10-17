@@ -18,7 +18,7 @@ const FAQS = [
   { q: 'What does a consult cost?', a: 'Booking a visit at a doctor\'s hospital or clinic costs ₹100 online — that confirms your slot and keeps fake bookings away. You pay the doctor\'s own fee at the clinic. Video consults are paid online in full (most cost ₹150–₹500).' },
   { q: 'Are the doctors real and verified?', a: 'Every doctor\'s registration number is checked against the national medical registry before they can see a single patient. You can see their qualification, languages and rating before you book.' },
   { q: 'Which languages are supported?', a: 'All 22 official Indian languages — from Hindi, Bengali and Tamil to Santali, Dogri and Manipuri — plus regional ones like Bhojpuri and Awadhi, and 40+ world languages including Arabic, Spanish and Swahili. Pick yours from the globe button at the top. Speak in your language — your doctor sees the notes translated into theirs.' },
-  { q: 'What happens in an emergency?', a: 'If the symptom checker spots danger signs like chest pain or breathlessness, it skips the queue entirely: it tells you to call 108 and alerts the nearest hospital that has a free bed, along with your critical health information.' },
+  { q: 'What happens in an emergency?', a: 'If the symptom checker spots danger signs like chest pain or breathlessness, it skips the queue entirely: it tells you to call 108 straight away and shows the nearest hospital with its phone number, so you can get help without waiting.' },
 ];
 
 const PORTALS = [
@@ -331,6 +331,13 @@ export default function Landing() {
           <div>
             <Logo />
             <p className="muted small" style={{ marginTop: 12, maxWidth: 300 }}>A national health network by Reasonate AI Pvt. Ltd. Built in India, for every Indian.</p>
+            <div className="l-social">
+              <a href="https://www.linkedin.com/company/nexus-healthcare-official/" target="_blank" rel="noopener noreferrer" aria-label="Nexus Healthcare on LinkedIn" title="Follow us on LinkedIn">
+                {/* LinkedIn mark (brand icons aren't in our icon set) */}
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="currentColor"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.86 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13ZM7.12 20.45H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z" /></svg>
+                <span>LinkedIn</span>
+              </a>
+            </div>
           </div>
           <div>
             <h4>Product</h4>

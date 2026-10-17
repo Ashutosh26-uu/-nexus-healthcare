@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { PackageX, Truck, AlertTriangle, ArrowRight, Pill, Check, Eye } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
-import { Card, Stat, Empty, StatusBadge, Button, Modal, Field, useToast, cx, fmtNum, timeAgo } from '../../components/ui';
+import { Card, Stat, Empty, StatusBadge, Button, Modal, Field, cx, fmtNum, timeAgo } from '../../components/ui';
 import { useGov, regionOptions, isOpen } from './shared';
 import AlertAction from './AlertAction';
 
@@ -13,26 +13,17 @@ function daysTone(d) {
 
 export function StockMoveModal({ open, onClose, drug: initialDrug = '' }) {
   const { data } = useGov();
-  const toast = useToast();
   const opts = regionOptions(data);
   const drugs = [...new Set([...(data.shortages || []).map((s) => s.drug), 'ORS sachet', 'Paracetamol 500mg', 'Dengue NS1 rapid kit'])];
   const [form, setForm] = useState({ drug: initialDrug || drugs[0] || '', qty: 200, from: '', to: '', priority: 'urgent' });
-  const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
-  const submit = (e) => {
-    e.preventDefault();
-    setBusy(true);
-    // The API has no official-side "order stock movement" endpoint yet; the order is handed to the supply desk.
-    setTimeout(() => {
-      setBusy(false);
-      toast(`Stock movement ordered: ${fmtNum(form.qty)} × ${form.drug} to ${form.to.split(',')[0]}`);
-      onClose();
-    }, 650);
-  };
+  // Transfers can only be requested by the receiving chemist (POST /api/transfers/request is pharmacist-only);
+  // there is no official-side "order a stock movement" endpoint yet, so this form can't be sent — it says so.
+  const submit = (e) => e.preventDefault();
 
   return (
-    <Modal open={open} onClose={onClose} title="Order stock movement" subtitle="Ask the state supply desk to move stock between regions.">
+    <Modal open={open} onClose={onClose} title="Order stock movement" subtitle="Coming soon — moving stock between regions from here isn't live yet.">
       <form className="stack" onSubmit={submit}>
         <Field label="Medicine or kit">
           <input className="input" list="cc-drugs" value={form.drug} onChange={set('drug')} required />
@@ -62,10 +53,10 @@ export function StockMoveModal({ open, onClose, drug: initialDrug = '' }) {
             </select>
           </Field>
         </div>
-        <p className="tiny muted mb-0">The supply engine never pulls a source pharmacy below its own safety stock, and prefers batches nearest expiry.</p>
+        <div className="callout sun small">Ordering stock moves from the command centre is coming soon. Today, chemists request stock themselves from their Stock alerts screen, and every transfer shows under “In transit”.</div>
         <div className="row" style={{ justifyContent: 'flex-end', gap: 10 }}>
-          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button type="submit" loading={busy} icon={Truck}>Place order</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>Close</Button>
+          <Button type="submit" icon={Truck} disabled title="Not available yet">Coming soon</Button>
         </div>
       </form>
     </Modal>

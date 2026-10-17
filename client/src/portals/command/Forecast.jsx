@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CloudRain, FlaskConical, MessageSquareWarning, Pill, CloudSun, Megaphone, RefreshCw, Info } from 'lucide-react';
-import { Card, Button, Empty, Loading, Pills, useToast, cx, fmtDateTime } from '../../components/ui';
+import { useNavigate } from 'react-router-dom';
+import { Card, Button, Empty, Loading, Pills, cx, fmtDateTime } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
 
@@ -24,7 +25,7 @@ function Curve({ points, color, peakWeek }) {
 }
 
 export default function Forecast() {
-  const toast = useToast();
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [level, setLevel] = useState('all');
@@ -105,7 +106,8 @@ export default function Forecast() {
                   <Info size={14} />
                   <span className="small">{f.recommendation}</span>
                 </div>
-                <Button size="sm" icon={Megaphone} onClick={() => toast(`Action started for ${f.disease} in ${f.district} — advisory drafted & stock pre-positioning requested`)}>Act on this</Button>
+                {/* Opens the real advisory composer, pre-filled for this forecast — nothing is sent until an official publishes it. */}
+                <Button size="sm" icon={Megaphone} onClick={() => navigate(`/command/actions?${new URLSearchParams({ disease: f.disease, district: f.district || '', pin: f.pincode || '' })}`)}>Draft an advisory</Button>
               </Card>
             );
           })}

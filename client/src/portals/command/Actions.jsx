@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Activity, PackageX, Gauge, Route as RouteIcon, Truck, Megaphone, Check, Eye, X, ArrowRight, Send, Save, Inbox, Users, ShieldCheck } from 'lucide-react';
 import { api } from '../../api';
@@ -188,8 +188,18 @@ function AdvisoryList() {
 export default function Actions() {
   const { data, reload } = useGov();
   const [params, setParams] = useSearchParams();
-  const composeFor = params.get('compose');
-  const prefill = useMemo(() => draftFromAlert(data.alerts.find((a) => a.id === composeFor), data.scope), [composeFor]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ?compose=<alertId> (from a confirmed alert) or ?disease=&district=&pin= (from a Health Weather forecast).
+  const fcDisease = params.get('disease');
+  const composeFor = params.get('compose') || (fcDisease ? `fc-${fcDisease}-${params.get('pin')}` : null);
+  const prefill = useMemo(() => draftFromAlert(data.alerts.find((a) => a.id === composeFor), data.scope)
+    || (fcDisease ? draftFromAlert({ type: 'outbreak', disease: fcDisease, district: data.scope.level === 'district' ? data.scope.district : params.get('district'), pincode: params.get('pin') }, data.scope) : null), [composeFor]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Arriving from a forecast's "Act on this": bring the pre-filled composer into view.
+  // (after the layout's own scroll-to-top on navigation has run)
+  useEffect(() => {
+    if (!fcDisease) return undefined;
+    const t = setTimeout(() => document.getElementById('cc-compose')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 350);
+    return () => clearTimeout(t);
+  }, [fcDisease]);
   const [filter, setFilter] = useState('open');
   const [act, setAct] = useState(null);
   const [corridor, setCorridor] = useState(null);
@@ -280,7 +290,7 @@ export default function Actions() {
       </Card>
 
       <div className="grid two">
-        <Card title={<div><h3>Send a public advisory</h3><p className="tiny muted mb-0">{prefill?.title ? 'Pre-filled from the confirmed alert — edit before sending.' : 'Short, practical, in the languages people read.'}</p></div>}>
+        <Card id="cc-compose" title={<div><h3>Send a public advisory</h3><p className="tiny muted mb-0">{prefill?.title ? `Pre-filled from the ${fcDisease ? 'forecast' : 'confirmed alert'} — edit before sending.` : 'Short, practical, in the languages people read.'}</p></div>}>
           <AdvisoryComposer key={composeFor || 'blank'} prefill={prefill} onSaved={() => { if (composeFor) setParams({}); reload(); }} />
         </Card>
         <Card title="Advisories">

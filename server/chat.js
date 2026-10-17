@@ -1,13 +1,13 @@
 // "Saathi" — the patient help assistant behind the website chat bubble.
-// Streams from Claude when ANTHROPIC_API_KEY is set; otherwise falls back to
-// a built-in rule-based assistant so the POC works fully offline.
+// Streams from Claude when ANTHROPIC_API_KEY is set (with no personal health data — see genericContext);
+// otherwise falls back to a built-in rule-based assistant so the POC works fully offline.
 const Anthropic = require('@anthropic-ai/sdk');
 const i18n = require('./i18n');
 
 const EMERGENCY_WORDS = ['सीने में दर्द', 'छाती में दर्द', 'सांस नहीं', 'साँस नहीं', 'बेहोश', 'दौरा', 'खून की उल्टी', 'आत्महत्या', 'सांप ने काटा', 'ज़हर', 'dolor de pecho', 'no puedo respirar', 'douleur thoracique', 'ألم في الصدر', 'سینے میں درد', 'chest pain', 'can\'t breathe', 'cannot breathe', 'breathless', 'unconscious', 'seizure', 'fits', 'stroke', 'heavy bleeding', 'vomiting blood', 'suicide', 'kill myself', 'snake bite', 'poison', 'face drooping', 'slurred'];
 
 const EMERGENCY_REPLY =
-  "This sounds like it could be an emergency. **Please call 108 (ambulance) right now**, or go to the nearest emergency department. If you're at an Nexus Healthcare E-Clinic, tell the operator immediately — they can alert the nearest hospital with a free bed.\n\nIf you have thoughts of harming yourself, please call **Tele-MANAS at 14416** — it's free and open 24/7.";
+  "This sounds like it could be an emergency. **Please call 108 (ambulance) right now**, or go to the nearest emergency department. If you're at a Nexus Healthcare E-Clinic, tell the operator immediately — they will help you call and show you the nearest hospital.\n\nIf you have thoughts of harming yourself, please call **Tele-MANAS at 14416** — it's free and open 24/7.";
 
 const SYSTEM_PROMPT = `You are Saathi, the friendly help assistant on the Nexus Healthcare website — a health network that started in India and serves people worldwide that connects patients (including villages, via E-Clinic kiosks) with verified doctors, a Universal Health Passport, and medicines.
 
@@ -28,17 +28,12 @@ What you know about the platform (use it to guide people):
 - E-Clinic kiosks at PHCs, railway stations and villages; a trained operator helps; works in 10+ Indian languages.
 - Support line: 1800-200-4455 (toll-free, 8am–10pm). Data stays in India, DPDP Act compliant.`;
 
-function patientContext(ctx) {
-  if (!ctx) return '';
-  const p = ctx.patient;
-  const lines = [`\n\nThe user is signed in as ${ctx.user.name} (role: ${ctx.user.role}).`];
-  if (p) {
-    lines.push(`Health Passport ${p.id}. Allergies: ${(p.allergies || []).join(', ') || 'none recorded'}. Conditions: ${(p.conditions || []).join(', ') || 'none recorded'}. Current medicines: ${(p.currentMeds || []).join(', ') || 'none'}. Preferred language: ${p.language || 'not set'}.`);
-  }
-  if (ctx.upcoming?.length) lines.push(`Upcoming consults: ${ctx.upcoming.map((c) => `${c.doctorName} on ${new Date(c.scheduledAt).toLocaleString('en-IN')}`).join('; ')}.`);
-  if (ctx.prescriptions?.length) lines.push(`Recent prescriptions: ${ctx.prescriptions.map((r) => `${r.items.map((i) => i.drug).join(', ')} (status ${r.status})`).join('; ')}.`);
-  lines.push('Use this to personalise answers (e.g. flag allergy conflicts). Do not read out the whole record unprompted.');
-  return lines.join(' ');
+// Privacy: nothing from the person's record — no name, passport id, allergies, conditions, medicines,
+// prescriptions or visits — is ever sent to the external model. It gets only generic app context plus what
+// the person typed themselves. (The offline fallback below may still use the record: it never leaves the server.)
+function genericContext(ctx) {
+  const signedIn = ctx?.user ? `The person is signed in to the app (as a ${ctx.user.role === 'caregiver' ? 'caregiver' : 'patient or staff member'}).` : 'The person is not signed in.';
+  return `\n\n${signedIn} You cannot see their health record, appointments or prescriptions. For anything about their own record (allergies, medicines, next visit), tell them where to find it in the app (Home, Medicines, Records) and to mention allergies to the doctor or pharmacist.`;
 }
 
 // ---------- Offline fallback ----------
@@ -163,7 +158,7 @@ async function handleChat(req, res, ctx) {
       output_config: { effort: 'low' },
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
-      system: `${SYSTEM_PROMPT}${patientContext(ctx)}
+      system: `${SYSTEM_PROMPT}${genericContext(ctx)}
 
 The person has chosen ${langName} for the app. Reply in ${langName} unless they clearly write in another language — then reply in the language they wrote in. Keep medical terms understandable for that language's speakers.`,
       messages: history,

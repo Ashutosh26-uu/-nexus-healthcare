@@ -1,26 +1,24 @@
 import { useState } from 'react';
 import { Plus, Trash2, Wand2, Send, ClipboardList } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
-import { Card, Button, Field, StatusBadge, fmtDate, fmtNum, useToast } from '../../components/ui';
+import { Card, Button, Field, Empty, StatusBadge, fmtDate, fmtNum, useAction, useToast } from '../../components/ui';
+import { api } from '../../api';
 import { COMMON_DRUGS } from '../pharmacy/stock';
-
-const SUPPLIERS = ['BPPI — Jan Aushadhi central store', 'HLL Lifecare Ltd', 'Cipla Ltd, Lucknow depot', 'J Mitra & Co (diagnostic kits)', 'Mankind Pharma, Kanpur C&F'];
 
 let lineId = 0;
 const mkLine = (drug = '', qty = '') => ({ id: ++lineId, drug, qty });
 
-export default function BulkOrder({ home }) {
+// Purchase orders are saved on the server (POST /distributor/purchase-orders) and listed from home.purchaseOrders.
+// The app doesn't send them to the supplier yet — the screen says so instead of pretending it did.
+export default function BulkOrder({ home, reload }) {
   const toast = useToast();
   const inAWeek = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
-  const [supplier, setSupplier] = useState(SUPPLIERS[0]);
+  const [supplier, setSupplier] = useState('');
   const [date, setDate] = useState(inAWeek);
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState([mkLine()]);
-  const [sending, setSending] = useState(false);
-  const [orders, setOrders] = useState([
-    { id: 'PO-2026-0412', supplier: SUPPLIERS[1], items: 3, units: 42000, date: new Date(Date.now() + 3 * 86400000).toISOString(), status: 'confirmed' },
-    { id: 'PO-2026-0398', supplier: SUPPLIERS[0], items: 5, units: 18500, date: new Date(Date.now() - 6 * 86400000).toISOString(), status: 'delivered' },
-  ]);
+  const [run, busy] = useAction();
+  const orders = home.purchaseOrders || [];
 
   const fillGaps = () => {
     const gaps = (home.forecast || [])
@@ -39,18 +37,18 @@ export default function BulkOrder({ home }) {
   const update = (id, k, v) => setLines((ls) => ls.map((l) => (l.id === id ? { ...l, [k]: v } : l)));
   const valid = lines.filter((l) => l.drug && Number(l.qty) > 0);
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
     if (!valid.length) return;
-    setSending(true);
-    setTimeout(() => {
-      const id = `PO-2026-${String(413 + orders.length).padStart(4, '0')}`;
-      setOrders((o) => [{ id, supplier, items: valid.length, units: valid.reduce((s, l) => s + Number(l.qty), 0), date: new Date(date).toISOString(), status: 'sent' }, ...o]);
-      setLines([mkLine()]);
-      setNotes('');
-      setSending(false);
-      toast(`${id} sent to ${supplier.split(' —')[0].split(',')[0]}. You'll get their confirmation by email and SMS.`);
-    }, 900);
+    const po = await run('po', () => api.post('/distributor/purchase-orders', { supplier, deliverBy: date, notes, lines: valid.map((l) => ({ drug: l.drug, qty: Number(l.qty) })) }));
+    if (!po) return;
+    setLines([mkLine()]);
+    setNotes('');
+    toast(`${po.poNo} saved. Share this PO number with ${po.supplier} — sending it from the app is coming soon.`);
+    reload();
+  };
+  const cancel = async (o) => {
+    if (await run(o.id, () => api.post(`/distributor/purchase-orders/${o.id}/cancel`), `${o.poNo} cancelled`)) reload();
   };
 
   return (
@@ -61,9 +59,7 @@ export default function BulkOrder({ home }) {
           <form className="stack" onSubmit={submit}>
             <div className="grid two" style={{ gap: 12 }}>
               <Field label="Supplier">
-                <select className="select" value={supplier} onChange={(e) => setSupplier(e.target.value)}>
-                  {SUPPLIERS.map((s) => <option key={s}>{s}</option>)}
-                </select>
+                <input className="input" value={supplier} onChange={(e) => setSupplier(e.target.value)} maxLength={120} placeholder="Supplier or central store name" required />
               </Field>
               <Field label="Deliver by"><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></Field>
             </div>
@@ -84,24 +80,28 @@ export default function BulkOrder({ home }) {
             <Field label="Notes for supplier (optional)"><textarea className="textarea" style={{ minHeight: 70 }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Cold-chain items in insulated boxes with data loggers" /></Field>
             <div className="row between wrap">
               <span className="small muted">{valid.length} line{valid.length === 1 ? '' : 's'} · {fmtNum(valid.reduce((s, l) => s + Number(l.qty), 0))} units</span>
-              <Button type="submit" icon={Send} loading={sending} disabled={!valid.length}>Send purchase order</Button>
+              <Button type="submit" icon={Send} loading={busy === 'po'} disabled={!valid.length || supplier.trim().length < 2}>Save purchase order</Button>
             </div>
+            <p className="tiny muted mb-0">The order is saved here with a PO number. Sending it to the supplier from the app is coming soon.</p>
           </form>
         </Card>
 
         <Card title={<h3 className="row" style={{ gap: 8 }}><ClipboardList size={18} /> Recent orders</h3>}>
-          <div className="list">
-            {orders.map((o) => (
-              <div key={o.id} className="list-item">
-                <div className="grow">
-                  <strong className="small mono" dir="ltr">{o.id}</strong>
-                  <div className="tiny muted">{o.supplier}</div>
-                  <div className="tiny muted">{o.items} items · {fmtNum(o.units)} units · {o.status === 'delivered' ? 'arrived' : 'due'} {fmtDate(o.date)}</div>
+          {orders.length === 0 ? <Empty icon={ClipboardList} title="No purchase orders yet">Orders you save will be listed here.</Empty> : (
+            <div className="list">
+              {orders.map((o) => (
+                <div key={o.id} className="list-item">
+                  <div className="grow">
+                    <strong className="small mono" dir="ltr">{o.poNo}</strong>
+                    <div className="tiny muted" translate="no">{o.supplier}</div>
+                    <div className="tiny muted">{o.lines.length} item{o.lines.length === 1 ? '' : 's'} · {fmtNum(o.units)} units{o.deliverBy ? ` · due ${fmtDate(o.deliverBy)}` : ''}</div>
+                  </div>
+                  <StatusBadge status={o.status} />
+                  {o.status === 'raised' && <Button size="sm" variant="ghost" loading={busy === o.id} onClick={() => cancel(o)}>Cancel</Button>}
                 </div>
-                <StatusBadge status={o.status} />
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </Card>
       </div>
     </>

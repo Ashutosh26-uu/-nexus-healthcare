@@ -1,42 +1,28 @@
-import { useEffect, useRef, useState } from 'react';
-import { Stethoscope, Building2, FlaskConical, Pill, MonitorSmartphone, Check, X, ShieldCheck, Search, Loader2, MapPin, Phone, Languages, CircleCheck } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Stethoscope, Building2, FlaskConical, Pill, MonitorSmartphone, Check, X, ShieldCheck, Search, ExternalLink, MapPin, Phone, Languages } from 'lucide-react';
 import { api } from '../../api';
 import { PageHeader } from '../../components/PortalLayout';
-import { Card, Tabs, Pills, Empty, Button, Modal, Field, Avatar, StatusBadge, useAction, cx } from '../../components/ui';
+import { Card, Tabs, Pills, Empty, Button, Modal, Field, Avatar, StatusBadge, useAction, timeAgo, cx } from '../../components/ui';
 import { useLive } from '../../live';
 import { LiveGate } from './shared';
 import { ProtectedImg } from '../../components/Availability';
 
-const REGISTRY_STEPS = [
-  'Connecting to the medical council registry',
-  'Looking up registration number',
-  'Matching name and qualification',
-  'Checking for suspensions or disciplinary action',
-];
-const councilFor = (regNo = '') => ({ UPMC: 'UP Medical Council', KMC: 'Karnataka Medical Council', BMC: 'Bihar Medical Council' }[regNo.split('-')[0]] || 'National Medical Commission');
+// The council a registration prefix usually belongs to — only a hint for where to look, not a check.
+const councilFor = (regNo = '') => ({ UPMC: 'UP Medical Council', KMC: 'Karnataka Medical Council', BMC: 'Bihar Medical Council' }[String(regNo).split('-')[0]] || null);
+const NMC_REGISTER = 'https://www.nmc.org.in/information-desk/indian-medical-register/';
 
-function RegistryCheck({ doc, onResult }) {
-  const [step, setStep] = useState(-1);
-  const timers = useRef([]);
-  useEffect(() => () => timers.current.forEach(clearTimeout), []);
-  const start = () => {
-    setStep(0);
-    REGISTRY_STEPS.forEach((_, i) => timers.current.push(setTimeout(() => setStep(i + 1), 650 * (i + 1))));
-    timers.current.push(setTimeout(() => onResult(true), 650 * REGISTRY_STEPS.length + 150));
-  };
-  if (step < 0) {
-    return <Button size="sm" variant="secondary" icon={Search} onClick={start}>Check against medical council registry</Button>;
-  }
+// No registry API is connected, so this is an honest manual check: the admin looks the number up on the
+// official register and ticks the box. The server stores who confirmed it and when (registryCheckedBy/At).
+function RegistryCheck({ doc, checked, onChange }) {
+  const council = doc.council || councilFor(doc.regNo);
   return (
-    <div className="ad-registry" aria-live="polite">
-      <div className="tiny muted mb-1">{councilFor(doc.regNo)} · {doc.regNo}</div>
-      {REGISTRY_STEPS.map((s, i) => (
-        <div key={s} className={cx('ad-reg-step', i < step && 'done', i === step && 'now')}>
-          {i < step ? <CircleCheck /> : i === step ? <Loader2 className="ad-spin" /> : <span className="ad-reg-dot" />}
-          <span className="small">{s}</span>
-        </div>
-      ))}
-      {step >= REGISTRY_STEPS.length && <div className="form-ok small mt-1">Match found — registration active, no disciplinary record.</div>}
+    <div className="ad-registry">
+      <div className="small">Registration <span className="mono" translate="no">{doc.regNo || 'Not added'}</span> · {council ? <>{council}{!doc.council && <span className="tiny muted"> (from the number's prefix)</span>}</> : <span className="muted">Council not stated</span>}</div>
+      <a className="link-btn small row mt-1" style={{ gap: 6, flexWrap: 'nowrap', alignItems: 'flex-start' }} href={NMC_REGISTER} target="_blank" rel="noreferrer"><Search size={14} style={{ flexShrink: 0, marginTop: 2 }} /> <span>Search the official Indian Medical Register (NMC)</span> <ExternalLink size={13} style={{ flexShrink: 0, marginTop: 2 }} /></a>
+      <label className="row small mt-1" style={{ gap: 8, flexWrap: 'nowrap', alignItems: 'flex-start' }}>
+        <input type="checkbox" style={{ flexShrink: 0, marginTop: 2 }} checked={checked} onChange={(e) => onChange(e.target.checked)} />
+        <span>I checked this registration on the official register and it is active</span>
+      </label>
     </div>
   );
 }
@@ -116,11 +102,11 @@ function DoctorCard({ d, onApprove, onReject, busy }) {
           {!d.verified && incomplete && <div className="tiny muted mt-2">Signed up — waiting for the doctor to complete their profile before it can be verified.</div>}
           {!d.verified && !incomplete && (
             <div className="mt-2 stack" style={{ gap: 10 }}>
-              <RegistryCheck doc={d} onResult={setMatched} />
+              <RegistryCheck doc={d} checked={matched} onChange={setMatched} />
               <div className="row wrap" style={{ gap: 8 }}>
                 <Button size="sm" icon={Check} disabled={!matched} loading={busy === `a-${d.id}`} onClick={() => onApprove(d)}>Approve & activate</Button>
                 <Button size="sm" variant="ghost" icon={X} onClick={() => onReject(d)}>Reject</Button>
-                {!matched && <span className="tiny muted">Run the registry check before approving.</span>}
+                {!matched && <span className="tiny muted">Check the official register and tick the box before approving.</span>}
               </div>
             </div>
           )}
@@ -132,7 +118,10 @@ function DoctorCard({ d, onApprove, onReject, busy }) {
 
 const FAC_ICON = { hospital: Building2, lab: FlaskConical, pharmacy: Pill, kiosk: MonitorSmartphone };
 
-function FacilityCard({ f, rejected, onApprove, onReject, busy }) {
+// Open "Request a change" messages a verified store sent from its profile (POST /api/pharmacy/change-requests).
+const openChanges = (f) => (f.changeRequests || []).filter((c) => c.status === 'open');
+
+function FacilityCard({ f, rejected, onApprove, onReject, onResolve, busy }) {
   const Icon = FAC_ICON[f.type] || Building2;
   return (
     <div className={cx('ad-queue-card', !f.verified && !rejected && 'pending')}>
@@ -167,6 +156,14 @@ function FacilityCard({ f, rejected, onApprove, onReject, busy }) {
           )}
           {f.selfApplied && <div className="ad-partner tiny"><span className="ad-partner-tag">Self-applied partner</span>{f.applicationRef && <span className="mono">{f.applicationRef}</span>}{f.services?.length > 0 && <span>Services: {f.services.join(', ')}</span>}</div>}
           {rejected && f.verificationNote && <div className="tiny ad-note bad">{f.verificationNote}</div>}
+          {openChanges(f).map((c) => (
+            <div key={c.id} className="ad-partner tiny">
+              <span className="ad-partner-tag">Change request</span>
+              <span className="grow">{c.message}</span>
+              <span className="muted">{c.byName} · {timeAgo(c.at)}</span>
+              <Button size="sm" variant="secondary" loading={busy === `cr-${c.id}`} onClick={() => onResolve(f, c)}>Mark done</Button>
+            </div>
+          ))}
           {f.departments && <div className="ad-tags">{f.departments.map((x) => <span key={x}>{x}</span>)}</div>}
           {f.equipment && <div className="ad-tags soft">{f.equipment.map((x) => <span key={x}>{x}</span>)}</div>}
           {!f.verified && (
@@ -190,7 +187,12 @@ export default function Onboarding() {
   const [run, busy] = useAction();
 
   const approve = async (item, kind) => {
-    const r = await run(`a-${item.id}`, () => api.post(`/admin/verify/${kind}/${item.id}`, { approve: true }), `${item.name} verified`);
+    // Doctors: only reachable once the admin ticked the manual register check (the server requires it too).
+    const r = await run(`a-${item.id}`, () => api.post(`/admin/verify/${kind}/${item.id}`, { approve: true, ...(kind === 'doctor' ? { registryChecked: true } : {}) }), `${item.name} verified`);
+    if (r) live.reload();
+  };
+  const resolve = async (f, c) => {
+    const r = await run(`cr-${c.id}`, () => api.post(`/admin/facilities/${f.id}/change-requests/${c.id}/resolve`, {}), 'Marked done — the store has been told');
     if (r) live.reload();
   };
   const doReject = async (note) => {
@@ -204,7 +206,8 @@ export default function Onboarding() {
       {({ doctors, facilities }) => {
         const byType = (t) => facilities.filter((f) => f.type === t);
         const isRejected = (x) => !x.verified && (x.verificationNote || rejectedIds.includes(x.id));
-        const pendingOf = (list) => list.filter((x) => !x.verified && !isRejected(x)).length;
+        const needsReview = (x) => (!x.verified && !isRejected(x)) || openChanges(x).length > 0;
+        const pendingOf = (list) => list.filter(needsReview).length;
         const tabs = [
           { value: 'doctor', label: 'Doctors', icon: Stethoscope, count: pendingOf(doctors) },
           { value: 'hospital', label: 'Hospitals & clinics', icon: Building2, count: pendingOf(byType('hospital')) },
@@ -215,14 +218,14 @@ export default function Onboarding() {
         const isDoc = tab === 'doctor';
         const all = isDoc ? doctors : byType(tab);
         const sorted = [...all].sort((a, b) => Number(a.verified) - Number(b.verified));
-        const list = show === 'pending' ? sorted.filter((x) => !x.verified) : sorted;
+        const list = show === 'pending' ? sorted.filter((x) => !x.verified || openChanges(x).length > 0) : sorted;
 
         return (
           <>
             <PageHeader eyebrow="Onboarding" title="Verification queues" subtitle="Nobody treats patients or dispenses medicine on Nexus Healthcare until a person has checked their credentials." />
             <Tabs tabs={tabs} value={tab} onChange={setTab} />
             <div className="row between wrap mb-2" style={{ gap: 10 }}>
-              <span className="small muted">{isDoc ? 'Registration numbers are checked against the state medical council before approval.' : 'Licences and certificates were uploaded at sign-up; verify the details match.'}</span>
+              <span className="small muted">{isDoc ? 'Look each registration number up on the official medical register before approving.' : 'Licences and certificates were uploaded at sign-up; verify the details match.'}</span>
               <Pills value={show} onChange={setShow} options={[{ value: 'pending', label: 'Needs review' }, { value: 'all', label: 'Everyone' }]} />
             </div>
             {list.length === 0 ? (
@@ -231,7 +234,7 @@ export default function Onboarding() {
               <div className="ad-queue">
                 {list.map((x) => (isDoc
                   ? <DoctorCard key={x.id} d={x} busy={busy} onApprove={(d) => approve(d, 'doctor')} onReject={(d) => setReject({ item: d, kind: 'doctor' })} />
-                  : <FacilityCard key={x.id} f={x} rejected={Boolean(isRejected(x))} busy={busy} onApprove={(f) => approve(f, f.type)} onReject={(f) => setReject({ item: f, kind: f.type })} />))}
+                  : <FacilityCard key={x.id} f={x} rejected={Boolean(isRejected(x))} busy={busy} onApprove={(f) => approve(f, f.type)} onReject={(f) => setReject({ item: f, kind: f.type })} onResolve={resolve} />))}
               </div>
             )}
             <RejectModal target={reject?.item} busy={busy === 'reject'} onClose={() => setReject(null)} onConfirm={doReject} />

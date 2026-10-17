@@ -498,6 +498,9 @@ function canSeeFile(user, f) {
   if (rx && (ownsPatient(user, rx.patientId) || (user.role === 'pharmacist' && rx.pharmacyId === user.facilityId))) return true;
   // A prescription photo attached to a medicine order: the chemist handling (or offered) it may see it.
   if (user.role === 'pharmacist' && db().medOrders.some((o) => o.rxFileId === f.id && o.pharmacyId === user.facilityId)) return true;
+  // A rider's proof-of-delivery photo: the chemist whose order / prescription it was may check it (the rider already can as uploader).
+  const pod = user.role === 'pharmacist' && db().deliveries.find((x) => x.proofFileId === f.id);
+  if (pod && (pod.kind === 'med_order' ? db().medOrders.find((o) => o.id === pod.refId)?.pharmacyId : pod.kind === 'prescription' ? db().prescriptions.find((r) => r.id === pod.refId)?.pharmacyId : null) === user.facilityId) return true;
   // The signed report PDF of a lab order: the patient, the ordering doctor and the lab that did it (same rule as GET /api/lab-orders/:id).
   const lo = db().labOrders.find((o) => o.reportFileId === f.id);
   if (lo && (ownsPatient(user, lo.patientId) || (user.role === 'doctor' && doctorFor(user)?.id === lo.doctorId) || (user.role === 'lab_tech' && lo.labId === user.facilityId))) return true;
@@ -517,7 +520,7 @@ function canSeeFile(user, f) {
 
 // Each upload is up to 10 MB held in memory and then stored for good — cap per account so one login can't fill the disk/DB.
 const uploadLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 60, key: (r) => r.user?.id || '', message: 'Too many uploads. Please wait a while and try again.' });
-app.post('/api/files', auth, role('patient', 'caregiver', 'lab_tech', 'doctor', 'pharmacist', 'hospital_admin'), uploadLimiter, upload.single('file'), async (req, res) => {
+app.post('/api/files', auth, role('patient', 'caregiver', 'lab_tech', 'doctor', 'pharmacist', 'hospital_admin', 'delivery'), uploadLimiter, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Please attach a PDF or photo (PNG, JPG, WEBP) up to 10 MB.' });
   if (!sniffType(req.file.buffer, req.file.mimetype)) return res.status(415).json({ error: 'That file does not look like a real PDF or image. Please upload a valid file.' });
   let patientId = ['patient', 'caregiver'].includes(req.user.role) ? activePatient(req)?.id : null;
@@ -1918,8 +1921,8 @@ app.post('/api/medicine-orders/:id/status', auth, role('pharmacist'), (req, res)
       if (inv) { inv.qty = Math.max(0, inv.qty - it.qty); it.batch = inv.batch; it.expiry = inv.expiry; }
     }
     if (o.fulfilment === 'delivery' && o.deliveryBy === 'nexus') {
-      const rider = d.users.find((u) => u.role === 'delivery' && u.status === 'active' && (!u.region?.district || u.region.district === f.district)) || d.users.find((u) => u.role === 'delivery' && u.status === 'active');
-      d.deliveries.unshift({ id: store.id('del'), kind: 'med_order', refId: o.id, pickup: `${f.name}${f.address ? `, ${f.address}` : ''}`, drop: `${p.name} · ${o.address}`, courierId: rider?.id || null, status: rider ? 'assigned' : 'unassigned', coldChain: o.items.some((i) => /insulin|vaccine/i.test(i.drug)), otp: o.otp, items: o.items.map((i) => `${i.drug} ×${i.qty}`).join(', '), collect: o.balance, distanceKm: geo.km(geo.pointOf(f), geo.pointOf(p)), createdAt: nowIso() });
+      const rider = pickRider(d, f.district);
+      d.deliveries.unshift({ id: store.id('del'), kind: 'med_order', refId: o.id, district: f.district || null, pickup: `${f.name}${f.address ? `, ${f.address}` : ''}`, drop: `${p.name} · ${o.address}`, courierId: rider?.id || null, status: rider ? 'assigned' : 'unassigned', coldChain: o.items.some((i) => /insulin|vaccine/i.test(i.drug)), otp: o.otp, items: o.items.map((i) => `${i.drug} ×${i.qty}`).join(', '), collect: o.balance, distanceKm: geo.km(geo.pointOf(f), geo.pointOf(p)), createdAt: nowIso() });
       if (rider) notify(rider.id, 'New pickup', `${f.name} → ${p.name}${o.balance ? ` · collect ₹${o.balance}` : ''}`);
       o.riderId = rider?.id || null;
     }
@@ -2401,9 +2404,10 @@ function doctorInbox(d, doc) {
   return [owner, ...d.users.filter((u) => u.role === 'hospital_admin' && u.facilityId === f.id).map((u) => u.id)].filter(Boolean);
 }
 
-// The nearest active rider (same district first); null if none — the job then waits as "unassigned".
+// The nearest active, online rider (same district first); null if none — the job then waits as "unassigned"
+// in the feed of every online rider of that district until one of them accepts it.
 function pickRider(d, district) {
-  const riders = d.users.filter((u) => u.role === 'delivery' && u.status === 'active');
+  const riders = d.users.filter((u) => u.role === 'delivery' && u.status === 'active' && u.riderOnline !== false);
   return riders.find((u) => district && u.region?.district === district) || riders[0] || null;
 }
 
@@ -3786,8 +3790,24 @@ app.get('/api/kiosk/home', auth, role('kiosk_operator'), (req, res) => {
     doctors: d.doctors.filter((x) => x.verified && isEClinicDoctor(x) && (!(x.eClinicIds || []).length || x.eClinicIds.includes(kiosk.id) || x.presenceClinicId === kiosk.id))
       .map((x) => ({ ...publicDoctor(x), here: x.online && x.presenceClinicId === kiosk.id }))
       .sort((a, b) => Number(b.here) - Number(a.here) || Number(b.online) - Number(a.online)),
+    nearestHospital: nearestHospitalTo(d, kiosk),
   });
 });
+
+// The emergency card's hospital: the nearest verified hospital (not a clinic) to this kiosk; one with an
+// emergency department wins unless it is 30+ km further. Public listing fields only; null if none is known —
+// the screen then just says "Call 108".
+function nearestHospitalTo(d, kiosk) {
+  const here = geo.pointOf(kiosk);
+  const hasEmergency = (h) => /emergency|24\s*[x×]\s*7/i.test(h.hours || '') || (h.departments || []).includes('Emergency');
+  const list = d.facilities.filter((f) => f.type === 'hospital' && f.subtype !== 'clinic' && f.verified)
+    .map((h) => ({ h, km: here ? geo.km(here, geo.pointOf(h)) : null, er: hasEmergency(h) }))
+    .filter((x) => x.km != null || x.h.district === kiosk?.district)
+    .sort((a, b) => ((a.km ?? 0) + (a.er ? 0 : 30)) - ((b.km ?? 0) + (b.er ? 0 : 30)));
+  const best = list[0];
+  if (!best) return null;
+  return { id: best.h.id, name: best.h.name, address: best.h.address || '', district: best.h.district, phone: best.h.phone || null, distanceKm: best.km, emergency: best.er, hours: best.h.hours || '' };
+}
 
 // A kiosk login could otherwise walk through phone numbers / passport ids to enumerate patients.
 const identifyLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 120, key: (r) => r.headers.authorization || r.ip, message: 'Too many patient look-ups from this kiosk. Please wait a while.' });
@@ -4762,7 +4782,8 @@ app.get('/api/pharmacy/home', auth, role('pharmacist'), (req, res) => {
     inbox: d.prescriptions.filter((r) => r.pharmacyId === fid).map(enrichRx).reverse(),
     inventory,
     lowStock: inventory.filter((i) => i.qty <= i.safetyStock),
-    expiring: inventory.filter((i) => new Date(i.expiry) < soon),
+    expiring: inventory.filter((i) => new Date(i.expiry) < soon && i.qty > 0),
+    returns: (d.pharmacyReturns || []).filter((r) => r.facilityId === fid).slice(0, 30),
     transfersIn: d.transfers.filter((t) => t.toId === fid).map((t) => ({ ...t, fromName: facilityName(t.fromId) })),
     transfersOut: d.transfers.filter((t) => t.fromId === fid).map((t) => ({ ...t, toName: facilityName(t.toId) })),
     advisories: d.alerts.filter((a) => a.type === 'outbreak' && a.district === fac.district && a.status !== 'dismissed').map((a) => ({
@@ -4770,6 +4791,60 @@ app.get('/api/pharmacy/home', auth, role('pharmacist'), (req, res) => {
       message: `${a.disease} rising in your area (${a.multiplier}× normal). Suggested: stock up on ${a.disease === 'Dengue' ? 'ORS, Paracetamol, Dengue NS1 kits and platelet kits' : 'ORS, Paracetamol and Cetirizine'}.`,
     })),
   });
+});
+
+// Near-expiry stock set aside for return to the distributor: a real record, and the units leave the sellable shelf.
+app.get('/api/pharmacy/returns', auth, role('pharmacist'), (req, res) => {
+  res.json((db().pharmacyReturns || []).filter((r) => r.facilityId === req.user.facilityId));
+});
+app.post('/api/pharmacy/returns', auth, role('pharmacist'), (req, res) => {
+  const d = db();
+  const fid = req.user.facilityId;
+  if (!facilityById(fid)?.verified) return res.status(403).json({ error: 'Your store needs to be verified first.' });
+  const inv = d.inventory.find((i) => i.id === clean(req.body?.inventoryId, 60) && i.facilityId === fid);
+  if (!inv) return res.status(404).json({ error: 'That stock line was not found in your store.' });
+  const qty = Math.floor(Number(req.body?.qty ?? inv.qty));
+  if (!(qty > 0) || qty > inv.qty) return res.status(400).json({ error: `Enter a quantity between 1 and ${inv.qty}.` });
+  const REASONS = ['near_expiry', 'expired', 'damaged', 'recalled'];
+  const reason = REASONS.includes(req.body?.reason) ? req.body.reason : 'near_expiry';
+  inv.qty -= qty;
+  if (!d.pharmacyReturns) d.pharmacyReturns = [];
+  const r = { id: store.id('ret'), facilityId: fid, inventoryId: inv.id, drug: inv.drug, batch: inv.batch || null, expiry: inv.expiry || null, qty, reason, note: clean(req.body?.note, 200), status: 'set_aside', createdBy: req.user.id, createdByName: req.user.name, createdAt: nowIso() };
+  d.pharmacyReturns.unshift(r);
+  audit(req.user, 'stock_return', null, 'inventory', `${inv.drug} ${inv.batch || ''} ×${qty} (${reason})`);
+  store.save();
+  broadcast('pharmacy');
+  res.json(r);
+});
+
+// "Request a change" to verified store details goes to the people who can make it: stored on the store,
+// every super-admin is notified, and it shows on the admin Onboarding screen until resolved.
+app.post('/api/pharmacy/change-requests', auth, role('pharmacist'), (req, res) => {
+  const f = facilityById(req.user.facilityId);
+  if (!f) return res.status(404).json({ error: 'Store not found.' });
+  const message = clean(req.body?.message, 600);
+  if (message.length < 5) return res.status(400).json({ error: 'Tell us what should change (a few words at least).' });
+  if (!f.changeRequests) f.changeRequests = [];
+  if (f.changeRequests.filter((c) => c.status === 'open').length >= 5) return res.status(429).json({ error: 'You already have 5 open requests. Our team will get back to you on those first.' });
+  const cr = { id: store.id('chg'), message, byId: req.user.id, byName: req.user.name, at: nowIso(), status: 'open' };
+  f.changeRequests.unshift(cr);
+  f.changeRequests = f.changeRequests.slice(0, 20);
+  db().users.filter((u) => u.role === 'super_admin' && u.status === 'active').forEach((u) => notify(u.id, `Change request · ${f.name}`, message.slice(0, 140)));
+  audit(req.user, 'change_request', null, 'facility', `${f.id}: ${message.slice(0, 120)}`);
+  store.save();
+  broadcast('admin', 'pharmacy');
+  res.json(cr);
+});
+app.post('/api/admin/facilities/:id/change-requests/:crId/resolve', auth, role('super_admin'), (req, res) => {
+  const f = facilityById(req.params.id);
+  const cr = f?.changeRequests?.find((c) => c.id === req.params.crId);
+  if (!cr) return res.status(404).json({ error: 'Request not found.' });
+  cr.status = 'resolved'; cr.resolvedAt = nowIso(); cr.resolvedBy = req.user.name; cr.reply = clean(req.body?.reply, 300);
+  notify(cr.byId, `Your change request · ${f.name}`, cr.reply || 'Our team has handled your request.');
+  audit(req.user, 'change_request_resolved', null, 'facility', `${f.id}: ${cr.id}`);
+  store.save();
+  broadcast('admin', 'pharmacy');
+  res.json(cr);
 });
 
 app.post('/api/prescriptions/:id/dispense', auth, role('pharmacist'), (req, res) => {
@@ -4793,7 +4868,7 @@ app.post('/api/prescriptions/:id/dispense', auth, role('pharmacist'), (req, res)
   if (status === 'out_for_delivery') {
     const shop = d.facilities.find((f) => f.id === r.pharmacyId);
     const rider = pickRider(d, shop?.district);
-    d.deliveries.unshift({ id: store.id('del'), kind: 'prescription', refId: r.id, pickup: facilityName(r.pharmacyId), drop: `${p.name} · ${r.address || p.district}`, courierId: rider?.id || null, status: rider ? 'assigned' : 'unassigned', coldChain: r.items.some((i) => /insulin|vaccine/i.test(i.drug)), otp: String(crypto.randomInt(1000, 10000)), items: r.items.map((i) => i.drug).join(', '), distanceKm: geo.km(geo.pointOf(shop), geo.pointOf(p)), createdAt: nowIso() });
+    d.deliveries.unshift({ id: store.id('del'), kind: 'prescription', refId: r.id, district: shop?.district || null, pickup: facilityName(r.pharmacyId), drop: `${p.name} · ${r.address || p.district}`, courierId: rider?.id || null, status: rider ? 'assigned' : 'unassigned', coldChain: r.items.some((i) => /insulin|vaccine/i.test(i.drug)), otp: String(crypto.randomInt(1000, 10000)), items: r.items.map((i) => i.drug).join(', '), distanceKm: geo.km(geo.pointOf(shop), geo.pointOf(p)), createdAt: nowIso() });
     if (rider) notify(rider.id, 'New pickup', `${facilityName(r.pharmacyId)} → ${p.name}`);
   }
   const msg = { dispensed: 'Your medicines are packed and ready.', collected: 'Medicines collected. Get well soon!', out_for_delivery: 'Your medicines are on the way.', delivered: 'Your medicines have been delivered.' }[status];
@@ -4877,7 +4952,7 @@ app.post('/api/transfers/:id/:action', auth, role('pharmacist', 'distributor'), 
     const to = d.facilities.find((f) => f.id === t.toId);
     const rider = pickRider(d, from?.district);
     t.courierId = rider?.id || null;
-    d.deliveries.unshift({ id: store.id('del'), kind: 'transfer', refId: t.id, pickup: facilityName(t.fromId), drop: facilityName(t.toId), courierId: rider?.id || null, status: rider ? 'assigned' : 'unassigned', coldChain: /insulin|vaccine/i.test(t.drug), otp: String(crypto.randomInt(1000, 10000)), items: `${t.drug} ×${t.qty}`, distanceKm: geo.km(geo.pointOf(from), geo.pointOf(to)), createdAt: nowIso() });
+    d.deliveries.unshift({ id: store.id('del'), kind: 'transfer', refId: t.id, district: from?.district || null, pickup: facilityName(t.fromId), drop: facilityName(t.toId), courierId: rider?.id || null, status: rider ? 'assigned' : 'unassigned', coldChain: /insulin|vaccine/i.test(t.drug), otp: String(crypto.randomInt(1000, 10000)), items: `${t.drug} ×${t.qty}`, distanceKm: geo.km(geo.pointOf(from), geo.pointOf(to)), createdAt: nowIso() });
     if (rider) notify(rider.id, 'New transfer pickup', `${facilityName(t.fromId)} → ${facilityName(t.toId)}`);
   } else if (action === 'receive') {
     if (t.toId !== req.user.facilityId) return res.status(403).json({ error: 'Only the receiving facility can confirm.' });
@@ -4911,7 +4986,41 @@ app.get('/api/distributor/home', auth, role('distributor'), (req, res) => {
       { drug: 'Metformin 500mg', district: 'Lucknow', next14d: 12000, trend: +2, reason: 'Stable chronic demand' },
     ] : distributorForecast(d, fid),
     regionalShortages: d.alerts.filter((a) => a.type === 'shortage' && a.status === 'open'),
+    purchaseOrders: (d.purchaseOrders || []).filter((o) => o.facilityId === fid).slice(0, 30),
   });
+});
+
+// Purchase orders a warehouse raises to its supplier — stored and listed for that warehouse only. The app
+// doesn't transmit them to the supplier (no supplier integration yet); the warehouse shares the PO number itself.
+app.post('/api/distributor/purchase-orders', auth, role('distributor'), (req, res) => {
+  const d = db();
+  const fid = req.user.facilityId;
+  if (!facilityById(fid)) return res.status(404).json({ error: 'Warehouse not found.' });
+  const supplier = clean(req.body?.supplier, 120);
+  if (supplier.length < 2) return res.status(400).json({ error: 'Add the supplier\'s name.' });
+  const lines = (Array.isArray(req.body?.lines) ? req.body.lines : []).slice(0, 50)
+    .map((l) => ({ drug: clean(l?.drug, 80), qty: Math.floor(Number(l?.qty)) })).filter((l) => l.drug.length >= 2 && l.qty > 0 && l.qty <= 10000000);
+  if (!lines.length) return res.status(400).json({ error: 'Add at least one medicine with a quantity.' });
+  const by = String(req.body?.deliverBy || '');
+  const deliverBy = /^\d{4}-\d{2}-\d{2}$/.test(by) && !Number.isNaN(Date.parse(by)) ? by : null;
+  if (!d.purchaseOrders) d.purchaseOrders = [];
+  const seq = d.purchaseOrders.filter((o) => o.facilityId === fid).length + 1;
+  const po = { id: store.id('po'), poNo: `PO-${new Date().getFullYear()}-${String(seq).padStart(4, '0')}`, facilityId: fid, supplier, lines, units: lines.reduce((s, l) => s + l.qty, 0), deliverBy, notes: clean(req.body?.notes, 400), status: 'raised', createdBy: req.user.id, createdByName: req.user.name, createdAt: nowIso() };
+  d.purchaseOrders.unshift(po);
+  audit(req.user, 'raised_po', null, 'purchase_order', `${po.poNo} → ${supplier} (${lines.length} lines)`);
+  store.save();
+  broadcast('supply');
+  res.json(po);
+});
+app.post('/api/distributor/purchase-orders/:id/cancel', auth, role('distributor'), (req, res) => {
+  const po = (db().purchaseOrders || []).find((o) => o.id === req.params.id && o.facilityId === req.user.facilityId);
+  if (!po) return res.status(404).json({ error: 'Purchase order not found.' });
+  if (po.status !== 'raised') return res.status(409).json({ error: `This order is ${po.status}.` });
+  po.status = 'cancelled'; po.cancelledAt = nowIso();
+  audit(req.user, 'cancelled_po', null, 'purchase_order', po.poNo);
+  store.save();
+  broadcast('supply');
+  res.json(po);
 });
 
 // Live warehouses: the next 14 days projected from what chemists actually asked this warehouse for in the
@@ -4939,23 +5048,74 @@ function distributorForecast(d, fid) {
 }
 
 // ---------- dispatch ----------
+// A rider sees their own jobs, plus (while online) the unclaimed jobs of their district — first to accept takes it.
+const openForRider = (u, x) => !x.courierId && x.status === 'unassigned' && u.riderOnline !== false && (!x.district || !u.region?.district || x.district === u.region.district);
 app.get('/api/dispatch/jobs', auth, role('delivery'), (req, res) => {
-  res.json(db().deliveries.filter((x) => x.courierId === req.user.id).map(({ otp, ...job }) => job));
+  res.json(db().deliveries.filter((x) => x.courierId === req.user.id || openForRider(req.user, x)).map(({ otp, otpAttempts, ...job }) => job));
 });
 
-app.post('/api/deliveries/:id/status', auth, role('delivery'), (req, res) => {
+// The rider's own record — only what the server really knows (no made-up rating or vehicle).
+app.get('/api/dispatch/me', auth, role('delivery'), (req, res) => {
+  const u = req.user;
+  const done = db().deliveries.filter((x) => x.courierId === u.id && x.status === 'delivered');
+  const r = u.riderRating; // { sum, count } once riders can be rated; hidden until then
+  res.json({ name: u.name, phone: u.phone || null, district: u.region?.district || null, online: u.riderOnline !== false, vehicle: clean(u.vehicle, 60) || null, deliveries: done.length, km: Math.round(done.reduce((s, x) => s + (x.distanceKm || 0), 0)), rating: r?.count ? { avg: Math.round((r.sum / r.count) * 10) / 10, count: r.count } : null, since: u.createdAt || null });
+});
+
+// Online/offline lives on the user record so auto-assignment (pickRider) skips riders who are off duty.
+app.put('/api/dispatch/online', auth, role('delivery'), (req, res) => {
+  if (typeof req.body?.online !== 'boolean') return res.status(400).json({ error: 'Say online: true or false.' });
+  req.user.riderOnline = req.body.online;
+  audit(req.user, req.body.online ? 'rider_online' : 'rider_offline', null, 'user', req.user.id);
+  store.save();
+  broadcast('dispatch');
+  res.json({ online: req.user.riderOnline });
+});
+
+// Accepting is synchronous end to end (no await between the check and the write), so on one Node process two
+// riders tapping "Accept" together can never both win: the second sees courierId already set and gets 409.
+app.post('/api/dispatch/jobs/:id/accept', auth, role('delivery'), (req, res) => {
+  const d = db();
+  const del = d.deliveries.find((x) => x.id === req.params.id);
+  if (!del || (del.courierId !== req.user.id && !openForRider({ ...req.user, riderOnline: true }, del))) {
+    return del && (del.courierId || del.status !== 'unassigned') ? res.status(409).json({ error: 'Another rider has already taken this job.' }) : res.status(404).json({ error: 'Job not found.' });
+  }
+  if (del.status === 'delivered') return res.status(409).json({ error: 'This delivery is already complete.' });
+  if (req.user.riderOnline === false) return res.status(409).json({ error: 'Go online to accept jobs.' });
+  if (!del.acceptedAt) {
+    del.courierId = req.user.id;
+    del.acceptedAt = nowIso();
+    if (del.status === 'unassigned') del.status = 'assigned';
+    if (del.kind === 'transfer') { const t = d.transfers.find((x) => x.id === del.refId); if (t) t.courierId = req.user.id; }
+    if (del.kind === 'med_order') { const o = d.medOrders.find((x) => x.id === del.refId); if (o) o.riderId = req.user.id; }
+    audit(req.user, 'accepted_delivery', null, 'delivery', del.id);
+    store.save();
+    broadcast('dispatch', 'pharmacy');
+  }
+  const { otp: _c, otpAttempts: _a, ...job } = del;
+  res.json(job);
+});
+
+app.post('/api/deliveries/:id/status', auth, role('delivery'), async (req, res) => {
+  const { status, otp } = req.body || {};
+  // Optional proof-of-delivery photo, uploaded first through /api/files by this same rider. Looked up before
+  // any state is read, so the checks and writes below still run without an await in between.
+  const proofFileId = status === 'delivered' && req.body?.proofFileId ? clean(req.body.proofFileId, 60) : null;
+  const proof = proofFileId ? await store.adapter().fileGet(proofFileId) : null;
+  if (proofFileId && (!proof || proof.uploadedBy !== req.user.id || !String(proof.mime).startsWith('image/'))) return res.status(400).json({ error: 'That proof photo could not be found. Please add it again.' });
   const d = db();
   const del = d.deliveries.find((x) => x.id === req.params.id && x.courierId === req.user.id);
   if (!del) return res.status(404).json({ error: 'Job not found.' });
-  const { status, otp } = req.body || {};
   const NEXT = { assigned: ['picked'], unassigned: ['picked'], picked: ['in_transit', 'delivered'], in_transit: ['delivered'], dispatched: ['in_transit', 'delivered'] };
   if (!(NEXT[del.status] || []).includes(status)) return res.status(400).json({ error: del.status === 'delivered' ? 'This delivery is already complete.' : 'That step isn\'t possible right now.' });
+  if (status === 'picked' && !del.acceptedAt) return res.status(409).json({ error: 'Accept the job first.' });
   if (status === 'delivered') {
     if ((del.otpAttempts || 0) >= 5) return res.status(429).json({ error: 'Too many wrong codes. Call support to complete this delivery.' });
     if (String(otp) !== del.otp) { del.otpAttempts = (del.otpAttempts || 0) + 1; store.save(); return res.status(400).json({ error: 'OTP doesn\'t match. Ask the recipient for the 4-digit code.' }); }
   }
   del.status = status;
   del[`${status}At`] = nowIso();
+  if (proof) del.proofFileId = proof.id;
   if (del.kind === 'med_order') {
     const o = d.medOrders.find((x) => x.id === del.refId);
     const p = o && d.patients.find((x) => x.id === o.patientId);
@@ -5148,6 +5308,10 @@ app.post('/api/admin/verify/:kind/:id', auth, role('super_admin'), (req, res) =>
     const doc = d.doctors.find((x) => x.id === req.params.id);
     if (!doc) return res.status(404).json({ error: 'Doctor not found.' });
     if (approve && doc.profileComplete === false) return res.status(400).json({ error: 'This doctor has not completed their profile yet.' });
+    // We have no registry API: an admin checks the number on the official NMC / state council register by hand
+    // and confirms it here. That confirmation (who, when) is what we store — never an automatic "match".
+    if (approve && req.body?.registryChecked !== true) return res.status(400).json({ error: 'Check the registration on the official medical register and tick the confirmation first.' });
+    const regCheck = approve ? { registryCheckedBy: req.user.name, registryCheckedById: req.user.id, registryCheckedAt: nowIso() } : {};
     // A sign-up that matched a clinic's listing: on approval the account takes over that listing.
     const listing = approve && doc.claimRequest ? d.doctors.find((x) => x.id === doc.claimRequest && !x.userId) : null;
     if (listing) {
@@ -5155,7 +5319,8 @@ app.post('/api/admin/verify/:kind/:id', auth, role('super_admin'), (req, res) =>
       Object.assign(listing, profile, { invite: null, claimedAt: nowIso() });
       d.doctors.splice(d.doctors.indexOf(doc), 1);
       listing.verified = true;
-      listing.verificationNote = `Registration ${listing.regNo} matched with medical council registry · claimed clinic listing`;
+      Object.assign(listing, regCheck);
+      listing.verificationNote = `Registration ${listing.regNo} checked on the official register by ${req.user.name} · claimed clinic listing`;
       notify(listing.userId, 'You\'re verified — welcome aboard 🎉', `Your account is linked to your listing at ${facilityName(listing.facilityId) || 'your clinic'}.`);
       audit(req.user, 'verified', null, 'doctor', `${listing.id} (claimed by ${doc.id})`);
       store.save();
@@ -5166,7 +5331,8 @@ app.post('/api/admin/verify/:kind/:id', auth, role('super_admin'), (req, res) =>
     const u = d.users.find((x) => x.id === doc.userId);
     // Self-signed-up doctors keep access so they can fix their profile and resubmit.
     if (u) u.status = approve || doc.selfApplied ? 'active' : 'suspended';
-    doc.verificationNote = approve ? `Registration ${doc.regNo} matched with medical council registry` : clean(req.body?.note, 300) || 'Rejected';
+    Object.assign(doc, regCheck);
+    doc.verificationNote = approve ? `Registration ${doc.regNo} checked on the official register by ${req.user.name}` : clean(req.body?.note, 300) || 'Rejected';
     if (u) notify(u.id, approve ? 'You\'re verified — welcome aboard 🎉' : 'Application update', approve ? (doc.engagement === 'eclinic_partner' ? 'Your E-Clinic partner account is active. Go online whenever you\'re free to start taking consults.' : 'Your account is active.') : doc.verificationNote);
   } else {
     const f = d.facilities.find((x) => x.id === req.params.id);

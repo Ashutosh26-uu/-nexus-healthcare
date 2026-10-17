@@ -252,6 +252,7 @@ function demoSeed() {
     users, patients, doctors, facilities, consults, prescriptions, labOrders, drugMaster, inventory,
     beds, roster, referrals, opdSlots, transfers, deliveries, alerts, corridors, consents, audit,
     notifications, advisories, aiConfig, translations, regions, records: [], payments: [], otps: {},
+    pharmacyReturns: [], purchaseOrders: [],
     reviews: [
       { id: 'rev_1', doctorId: 'doc_1', consultId: 'con_101', patientId: 'OC-2041-7783', stars: 5, text: 'Explained my sugar report very patiently, in Hindi. Medicines worked.', name: 'Sunita D', at: ago(20) },
       { id: 'rev_2', doctorId: 'doc_2', consultId: 'con_102', patientId: 'OC-2041-9015', stars: 5, text: 'Very gentle with my son. Wheezing settled in 2 days.', name: 'Sunita D', at: ago(8) },

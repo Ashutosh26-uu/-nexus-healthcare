@@ -81,7 +81,7 @@ function triage({ symptoms = '', age, duration, severity, vitals = {} }, config)
       specialty: specialty === 'General Medicine' ? 'Emergency' : specialty,
       redFlags: flags,
       note: `Red flag: ${flags.join(', ')}. Escalated to emergency by protocol.`,
-      advice: 'Please call 108 for an ambulance now, or go to the nearest emergency department. We are alerting the nearest hospital with a free bed.',
+      advice: 'Please call 108 for an ambulance now, or go to the nearest emergency department.',
     };
   }
 

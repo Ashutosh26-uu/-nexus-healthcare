@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PackageSearch, CalendarX, Sparkles, Truck, Undo2, Megaphone } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
-import { Card, Button, Empty, StatusBadge, fmtNum, useAction, useToast } from '../../components/ui';
+import { Card, Button, Empty, StatusBadge, fmtNum, fmtDate, useAction, useToast } from '../../components/ui';
 import { api } from '../../api';
 import { expiryInfo, stockLevel, suggestQty } from './stock';
 import Advisory from './Advisory';
@@ -11,6 +11,8 @@ const ADVISORY_DRUGS = {
   Dengue: ['ORS sachet', 'Paracetamol 500mg', 'Dengue NS1 rapid kit', 'Platelet count kit'],
   default: ['ORS sachet', 'Paracetamol 500mg', 'Cetirizine 10mg'],
 };
+
+const RETURN_REASON = { near_expiry: 'Near expiry', expired: 'Expired', damaged: 'Damaged', recalled: 'Recalled' };
 
 export default function Alerts({ home, reload }) {
   const openReq = (drug) => home.transfersIn.find((t) => t.drug.toLowerCase() === drug.toLowerCase() && ['requested', 'accepted', 'dispatched'].includes(t.status));
@@ -45,10 +47,27 @@ export default function Alerts({ home, reload }) {
 
         <Card title={<h3 className="row" style={{ gap: 8 }}><CalendarX size={18} /> Expiring soon <span className="badge sun">{expiring.length}</span></h3>}>
           {expiring.length === 0 ? <Empty title="No near-expiry stock">Nothing expires in the next 60 days.</Empty> : (
-            <div className="list">{expiring.map((i) => <ExpiryRow key={i.id} item={i} />)}</div>
+            <div className="list">{expiring.map((i) => <ExpiryRow key={i.id} item={i} reload={reload} />)}</div>
           )}
         </Card>
       </div>
+
+      {(home.returns || []).length > 0 && (
+        <Card className="mt-2" title={<h3 className="row" style={{ gap: 8 }}><Undo2 size={18} /> Returns <span className="badge">{home.returns.length}</span></h3>} action={<span className="tiny muted">Set aside for the distributor</span>}>
+          <div className="list">
+            {home.returns.map((r) => (
+              <div key={r.id} className="list-item">
+                <div className="grow">
+                  <strong className="small" translate="no">{r.drug}</strong>
+                  <div className="tiny muted">Batch <span className="mono">{r.batch || '—'}</span> · {fmtNum(r.qty)} units · {RETURN_REASON[r.reason] || r.reason}</div>
+                  <div className="tiny muted">{fmtDate(r.createdAt)} · by {r.createdByName}</div>
+                </div>
+                <span className="badge sun">Set aside</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
     </>
   );
 }
@@ -89,10 +108,14 @@ function ReorderRow({ item, pending, reload, boost, compact }) {
   );
 }
 
-function ExpiryRow({ item }) {
-  const toast = useToast();
-  const [marked, setMarked] = useState(false);
+// "Return" records the batch on the server (GET/POST /pharmacy/returns) and takes those units off the sellable shelf.
+function ExpiryRow({ item, reload }) {
+  const [run, busy] = useAction();
   const ex = expiryInfo(item.expiry);
+  const setAside = async () => {
+    const r = await run('ret', () => api.post('/pharmacy/returns', { inventoryId: item.id, qty: item.qty, reason: ex.days < 0 ? 'expired' : 'near_expiry' }), `${item.drug} (${item.batch}) set aside for return — ${item.qty} units taken off the shelf`);
+    if (r) reload();
+  };
   return (
     <div className="list-item">
       <div className="grow">
@@ -101,9 +124,7 @@ function ExpiryRow({ item }) {
         <div className="tiny muted mt-1">{ex.days <= 30 ? 'Return to the distributor for credit before it lapses.' : 'Move to the front shelf and dispense first.'}</div>
       </div>
       <span className={`badge ${ex.tone}`}>{ex.label}</span>
-      <Button size="sm" variant="ghost" icon={Undo2} disabled={marked} onClick={() => { setMarked(true); toast(`${item.drug} (${item.batch}) marked for return — the distributor will collect on the next run`); }}>
-        {marked ? 'Marked' : 'Return'}
-      </Button>
+      <Button size="sm" variant="ghost" icon={Undo2} loading={busy === 'ret'} onClick={setAside}>Return</Button>
     </div>
   );
 }

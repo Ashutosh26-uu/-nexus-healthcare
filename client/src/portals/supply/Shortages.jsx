@@ -1,22 +1,15 @@
-import { useState } from 'react';
 import { AlertOctagon, MapPin, Truck, CheckCircle2 } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
-import { Button, Empty, timeAgo, fmtNum, useToast } from '../../components/ui';
+import { Button, Empty, timeAgo, fmtNum } from '../../components/ui';
 
+// No server endpoint lets a warehouse push stock unprompted (transfers start from the chemist's request,
+// which then shows under Dispatch approvals) — so "Offer" is marked as coming soon rather than faked.
 export default function Shortages({ home }) {
-  const toast = useToast();
-  const [offered, setOffered] = useState({});
   const list = home.regionalShortages;
-
-  const offer = (a, qty) => {
-    // No server endpoint lets a warehouse push stock unprompted — the offer is logged for the district officer.
-    setOffered((o) => ({ ...o, [a.id]: qty }));
-    toast(`Offered ${fmtNum(qty)} × ${a.drug} to ${a.district}. The district officer can approve the movement from the command centre.`);
-  };
 
   return (
     <>
-      <PageHeader title="Regional shortages" subtitle="Flagged by the supply engine when many pharmacies in one area ask for the same medicine. If you have spare, offer it before it becomes a crisis." />
+      <PageHeader title="Regional shortages" subtitle="Flagged by the supply engine when many pharmacies in one area ask for the same medicine. Chemists there can request your spare stock; offering it to them directly is coming soon." />
       {list.length === 0 ? (
         <div className="card"><Empty icon={CheckCircle2} title="No shortages flagged">Every district in your area has enough stock right now.</Empty></div>
       ) : (
@@ -39,11 +32,7 @@ export default function Shortages({ home }) {
                   <div className="tiny mt-1">{inv ? <>You hold <strong>{fmtNum(inv.qty)}</strong> · <strong>{fmtNum(spare)}</strong> spare above safety stock</> : <span className="muted">Not stocked in this warehouse</span>}</div>
                 </div>
                 <div className="sup-short-act">
-                  {offered[a.id] ? (
-                    <span className="badge green"><CheckCircle2 /> Offered {fmtNum(offered[a.id])}</span>
-                  ) : (
-                    <Button size="sm" icon={Truck} disabled={!suggest} onClick={() => offer(a, suggest)}>{suggest ? `Offer ${fmtNum(suggest)}` : 'No spare'}</Button>
-                  )}
+                  <Button size="sm" icon={Truck} disabled title="Offering stock to a district is not available yet">{suggest ? `Offer ${fmtNum(suggest)} · coming soon` : 'No spare'}</Button>
                 </div>
               </article>
             );

@@ -66,6 +66,8 @@ function useSpeechInput(lang, onText) {
 
 function Outcome({ result, onConnect, connecting, onBook, booking, booked, onFinish, kiosk, patient, vitals, t }) {
   const level = result.level;
+  // Nearest verified hospital to this kiosk, from the server (GET /kiosk/home → nearestHospital); none → just "Call 108".
+  const hospital = useKiosk().home?.data?.nearestHospital || null;
   const [slot, setSlot] = useState(null);
   const slots = useState(nextSlots)[0];
   const localAdvice = t(`adv_${level}`);
@@ -89,22 +91,26 @@ function Outcome({ result, onConnect, connecting, onBook, booking, booked, onFin
 
       {level === 'emergency' && (
         <div className="k-emerg">
-          <div className="k-amb">
+          {/* The app doesn't call an ambulance or alert a hospital by itself — the card tells the operator to call. */}
+          <div className="k-amb" style={{ flexWrap: 'wrap' }}>
             <span className="k-amb-pulse"><Ambulance /></span>
-            <div>
-              <strong>{t('ambulance')}</strong>
-              <span>Dispatch has the kiosk location and the patient's vitals. Stay with the patient; keep them sitting up.</span>
+            <div className="grow" style={{ minWidth: 170 }}>
+              <strong>Call 108 for an ambulance now</strong>
+              <span>Give them this clinic's address. Stay with the patient; keep them sitting up.</span>
             </div>
+            <a className="k-btn ghost" href="tel:108"><Phone /><span>108</span></a>
           </div>
-          <div className="k-hosp">
-            <Hospital />
-            <div className="grow">
-              <small>Nearest hospital with a free emergency bed</small>
-              <strong>District Hospital Barabanki</strong>
-              <span>Emergency open 24×7 · alerted with the patient summary</span>
+          {hospital && (
+            <div className="k-hosp">
+              <Hospital />
+              <div className="grow">
+                <small>{hospital.emergency ? 'Nearest hospital with an emergency department' : 'Nearest hospital'}</small>
+                <strong translate="no">{hospital.name}</strong>
+                <span>{[hospital.address || hospital.district, hospital.distanceKm != null ? `~${hospital.distanceKm} km` : null, hospital.hours].filter(Boolean).join(' · ')}</span>
+              </div>
+              {hospital.phone && <a className="k-btn ghost" href={`tel:${hospital.phone.replace(/[^\d+]/g, '')}`}><Phone /><span dir="ltr">{hospital.phone}</span></a>}
             </div>
-            <a className="k-btn ghost" href="tel:05248222001"><Phone /><span>05248-222001</span></a>
-          </div>
+          )}
           {result.redFlags?.length > 0 && <p className="k-fine">Escalated by protocol because of: {result.redFlags.join(', ')}. No AI judgement is applied to red-flag symptoms.</p>}
           <div className="k-confirm-actions">
             <KButton variant="ghost" icon={Check} onClick={onFinish}>Patient handed to ambulance</KButton>

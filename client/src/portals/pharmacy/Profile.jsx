@@ -1,31 +1,45 @@
 import { useState } from 'react';
 import { BadgeCheck, MapPin, Clock, Phone, FileBadge, CheckCircle2, Circle, PencilLine, Receipt } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
-import { Card, Button, useToast, useAction } from '../../components/ui';
+import { Card, Button, Modal, fmtDate, useAction } from '../../components/ui';
 import { api } from '../../api';
 import { useAuth } from '../../auth';
 import { ProtectedImg } from '../../components/Availability';
 
 export default function Profile({ home, reload }) {
-  const toast = useToast();
   const { user } = useAuth();
+  const [asking, setAsking] = useState(false);
   const p = home.pharmacy;
-  // The POC facility record has no licence fields — these are representative demo values.
-  const licence = { number: p.licenceNo || `UP-${(p.district || 'XX').slice(0, 3).toUpperCase()}-20B/21B-2019-0457`, form: 'Form 20B & 21B (retail sale)', validTill: p.licenceNo ? '—' : '31 Mar 2029', pharmacist: user?.name, regNo: p.licenceNo ? '—' : 'UPPC/R/38812' };
+  // Only what the store record really holds — an empty field says so instead of showing a sample value.
+  const NA = 'Not added';
+  const licence = { number: p.licenceNo || NA, form: p.licenceForm || NA, validTill: p.licenceValidTill || NA, pharmacist: user?.name, regNo: p.pharmacistRegNo || NA };
+  const openReqs = (p.changeRequests || []).filter((c) => c.status === 'open');
   const steps = [
     { label: 'Drug licence verified', done: p.verified },
-    { label: 'Registered pharmacist linked', done: true },
-    { label: 'Store location pinned on map', done: true },
+    { label: 'Drug licence number added', done: Boolean(p.licenceNo) },
+    { label: 'Store location pinned on map', done: Number.isFinite(p.lat) && Number.isFinite(p.lng) },
     { label: 'Opening hours set', done: Boolean(p.hours) },
-    { label: 'Billing software sync (Marg / GoFrugal)', done: false },
   ];
   const done = steps.filter((s) => s.done).length;
 
   return (
     <>
       <PageHeader title="Store & licence" subtitle="Your verified listing. Patients choose a pharmacy based on these details.">
-        <Button variant="secondary" icon={PencilLine} onClick={() => toast('Change request sent — our onboarding team will call you to confirm.')}>Request a change</Button>
+        <Button variant="secondary" icon={PencilLine} onClick={() => setAsking(true)}>Request a change</Button>
       </PageHeader>
+      <ChangeRequestModal open={asking} onClose={() => setAsking(false)} reload={reload} />
+      {openReqs.length > 0 && (
+        <Card className="mb-2" title="Your change requests">
+          <div className="list">
+            {openReqs.map((c) => (
+              <div key={c.id} className="list-item">
+                <div className="grow"><div className="small">{c.message}</div><div className="tiny muted">Sent {fmtDate(c.at)}</div></div>
+                <span className="badge sun">With our team</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <div className="grid side">
         <div className="stack lg">
@@ -42,7 +56,8 @@ export default function Profile({ home, reload }) {
               <dt>Store</dt><dd translate="no">{p.name}</dd>
               <dt>Licence type</dt><dd>{licence.form}</dd>
               <dt>Valid till</dt><dd>{licence.validTill}</dd>
-              <dt>Pharmacist</dt><dd>{licence.pharmacist} · <span className="mono">{licence.regNo}</span></dd>
+              <dt>Pharmacist</dt><dd translate="no">{licence.pharmacist}</dd>
+              <dt>Pharmacist reg. no.</dt><dd className={p.pharmacistRegNo ? 'mono' : ''}>{licence.regNo}</dd>
             </dl>
           </div>
 
@@ -68,10 +83,26 @@ export default function Profile({ home, reload }) {
               </li>
             ))}
           </ul>
-          <p className="tiny muted mb-0">Connecting your billing software keeps stock in sync automatically — no double entry at the counter.</p>
+          <p className="tiny muted mb-0">Billing software sync (Marg / GoFrugal) is coming soon.</p>
         </Card>
       </div>
     </>
+  );
+}
+
+// Verified details (name, licence, address) can't be self-edited — this sends a request to the admins.
+function ChangeRequestModal({ open, onClose, reload }) {
+  const [text, setText] = useState('');
+  const [run, busy] = useAction();
+  const send = async () => {
+    const r = await run('chg', () => api.post('/pharmacy/change-requests', { message: text }), 'Request sent — our onboarding team will review it');
+    if (r) { setText(''); onClose(); reload?.(); }
+  };
+  return (
+    <Modal open={open} onClose={onClose} title="Request a change" subtitle="Tell us what's wrong or what changed (e.g. new address, renewed licence). An admin will review it."
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button loading={busy === 'chg'} disabled={text.trim().length < 5} onClick={send}>Send request</Button></>}>
+      <textarea className="textarea" rows={4} maxLength={600} value={text} onChange={(e) => setText(e.target.value)} aria-label="What should change" />
+    </Modal>
   );
 }
 

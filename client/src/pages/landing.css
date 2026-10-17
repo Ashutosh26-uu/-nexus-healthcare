@@ -167,3 +167,10 @@
 
 .l-join { margin-top: 26px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px; padding: 22px 26px; border-radius: 20px; background: #fff; border: 1.5px dashed var(--clay); }
 .l-join h3 { margin: 0 0 4px; font-size: 1.2rem; }
+
+/* Footer: social link, and room so the floating "Ask Saathi" button never covers the last line */
+.l-social { display: flex; gap: 10px; margin-top: 16px; }
+.l-social a { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: #fff; color: #0a66c2; font-size: 0.86rem; font-weight: 600; text-decoration: none; }
+.l-social a:hover { border-color: #0a66c2; background: #f3f8fd; }
+.l-footer { padding-bottom: 104px; }
+
