@@ -14,17 +14,17 @@ import { usePublicConfig, useSupport, telHref } from '../config';
 
 const FAQS = [
   { q: 'I live in a village and don\'t have a smartphone. Can I still use Nexus Healthcare?', a: 'Yes. A family member can book for you from their phone, and you can speak your symptoms instead of typing. Nexus Healthcare E-Clinics — at your PHC, railway station or panchayat bhawan, with a health worker who checks your BP, sugar and oxygen — are coming soon.' },
-  { q: 'Is my health data safe? Who can see it?', a: 'Only people you allow. Every request to see your records comes to you first, and you choose what they see and for how long. Every single view is written to an access log you can read anytime. Government officers only ever see anonymous totals — never your name. All data is stored in India under the DPDP Act, 2023.' },
-  { q: 'What does a consult cost?', a: 'Booking a visit at a doctor\'s hospital or clinic costs ₹100 online — that confirms your slot and keeps fake bookings away. You pay the doctor\'s own fee at the clinic. Video consults are paid online in full (most cost ₹150–₹500).' },
-  { q: 'Are the doctors real and verified?', a: 'Every doctor\'s registration number is checked against the national medical registry before they can see a single patient. You can see their qualification, languages and rating before you book.' },
-  { q: 'Which languages are supported?', a: 'All 22 official Indian languages — from Hindi, Bengali and Tamil to Santali, Dogri and Manipuri — plus regional ones like Bhojpuri and Awadhi, and 40+ world languages including Arabic, Spanish and Swahili. Pick yours from the globe button at the top. Speak in your language — your doctor sees the notes translated into theirs.' },
+  { q: 'Is my health data safe? Who can see it?', a: 'Only people you allow. Every request to see your records comes to you first, and you choose what they see and for how long. Every single view is written to an access log you can read anytime. Government officers only ever see anonymous totals — never your name. Your data is encrypted in storage and in transit.' },
+  { q: 'What does a consult cost?', a: 'Booking a visit at a doctor\'s hospital or clinic costs ₹100 online — that confirms your slot and keeps fake bookings away. You pay the doctor\'s own fee at the clinic. Video consults are paid online in full — you see each doctor\'s fee before you book.' },
+  { q: 'Are the doctors real and verified?', a: 'Before a doctor can see patients, our team checks their registration number on the official medical register and reviews their degree. You can see their qualification, languages and real patient reviews before you book.' },
+  { q: 'Which languages are supported?', a: 'All 22 official Indian languages — from Hindi, Bengali and Tamil to Santali, Dogri and Manipuri — plus regional ones like Bhojpuri and Awadhi, and 40+ world languages including Arabic, Spanish and Swahili. Pick yours from the globe button at the top. You can also speak your symptoms instead of typing.' },
   { q: 'What happens in an emergency?', a: 'If the symptom checker spots danger signs like chest pain or breathlessness, it skips the queue entirely: it tells you to call 108 straight away and shows the nearest hospital with its phone number, so you can get help without waiting.' },
 ];
 
 const PORTALS = [
   { icon: HeartPulse, title: 'Patients & families', text: 'Your Health Passport, doctors on video, medicines at your door — for you, your kids and your parents.', to: '/signup', cta: 'Create your passport' },
   { icon: Stethoscope, title: 'Doctors', text: 'Run your own clinic, work at one, or consult by video in your free hours. Patients within 20 km find you with your reviews and timings.', to: '/join?track=doctor', cta: 'Join as a doctor' },
-  { icon: Building2, title: 'Hospitals & clinics', text: 'List your hospital or clinic for free. Show live beds to the network, accept referrals with ETA and a summary.', to: '/join?track=facility', cta: 'List your facility' },
+  { icon: Building2, title: 'Hospitals & clinics', text: 'List your hospital or clinic for free. Show live beds to the network and accept referrals with a patient summary.', to: '/join?track=facility', cta: 'List your facility' },
   { icon: Pill, title: 'Pharmacies & distributors', text: 'E-prescriptions straight to your counter, live stock, and transfers when a district runs short.', to: '/login', cta: 'Pharmacy sign in' },
   { icon: FlaskConical, title: 'Labs', text: 'Orders in, structured reports out — and critical values reach the doctor in seconds.', to: '/login', cta: 'Lab sign in' },
   { icon: Landmark, title: 'Health officials', text: 'One live picture of beds, doctors, medicines and outbreaks — district to nation.', to: '/login', cta: 'Command center' },
@@ -106,9 +106,9 @@ export default function Landing() {
               <a href="#kiosk" className="btn lg secondary"><MapPin /> Find an E-Clinic</a>
             </div>
             <div className="l-trust">
-              <span><ShieldCheck size={16} /> DPDP Act compliant</span>
+              <span><ShieldCheck size={16} /> You approve every view</span>
               <span><Languages size={16} /> 70+ languages, every Indian one</span>
-              <span><Lock size={16} /> Data stays in India</span>
+              <span><Lock size={16} /> Encrypted health records</span>
             </div>
           </div>
 
@@ -222,22 +222,22 @@ export default function Landing() {
             <div className="l-cap">
               <div className="l-cap-icon green"><Stethoscope /></div>
               <h3>The nearest free doctor — even in another state</h3>
-              <p className="muted">Our triage checks how urgent it is and routes you to a doctor who speaks your language. If your district is full, a doctor in another state picks up.</p>
+              <p className="muted">Our symptom checker tells you how urgent it is, then shows verified doctors near you and online — filter by language, see who is free now, and book.</p>
             </div>
             <div className="l-cap">
               <div className="l-cap-icon clay"><QrCode /></div>
               <h3>One Health Passport for life</h3>
-              <p className="muted">Allergies, prescriptions, reports, vaccinations — in one place, readable by any doctor you allow, in their language. Linked with your ABHA ID.</p>
+              <p className="muted">Allergies, prescriptions, reports, vaccinations — in one place, readable by any doctor you allow. Add your ABHA number to keep it with you.</p>
             </div>
             <div className="l-cap">
               <div className="l-cap-icon sky"><Truck /></div>
               <h3>Medicines that find you</h3>
-              <p className="muted">We see stock across pharmacies and warehouses. If your local store is out, we find it in the next district and send it over.</p>
+              <p className="muted">See which verified chemists near you have your medicine, compare cheaper generics, and order for pickup or home delivery.</p>
             </div>
             <div className="l-cap">
               <div className="l-cap-icon sun"><Activity /></div>
               <h3>Outbreaks spotted early</h3>
-              <p className="muted">Anonymous lab results by pin code reveal dengue or flu spikes days earlier — so pharmacies stock up and officials act before hospitals fill.</p>
+              <p className="muted">Anonymous lab results by pin code help health officials notice rising dengue or flu early — no names are ever shared.</p>
             </div>
           </div>
         </div>
@@ -254,12 +254,11 @@ export default function Landing() {
             <h2>A small white box that brings the city&apos;s doctors to the village.</h2>
             <p className="muted">Placed at PHCs, railway stations, panchayat bhawans and pharmacies. Run by a trained local health worker, so no one needs a smartphone — or needs to read.</p>
             <ul className="l-checks">
-              <li><Check /> Touchscreen with voice guidance in 12+ languages</li>
-              <li><Check /> BP, SpO₂, temperature, weight and sugar — read automatically</li>
-              <li><Check /> HD video consult with a verified doctor</li>
+              <li><Check /> Touchscreen with voice guidance in your language</li>
+              <li><Check /> BP, SpO₂, temperature, weight and sugar checked by the health worker</li>
+              <li><Check /> Video consult with a verified doctor</li>
               <li><Check /> Prescription printed on the spot, sent to the nearest pharmacy</li>
-              <li><Check /> Keeps working offline for a full day and syncs later</li>
-            </ul>
+                          </ul>
           </div>
         </div>
       </section>
@@ -307,7 +306,7 @@ export default function Landing() {
             <div className="card flat"><Users className="l-pv-icon" /><h4>Consent for every view</h4><p className="muted small mb-0">Doctors and hospitals request access. You approve what they see, and for how long. Revoke anytime.</p></div>
             <div className="card flat"><Eye className="l-pv-icon" /><h4>See who looked</h4><p className="muted small mb-0">Every view and edit lands in an access log on your phone — with who, when and why.</p></div>
             <div className="card flat"><ShieldCheck className="l-pv-icon" /><h4>Emergencies, carefully</h4><p className="muted small mb-0">“Break-glass” access shows only critical info, expires in an hour, notifies you, and is reviewed by our team.</p></div>
-            <div className="card flat"><Lock className="l-pv-icon" /><h4>Encrypted, in India</h4><p className="muted small mb-0">AES-256 at rest, TLS in transit, stored in India. Officials see anonymous totals, never names.</p></div>
+            <div className="card flat"><Lock className="l-pv-icon" /><h4>Encrypted</h4><p className="muted small mb-0">Encrypted in storage and in transit. Officials see anonymous totals, never names.</p></div>
           </div>
         </div>
       </section>
@@ -340,7 +339,7 @@ export default function Landing() {
           <div className="l-cta">
             <div>
               <h2>Create your family&apos;s Health Passport today.</h2>
-              <p>Takes two minutes with your mobile number. Free, forever.</p>
+              <p>Takes two minutes with your email. Free for patients.</p>
             </div>
             <div className="row wrap" style={{ gap: 12 }}>
               <Link to="/signup" className="btn lg clay">Get started <ArrowRight /></Link>

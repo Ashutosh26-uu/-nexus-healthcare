@@ -138,7 +138,7 @@ export default function Signup() {
           <ul className="side-points">
             <li><Check size={16} /> Free, forever, for every family member</li>
             <li><Check size={16} /> Find the best doctors near you for your symptoms</li>
-            <li><Check size={16} /> Works with your ABHA and Ayushman card</li>
+            <li><Check size={16} /> Add your ABHA number or any ID — or skip it</li>
             <li><Check size={16} /> You approve every single access</li>
           </ul>
         </div>
