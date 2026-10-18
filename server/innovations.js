@@ -4,7 +4,8 @@
 const crypto = require('crypto');
 
 const clamp = (n, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, n));
-const ageOf = (dob) => (dob ? Math.floor((Date.now() - new Date(dob)) / (365.25 * 86400000)) : 40);
+// Unknown date of birth → null (never an assumed "40").
+const ageOf = (dob) => { const t = dob ? Date.parse(dob) : NaN; return Number.isFinite(t) ? Math.floor((Date.now() - t) / (365.25 * 86400000)) : null; };
 
 /* ─────────────────────────────────────────────────────────────
    1 ★  Swasthya Twin — a living health model per patient.
@@ -48,18 +49,25 @@ function twin(db, patient) {
   const kidney = has(/kidney|renal/);
   const heart = has(/heart|cardi|coronary/);
 
-  // Modifiable inputs for the what-if simulator (value, healthy target, unit).
-  const inputs = {
-    sys: { label: 'Systolic BP', value: v.sys ?? (hyper ? 148 : 124), ideal: 120, min: 90, max: 200, unit: 'mmHg', step: 1 },
-    hba1c: { label: 'HbA1c', value: v.hba1c ?? (diabetic ? 8.1 : 5.4), ideal: 5.6, min: 4, max: 14, unit: '%', step: 0.1 },
-    weight: { label: 'Weight', value: v.weight ?? 70, ideal: 65, min: 35, max: 150, unit: 'kg', step: 0.5 },
-    ldl: { label: 'LDL cholesterol', value: v.ldl ?? 118, ideal: 100, min: 50, max: 250, unit: 'mg/dL', step: 1 },
-    spo2: { label: 'Oxygen (SpO₂)', value: v.spo2 ?? (copd ? 94 : 98), ideal: 98, min: 80, max: 100, unit: '%', step: 1 },
+  // Modifiable inputs for the what-if simulator (value, healthy target, unit). Only real readings are used:
+  // a number the patient has never had measured starts at the healthy target with `measured: false`, so it
+  // adds nothing to the risk and the screen can say "not measured yet" instead of showing an invented reading.
+  const inp = (key, label, ideal, min, max, unit, step) => {
+    const real = Number.isFinite(v[key]) ? v[key] : null;
+    return { label, value: real ?? ideal, measured: real !== null, ideal, min, max, unit, step };
   };
+  const inputs = {
+    sys: inp('sys', 'Systolic BP', 120, 90, 200, 'mmHg', 1),
+    hba1c: inp('hba1c', 'HbA1c', 5.6, 4, 14, '%', 0.1),
+    weight: inp('weight', 'Weight', 65, 35, 150, 'kg', 0.5),
+    ldl: inp('ldl', 'LDL cholesterol', 100, 50, 250, 'mg/dL', 1),
+    spo2: inp('spo2', 'Oxygen (SpO₂)', 98, 80, 100, '%', 1),
+  };
+  const measuredCount = Object.values(inputs).filter((x) => x.measured).length;
 
   // Transparent linear risk model. score = clamp(base + Σ coef·(value − ideal)·dir). The client
   // recomputes the same formula as sliders move, so the simulation is instant and honest.
-  const ageF = clamp((age - 30) * 0.9, 0, 45);
+  const ageF = age === null ? 0 : clamp((age - 30) * 0.9, 0, 45);
   const risks = [
     { key: 'cardio', label: 'Heart attack or stroke', horizon: 10, icon: 'heart',
       base: 6 + ageF + (heart ? 18 : 0) + (diabetic ? 8 : 0) + (hyper ? 6 : 0),
@@ -83,15 +91,16 @@ function twin(db, patient) {
   });
 
   const overall = Math.round(risks.reduce((s, r) => s + r.score, 0) / risks.length);
-  // Biological "health age" relative to chronological age.
-  const healthAge = Math.round(age + (overall - 25) * 0.35);
+  // Biological "health age" relative to chronological age — only when the date of birth is known.
+  const healthAge = age === null ? null : Math.round(age + (overall - 25) * 0.35);
 
   const tips = [];
+  if (!measuredCount) tips.push({ icon: 'activity', text: 'No BP, sugar, weight, cholesterol or oxygen readings on record yet. Add one in the Health tracker (or at your next visit) so this model can use your real numbers.' });
   if (inputs.hba1c.value > inputs.hba1c.ideal + 0.5) tips.push({ icon: 'droplet', text: `Bringing HbA1c from ${inputs.hba1c.value}% toward 6.5% could cut your diabetes-complication risk sharply — try the diet plan and daily walk.` });
   if (inputs.sys.value > 135) tips.push({ icon: 'heart', text: `Your blood pressure (${inputs.sys.value} mmHg) is a top driver of heart risk. Taking BP medicine regularly and cutting salt helps most.` });
   if (inputs.weight.value > inputs.weight.ideal + 5) tips.push({ icon: 'activity', text: `Losing ${Math.round(inputs.weight.value - inputs.weight.ideal)} kg would lower several risks at once.` });
   if (inputs.spo2.value < 95) tips.push({ icon: 'wind', text: `Low oxygen readings suggest your lungs need attention — keep your inhaler handy and avoid smoke and dust.` });
-  if (!tips.length) tips.push({ icon: 'heart', text: 'Your numbers look well managed. Keep up the regular check-ups to stay ahead.' });
+  if (!tips.length) tips.push({ icon: 'heart', text: 'Your recorded numbers look well managed. Keep up the regular check-ups to stay ahead.' });
 
   const dataPoints = db.consults.filter((c) => c.patientId === patient.id).length + db.labOrders.filter((o) => o.patientId === patient.id).length + db.prescriptions.filter((r) => r.patientId === patient.id).length;
 
@@ -99,7 +108,7 @@ function twin(db, patient) {
     patient: { id: patient.id, name: patient.name, age },
     healthAge, overall, overallBand: overall >= 60 ? 'high' : overall >= 30 ? 'moderate' : 'low',
     inputs, risks, tips,
-    dataPoints,
+    dataPoints, measuredCount,
     note: 'These are estimates to discuss with your doctor — not a diagnosis. They get sharper the longer you use Nexus Healthcare.',
   };
 }
@@ -124,7 +133,7 @@ function forecast(db, { scopeDistrict } = {}) {
     const fac = db.facilities.find((f) => f.pincode === pin) || {};
     for (const dis of DISEASES) {
       // Signal 1: lab positives in this pin over the last 14 days.
-      const labPos = db.labOrders.filter((o) => o.pincode === pin && recent(o.reportedAt, 14) && o.results?.some((r) => dis.labRe.test(r.name) && /pos|high|\b[3-9]\d*\b/i.test(String(r.value)))).length;
+      const labPos = db.labOrders.filter((o) => o.pincode === pin && recent(o.reportedAt, 14) && o.results?.some((r) => dis.labRe.test(r.name) && (r.flag === 'positive' || /^\s*(positive|reactive|detected)\b/i.test(String(r.value))))).length;
       // Signal 2: kiosk/teleconsult symptom reports matching the disease.
       const sympt = db.consults.filter((c) => recent(c.createdAt, 14) && pinOfPatient.get(c.patientId) === pin && dis.symptomRe.test(`${c.triage?.symptoms || ''} ${c.triage?.note || ''}`)).length;
       // Signal 3: pharmacy sell-through — low stock of related drugs in this pin's pharmacies.
@@ -132,16 +141,18 @@ function forecast(db, { scopeDistrict } = {}) {
       const lowStock = db.inventory.filter((i) => pharmas.includes(i.facilityId) && dis.drugs.some((d) => String(i.drug || '').toLowerCase().includes(d.toLowerCase())) && i.qty <= (i.safetyStock || 0) * 1.5).length;
       // Signal 4: existing confirmed/open outbreak alerts.
       const alertBoost = db.alerts.filter((a) => a.type === 'outbreak' && a.pincode === pin && dis.labRe.test(a.disease || '') && ['open', 'confirmed'].includes(a.status)).reduce((s, a) => s + (a.status === 'confirmed' ? 2 : 1) * (a.multiplier || 1), 0);
-      // Seasonal/weather factor (synthetic: monsoon months push dengue/gastro).
+      // Season factor from the calendar month (monsoon months push dengue/gastro). There is no weather feed:
+      // this only ever scales real signals — on its own it never creates a forecast.
       const month = new Date().getMonth();
       const monsoon = month >= 5 && month <= 9 ? 1 : 0.4;
       const weatherSig = dis.weather * monsoon;
 
+      // Project 3 weeks with a growth factor driven by the signal strength; confidence from how many signals agree.
+      const signalsPresent = [labPos > 0, sympt > 0, lowStock > 0, alertBoost > 0].filter(Boolean).length;
+      if (!signalsPresent) continue; // no lab, kiosk, pharmacy or alert data for this pin → nothing to forecast
       const signal = labPos * 3 + sympt * 1.2 + lowStock * 2 + alertBoost * 4 + weatherSig * 3;
       if (signal < 1.5) continue;
       const current = labPos + Math.round(sympt / 2);
-      // Project 3 weeks with a growth factor driven by the signal strength; confidence from how many signals agree.
-      const signalsPresent = [labPos > 0, sympt > 0, lowStock > 0, alertBoost > 0].filter(Boolean).length;
       const growth = 1 + Math.min(0.9, signal / 25);
       const base = Math.max(current, Math.round(signal));
       const weeks = [0, 1, 2, 3].map((w) => Math.round(base * growth ** w));
@@ -155,7 +166,7 @@ function forecast(db, { scopeDistrict } = {}) {
           { key: 'labs', label: 'Lab positives', value: labPos, strength: clamp(labPos * 25) },
           { key: 'symptoms', label: 'Kiosk symptoms', value: sympt, strength: clamp(sympt * 12) },
           { key: 'pharmacy', label: 'Pharmacy sell-through', value: lowStock, strength: clamp(lowStock * 30) },
-          { key: 'weather', label: 'Weather & season', value: monsoon > 0.8 ? 'Monsoon' : 'Off-season', strength: clamp(weatherSig * 30) },
+          { key: 'weather', label: 'Season (calendar month — no weather feed)', value: monsoon > 0.8 ? 'Monsoon' : 'Off-season', strength: clamp(weatherSig * 30) },
         ],
         recommendation: dis.key === 'dengue'
           ? `Pre-position ORS, paracetamol and NS1 kits in ${fac.district}; brief doctors to test febrile patients; issue a mosquito-control advisory.`
@@ -171,6 +182,8 @@ function forecast(db, { scopeDistrict } = {}) {
 /* ─────────────────────────────────────────────────────────────
    4 ★  Consent Wallet + Data Dividend — donate anonymised data to approved research, earn
    health credits, spend them on tests/discounts. Ledger is a tamper-evident hash chain.
+   STUDIES / REWARDS below are ILLUSTRATIONS (no real study, ethics approval or partner organisation):
+   index.js serves them on the demo network only; a live network shows none (preview state).
    ───────────────────────────────────────────────────────────── */
 const STUDIES = [
   { id: 'study_dm', title: 'Diabetes care in Tier-3 towns', org: 'AIIMS Research (ethics-approved)', data: ['anonymised vitals', 'HbA1c trends'], credits: 120, blurb: 'Help improve diabetes care for rural India. Only anonymised numbers are shared — never your name.' },
@@ -187,7 +200,7 @@ const REWARDS = [
 function walletFor(db, patient) {
   db.wallets = db.wallets || {};
   if (!db.wallets[patient.id]) {
-    // Seed a believable starting ledger.
+    // Demo network only (index.js never creates a wallet on a live network): an illustrative starting ledger.
     const w = { patientId: patient.id, credits: 0, donations: [], ledger: [] };
     addLedger(w, 'welcome', 40, 'Welcome bonus for creating your Health Passport');
     db.wallets[patient.id] = w;
@@ -259,8 +272,8 @@ function openCapsule(patient, blobB64, key) {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   8 ★  Kiosk Diagnostic Suite — AI screenings a kiosk can run (simulated here; real builds plug
-   in sensors + validated models). Each returns a finding + whether a doctor should see it.
+   8 ★  Kiosk Diagnostic Suite — AI screenings a kiosk can run. SIMULATED (random findings): served on the
+   demo network only — index.js refuses them on a live network until real sensors + validated models exist.
    ───────────────────────────────────────────────────────────── */
 const SCREENINGS = [
   { key: 'anaemia', label: 'Anaemia screen', how: 'Photo of lower eyelid & nail bed', icon: 'eye', unit: 'g/dL', org: 'Hb estimate' },
@@ -290,22 +303,28 @@ function band(value, flag, finding, advice, extra = {}) {
    14 ★  Claims-ready records — auto-structure a completed visit into an NHCX-style insurance
    claim, with duplicate/fraud checks. Makes hospitals get paid faster.
    ───────────────────────────────────────────────────────────── */
+// Amounts are only what Nexus actually recorded for this visit (paid online, paid at the desk, medicine orders
+// and lab bookings tied to its prescription) — never an assumed fee or a per-item guess. Nothing is sent to
+// NHCX: this is a draft the hospital submits itself (`submitted: false`).
 function buildClaim(db, consult) {
   const p = db.patients.find((x) => x.id === consult.patientId) || {};
   const doc = db.doctors.find((x) => x.id === consult.doctorId) || {};
   const rx = db.prescriptions.find((r) => r.consultId === consult.id);
-  const labs = db.labOrders.filter((o) => o.doctorId === consult.doctorId && o.patientId === consult.patientId);
-  const consultFee = doc.fee || 200;
-  const drugCost = rx ? rx.items.length * 60 : 0;
-  const labCost = labs.length * 150;
+  const money = (n) => Math.round(Number(n) * 100) / 100;
+  const paidConsult = (db.payments || []).filter((x) => x.purpose === 'consult' && x.refId === consult.id && x.status === 'paid')
+    .reduce((s, x) => s + Number(x.gross ?? x.amount ?? 0), 0) + (Number(consult.deskFee) || 0);
+  const medOrders = rx ? (db.medOrders || []).filter((o) => o.rxId === rx.id && ['delivered', 'collected'].includes(o.status) && Number.isFinite(Number(o.total))) : [];
+  const labs = rx ? db.labOrders.filter((o) => o.rxId === rx.id && o.booking?.paidAt && Number.isFinite(Number(o.booking.price))) : [];
+  const mode = consult.mode === 'in_person' ? 'In-person consultation' : consult.kioskId ? 'E-Clinic teleconsultation' : 'Teleconsultation';
   const items = [
-    { code: 'CONSULT', desc: `Teleconsultation — ${doc.specialty || 'General Medicine'}`, amount: consultFee },
-    ...(rx ? [{ code: 'PHARMA', desc: `Medicines (${rx.items.length})`, amount: drugCost }] : []),
-    ...(labs.length ? [{ code: 'LAB', desc: `Lab tests (${labs.length})`, amount: labCost }] : []),
+    { code: 'CONSULT', desc: `${mode} — ${doc.specialty || 'General Medicine'}`, amount: paidConsult > 0 ? money(paidConsult) : null },
+    ...(medOrders.length ? [{ code: 'PHARMA', desc: `Medicines (${medOrders.length} order${medOrders.length === 1 ? '' : 's'})`, amount: money(medOrders.reduce((s, o) => s + Number(o.total), 0)) }] : []),
+    ...(labs.length ? [{ code: 'LAB', desc: `Lab tests (${labs.reduce((s, o) => s + o.tests.length, 0)})`, amount: money(labs.reduce((s, o) => s + Number(o.booking.price), 0)) }] : []),
   ];
-  const total = items.reduce((s, i) => s + i.amount, 0);
+  const total = money(items.reduce((s, i) => s + (i.amount || 0), 0));
   // Fraud / quality checks.
   const checks = [];
+  checks.push({ key: 'amount', label: 'Billed amount on record', pass: items.every((i) => i.amount !== null), note: items.some((i) => i.amount === null) ? 'No payment recorded on Nexus for the consultation — add the bill before submitting' : 'Every line comes from a recorded payment' });
   const dupe = db.consults.filter((c) => c.patientId === consult.patientId && c.doctorId === consult.doctorId && c.status === 'completed' && Math.abs(new Date(c.completedAt || c.createdAt) - new Date(consult.completedAt || consult.createdAt)) < 2 * 3600000 && c.id !== consult.id).length;
   checks.push({ key: 'duplicate', label: 'Duplicate-visit check', pass: dupe === 0, note: dupe ? `${dupe} near-identical visit(s) found` : 'No duplicate billing' });
   checks.push({ key: 'diagnosis', label: 'Diagnosis coded', pass: Boolean(consult.diagnosis), note: consult.diagnosis ? `ICD-ready: ${consult.diagnosis}` : 'Missing diagnosis' });
@@ -313,11 +332,12 @@ function buildClaim(db, consult) {
   checks.push({ key: 'identity', label: 'Verified patient ID', pass: Boolean(p.abha || p.userId), note: p.abha ? 'ABHA-linked' : 'Local ID' });
   const fraudScore = Math.round((checks.filter((c) => !c.pass).length / checks.length) * 100);
   return {
-    claimId: `NHCX-${consult.id.slice(-6).toUpperCase()}`,
+    claimId: `CLM-${consult.id.slice(-6).toUpperCase()}`,
     patient: { id: p.id, name: p.name, abha: p.abha || null },
     provider: doc.name, date: consult.completedAt || consult.createdAt,
     diagnosis: consult.diagnosis || '—', items, total,
     checks, fraudScore, status: fraudScore === 0 ? 'ready' : 'review',
+    draft: true, submitted: false, nhcxConnected: false,
   };
 }
 
@@ -349,26 +369,45 @@ function familyGraph(db, guardianUserId, members) {
 /* ─────────────────────────────────────────────────────────────
    11  Outcome-verified doctor score — a private quality score from follow-up outcomes.
    ───────────────────────────────────────────────────────────── */
+// Every metric is counted from this doctor's own records; a metric with too little data is null (the screen
+// shows "not enough data yet"), and there is no score until at least MIN_SCORED visits can be judged.
+// Hospital readmissions aren't recorded on Nexus, so that metric is always null for now.
+const MIN_SCORED = 5;
 function doctorScore(db, doc) {
+  const DAY = 86400000;
+  const now = Date.now();
   const done = db.consults.filter((c) => c.doctorId === doc.id && c.status === 'completed');
-  const withRx = done.filter((c) => db.prescriptions.some((r) => r.consultId === c.id)).length;
-  const followUps = done.filter((c) => /follow/i.test(c.triage?.symptoms || '')).length;
-  // Synthetic-but-plausible outcome metrics (real builds derive these from the full journey).
-  const seed = [...doc.id].reduce((s, ch) => s + ch.charCodeAt(0), 0);
-  const recovery = 78 + (seed % 16); // % who recovered / didn't bounce back
-  const readmit = 3 + (seed % 7); // % readmitted within 30 days
-  const adherence = 70 + ((seed * 3) % 25); // % who collected & took meds
-  const score = Math.round(recovery * 0.5 + adherence * 0.3 + (100 - readmit * 4) * 0.2);
+  const followUps = done.filter((c) => c.followUp).length;
+  // "Didn't need to come back": a first visit completed 14+ days ago with no unplanned visit (to anyone) in the 14 days after.
+  const byPatient = new Map();
+  for (const c of db.consults) if (c.status !== 'cancelled' && c.status !== 'expired') { if (!byPatient.has(c.patientId)) byPatient.set(c.patientId, []); byPatient.get(c.patientId).push(c); }
+  const judged = done.filter((c) => !c.followUp && Date.parse(c.completedAt) <= now - 14 * DAY);
+  const returned = judged.filter((c) => {
+    const t = Date.parse(c.completedAt);
+    return (byPatient.get(c.patientId) || []).some((x) => x.id !== c.id && !x.followUp && Date.parse(x.createdAt) > t && Date.parse(x.createdAt) <= t + 14 * DAY);
+  }).length;
+  const recovery = judged.length >= MIN_SCORED ? Math.round(((judged.length - returned) / judged.length) * 100) : null;
+  // Medicines actually bought: prescriptions (3+ days old) dispensed/collected/delivered, or with a medicine order.
+  const rxs = db.prescriptions.filter((r) => r.doctorId === doc.id && (r.items || []).length && Date.parse(r.createdAt) <= now - 3 * DAY);
+  const filled = rxs.filter((r) => r.dispensedAt || r.collectedAt || r.deliveredAt || ['dispensed', 'collected', 'delivered', 'out_for_delivery'].includes(r.status)
+    || (db.medOrders || []).some((o) => o.rxId === r.id && !['cancelled', 'declined', 'awaiting_payment'].includes(o.status))).length;
+  const adherence = rxs.length >= MIN_SCORED ? Math.round((filled / rxs.length) * 100) : null;
+  const parts = [[recovery, 0.6], [adherence, 0.4]].filter(([v]) => v !== null);
+  const weight = parts.reduce((s, [, w]) => s + w, 0);
+  const score = parts.length ? Math.round(parts.reduce((s, [v, w]) => s + v * w, 0) / weight) : null;
   return {
-    score, band: score >= 85 ? 'excellent' : score >= 70 ? 'good' : 'fair',
+    score, band: score === null ? null : score >= 85 ? 'excellent' : score >= 70 ? 'good' : 'fair',
     metrics: [
-      { key: 'recovery', label: 'Recovered without return', value: recovery, unit: '%', good: recovery >= 80 },
-      { key: 'readmit', label: '30-day readmission', value: readmit, unit: '%', good: readmit <= 6, invert: true },
-      { key: 'adherence', label: 'Medicine adherence', value: adherence, unit: '%', good: adherence >= 80 },
-      { key: 'followup', label: 'Follow-ups completed', value: followUps, unit: '', good: true },
+      { key: 'recovery', label: 'Didn\'t need an unplanned visit within 14 days', value: recovery, unit: '%', good: recovery === null ? null : recovery >= 80, basedOn: judged.length },
+      { key: 'readmit', label: '30-day readmission', value: null, unit: '%', good: null, invert: true, basedOn: 0, note: 'Hospital admissions aren\'t recorded on Nexus yet.' },
+      { key: 'adherence', label: 'Prescriptions filled', value: adherence, unit: '%', good: adherence === null ? null : adherence >= 80, basedOn: rxs.length },
+      { key: 'followup', label: 'Follow-ups completed', value: followUps, unit: '', good: true, basedOn: done.length },
     ],
     basedOn: done.length,
-    note: 'A private quality score from real follow-up outcomes — used to route patients to doctors who get the best results, not just the fastest.',
+    minimum: MIN_SCORED,
+    note: score === null
+      ? `Your score appears once at least ${MIN_SCORED} visits or prescriptions are old enough to judge. Everything here is counted from your own Nexus records.`
+      : 'A private score counted from your own Nexus records: unplanned return visits within 14 days and whether prescriptions were filled. Hospital readmissions aren\'t tracked yet.',
   };
 }
 
@@ -378,40 +417,32 @@ function doctorScore(db, doc) {
 function authenticityScan(db, code) {
   const clean = String(code || '').trim().toUpperCase();
   if (!clean) return { status: 'invalid', message: 'Please scan or type the code printed on the pack.' };
-  // A real batch we know about (matches seeded inventory batches) → genuine.
-  const batch = db.inventory.find((i) => (i.batch || '').toUpperCase() === clean);
+  // Only Nexus's own records are checked: batches that verified chemists / warehouses have entered into stock,
+  // and batches a chemist set aside as recalled. There is no national track-and-trace connection, so an
+  // unknown code is "not in our records" — never declared genuine or fake.
+  const verifiedFac = new Set((db.facilities || []).filter((f) => f.verified).map((f) => f.id));
+  const recalled = (db.pharmacyReturns || []).find((r) => r.reason === 'recalled' && String(r.batch || '').toUpperCase() === clean);
+  if (recalled) return { status: 'recall', drug: recalled.drug, batch: recalled.batch, message: `A Nexus chemist has set this ${recalled.drug} batch (${recalled.batch}) aside as recalled. Don't use it — return it to your pharmacy and ask for a replacement.` };
+  const batch = db.inventory.find((i) => i.batch && verifiedFac.has(i.facilityId) && String(i.batch).toUpperCase() === clean);
   if (batch) {
-    const expired = new Date(batch.expiry) < new Date();
-    return { status: expired ? 'expired' : 'genuine', drug: batch.drug, batch: batch.batch, expiry: batch.expiry,
-      message: expired ? `This ${batch.drug} (batch ${batch.batch}) expired on ${batch.expiry}. Do not use it.` : `Genuine ${batch.drug}, batch ${batch.batch}, verified against the national supply grid. Expires ${batch.expiry}.` };
+    const expired = batch.expiry && new Date(batch.expiry) < new Date();
+    return { status: expired ? 'expired' : 'genuine', drug: batch.drug, batch: batch.batch, expiry: batch.expiry || null,
+      message: expired ? `This ${batch.drug} (batch ${batch.batch}) expired on ${batch.expiry}. Do not use it.` : `${batch.drug}, batch ${batch.batch}, matches stock recorded by a verified Nexus chemist or warehouse${batch.expiry ? `. Expires ${batch.expiry}` : ''}. This checks Nexus records only, not the national track-and-trace system.` };
   }
-  // Deterministic verdict for unknown codes so the demo is stable.
-  const h = [...clean].reduce((s, c) => s + c.charCodeAt(0), 0);
-  if (h % 7 === 0) return { status: 'recall', message: 'This batch has an active safety recall. Return it to the pharmacy and ask for a replacement.' };
-  if (h % 3 === 0) return { status: 'fake', message: '⚠️ We could not verify this pack against the supply grid. It may be counterfeit — do not take it and report it to your pharmacist.' };
-  return { status: 'genuine', drug: 'Verified medicine', batch: clean, message: 'This pack checks out against the national track-and-trace records.' };
+  return { status: 'unknown', batch: clean, message: 'This code isn\'t in Nexus stock records. That doesn\'t mean the medicine is fake — Nexus can\'t check national track-and-trace yet. If the pack looks damaged or different from usual, ask your pharmacist.' };
 }
 
 /* ─────────────────────────────────────────────────────────────
    13  Federated Learning network — training status across member hospitals (no data leaves site).
    ───────────────────────────────────────────────────────────── */
+// Not running yet: no model is trained and no hospital sends updates, so there are no accuracies, rounds or
+// sync times to show — only the real hospitals that could take part. `preview: true` = label it "Coming soon".
 function federatedStatus(db) {
-  const hospitals = db.facilities.filter((f) => f.type === 'hospital');
-  const models = [
-    { key: 'triage', label: 'Triage urgency model', version: '2.4', accuracy: 91.2, delta: +0.6 },
-    { key: 'retinopathy', label: 'Diabetic retinopathy', version: '1.3', accuracy: 88.7, delta: +1.1 },
-    { key: 'outbreak', label: 'Outbreak forecaster', version: '3.1', accuracy: 84.0, delta: +0.9 },
-  ];
-  const nodes = hospitals.map((h, i) => ({
-    id: h.id, name: h.name, district: h.district,
-    status: h.verified ? (i % 4 === 3 ? 'syncing' : 'contributing') : 'onboarding',
-    rounds: h.verified ? 40 + (i * 7) % 120 : 0,
-    lastUpdate: `${(i * 3 + 2) % 24}h ago`,
-  }));
+  const nodes = db.facilities.filter((f) => f.type === 'hospital' && f.verified)
+    .map((h) => ({ id: h.id, name: h.name, district: h.district || null, status: 'not_started', rounds: 0, lastUpdate: null }));
   return {
-    models, nodes,
-    totalRounds: nodes.reduce((s, n) => s + n.rounds, 0),
-    privacyNote: 'Models train inside each hospital; only encrypted model updates leave — never a single patient record. Every hospital that joins makes the AI better for all of them.',
+    preview: true, running: false, models: [], nodes, totalRounds: 0,
+    privacyNote: 'Planned: models would train inside each hospital and only encrypted model updates would leave — never a patient record. Federated training is not switched on yet.',
   };
 }
 
@@ -422,12 +453,12 @@ function scribeDraft(db, consult) {
   const vit = Object.entries({ BP: v.bp, Pulse: v.pulse, 'SpO₂': v.spo2 != null ? `${v.spo2}%` : null, Temp: v.temp != null ? `${v.temp}°F` : null, Sugar: v.sugar }).filter(([, x]) => x != null).map(([k, x]) => `${k} ${x}`).join(', ');
   return {
     draft: [
-      `S (subjective): ${p.name || 'Patient'}, ${ageOf(p.dob)}y ${p.gender || ''}. ${t.symptoms || 'Symptoms not recorded.'}${(p.conditions || []).length ? ` Known: ${p.conditions.join(', ')}.` : ''}${(p.allergies || []).length ? ` Allergies: ${p.allergies.join(', ')}.` : ''}`,
+      `S (subjective): ${p.name || 'Patient'}${ageOf(p.dob) !== null ? `, ${ageOf(p.dob)}y` : ''} ${p.gender || ''}. ${t.symptoms || 'Symptoms not recorded.'}${(p.conditions || []).length ? ` Known: ${p.conditions.join(', ')}.` : ''}${(p.allergies || []).length ? ` Allergies: ${p.allergies.join(', ')}.` : ''}`,
       `O (objective): ${vit || 'Vitals not captured.'} AI triage: ${(t.level || '').replace('_', ' ')}${t.score != null ? ` (score ${t.score})` : ''}.`,
       `A (assessment): [doctor to confirm] — differential based on above.`,
       `P (plan): [medicines, tests, follow-up].`,
     ].join('\n'),
-    note: 'Draft generated from the triage and vitals. Edit and sign before saving — the AI never finalises a note on its own.',
+    note: 'A template filled from the recorded triage and vitals (no AI model, nothing inferred). Edit and sign before saving.',
   };
 }
 

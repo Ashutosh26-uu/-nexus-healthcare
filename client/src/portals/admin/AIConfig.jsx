@@ -14,11 +14,11 @@ const WEIGHTS = [
   { key: 'distancePenalty', label: 'Distance penalty', max: 30, sign: '−', hint: 'Only applied when a physical visit is needed.' },
 ];
 
-/* Two illustrative doctors so the effect of each weight is visible while dragging. */
+/* Three made-up doctor profiles (clearly labelled as such) so the effect of each weight is visible while dragging. */
 const EXAMPLE = [
-  { name: 'Dr. A · Pediatrics, Lucknow', urgency: true, specialty: true, language: true, wait: 14, far: true },
-  { name: 'Dr. B · General, Bengaluru', urgency: true, specialty: false, language: false, wait: 2, far: true },
-  { name: 'Dr. C · Pediatrics, Barabanki', urgency: true, specialty: true, language: true, wait: 22, far: false },
+  { name: 'Doctor A · right specialty, busy', urgency: true, specialty: true, language: true, wait: 14, far: true },
+  { name: 'Doctor B · other specialty, free', urgency: true, specialty: false, language: false, wait: 2, far: true },
+  { name: 'Doctor C · right specialty, nearby', urgency: true, specialty: true, language: true, wait: 22, far: false },
 ];
 const scoreOf = (w, d, physical) => (d.urgency ? w.urgency : 0) + (d.specialty ? w.specialty : 0) + (d.language ? w.language : 0) - d.wait * w.waitPenalty - (physical && d.far ? w.distancePenalty : 0);
 
@@ -90,8 +90,8 @@ export default function AIConfig() {
         if (!draft) return null;
         const w = draft.routing;
         const scored = EXAMPLE.map((d) => ({ ...d, score: scoreOf(w, d, physical) })).sort((a, b) => b.score - a.score);
-        const history = [...cfg.history].filter((h) => !h.hidden).reverse();
-        const hasSnap = (v) => cfg.history.some((h) => h.version === v && h.snapshot);
+        const history = [...(cfg.history || [])].filter((h) => !h.hidden).reverse();
+        const hasSnap = (v) => (cfg.history || []).some((h) => h.version === v && h.snapshot);
 
         return (
           <>
@@ -136,7 +136,7 @@ export default function AIConfig() {
                   </div>
                   <div className="ad-example mt-2">
                     <div className="row between wrap" style={{ gap: 8 }}>
-                      <strong className="small">Live example · child with high fever, speaks Awadhi</strong>
+                      <strong className="small">Worked example · made-up doctors, not real people or data</strong>
                       <label className="check tiny"><input type="checkbox" checked={physical} onChange={(e) => setPhysical(e.target.checked)} /> needs a physical visit</label>
                     </div>
                     {scored.map((d, i) => (
@@ -184,7 +184,7 @@ export default function AIConfig() {
                           <span className="ad-v">v{h.version}</span>
                           <div className="grow" style={{ minWidth: 0 }}>
                             <div className="small">{h.note}</div>
-                            <div className="tiny muted">{h.by} · {fmtDateTime(h.at)}</div>
+                            <div className="tiny muted">{h.by || 'System'}{h.at ? ` · ${fmtDateTime(h.at)}` : ''}</div>
                           </div>
                           {current ? <StatusBadge status="active">Live</StatusBadge> : (
                             <Button size="sm" variant="ghost" icon={RotateCcw} onClick={() => setRollback(h.version)} title={hasSnap(h.version) ? 'Restore this version' : 'Seeded versions only have notes'}>
@@ -195,7 +195,7 @@ export default function AIConfig() {
                       );
                     })}
                   </ol>
-                  <p className="tiny muted mb-0">Older seeded versions carry notes only; snapshots are kept for every version saved from this console.</p>
+                  {history.some((h) => !hasSnap(h.version) && h.version !== cfg.version) && <p className="tiny muted mb-0">Older versions without a snapshot carry notes only; snapshots are kept for every version saved from this console.</p>}
                 </Card>
               </div>
             </div>

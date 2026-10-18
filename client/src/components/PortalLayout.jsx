@@ -6,6 +6,7 @@ import LanguagePicker from './LanguagePicker';
 import { LocationChip, openCookieSettings, openLocationSettings } from '../consent';
 import { useAuth, ROLE_LABEL } from '../auth';
 import { api, subscribe } from '../api';
+import { useSupport, telHref } from '../config';
 import { Avatar, timeAgo, cx, Modal, Field, Button, useToast } from './ui';
 import './portal.css';
 
@@ -18,6 +19,7 @@ const ResetPassword = lazy(() => import('./ResetPassword'));
  */
 export default function PortalLayout({ portal, nav, children, headerExtra }) {
   const { user, facility, signOut } = useAuth();
+  const support = useSupport();
   const [open, setOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -88,7 +90,7 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
           )}
           <div className="help-card">
             <strong>Need a hand?</strong>
-            <span>Call 1800-200-4455 or tap the chat bubble.</span>
+            <span>{support.phone ? <>Call <a href={telHref(support.phone)} translate="no">{support.phone}</a> or tap the chat bubble.</> : 'Tap the chat bubble to ask Saathi.'}</span>
           </div>
         </div>
       </aside>

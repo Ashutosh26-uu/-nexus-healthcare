@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { MapPin, CalendarClock, CheckCircle2, RefreshCw } from 'lucide-react';
-import { api } from '../../api';
+import { api, subscribe } from '../../api';
 import { fmtDateTime, cx } from '../../components/ui';
 import QR from '../../components/QR';
 
@@ -22,7 +22,11 @@ export default function VisitPass({ consultId, compact }) {
       else if (p.ahead != null) timer.current = setTimeout(load, 20000); // waiting with a token: keep "people ahead" fresh
     }).catch((e) => alive && setError(e.message));
     load();
-    return () => { alive = false; clearTimeout(timer.current); };
+    // Live: reception checking you in (or the queue moving) shows here at once, not on the next timer tick.
+    const off = subscribe((topics) => {
+      if (topics.includes('all') || topics.some((t) => t === 'queue' || t === 'consults' || t === `consult:${consultId}`)) load();
+    });
+    return () => { alive = false; clearTimeout(timer.current); off(); };
   }, [consultId]);
 
   useEffect(() => {

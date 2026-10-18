@@ -14,7 +14,8 @@ import Actions from './Actions';
 import Reports, { ReportView } from './Reports';
 import './command.css';
 
-const TOPICS = ['gov', 'alerts', 'beds', 'supply', 'advisories', 'doctors', 'kiosks'];
+// Officials hear every topic; these are the ones that change what the overview shows (beds, stock, transfers, consults today).
+const TOPICS = ['gov', 'alerts', 'beds', 'supply', 'advisories', 'doctors', 'kiosks', 'pharmacy', 'dispatch', 'consults', 'hospital'];
 
 function LiveStamp({ data }) {
   const [at, setAt] = useState(() => new Date().toISOString());

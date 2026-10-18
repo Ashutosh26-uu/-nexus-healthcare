@@ -15,19 +15,6 @@ const TIPS = [
   'The ASHA didi can speak to the doctor for you if you prefer.',
 ];
 
-function useDrift(base) {
-  const [v, setV] = useState(base);
-  useEffect(() => {
-    if (!base) return undefined;
-    const tick = () => setV({ ...base, pulse: base.pulse ? Math.round(base.pulse + (Math.random() - 0.5) * 6) : base.pulse, spo2: base.spo2 ? Math.min(100, Math.round(base.spo2 + (Math.random() - 0.5) * 2)) : base.spo2 });
-    tick();
-    const id = setInterval(tick, 2500);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(base)]);
-  return v;
-}
-
 function Timer({ since }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []);
@@ -46,7 +33,7 @@ function Waiting({ c, t, onCancel, cancelling }) {
         <div className="k-wait-num"><small>No.</small>{pos}</div>
       </div>
       <h2 className="k-title">{t('position', { n: pos })}</h2>
-      <p className="k-sub">About {Math.max(2, pos * 6)} minutes. Please stay seated — we'll chime when the doctor joins.</p>
+      <p className="k-sub">{pos > 1 ? `${pos - 1} ${pos - 1 === 1 ? 'person is' : 'people are'} ahead of you.` : 'You are next.'} Please stay seated — this screen changes as soon as the doctor joins.</p>
       <div className="k-docchip">
         <Avatar name={c.doctorName} size="lg" />
         <div>
@@ -64,7 +51,8 @@ function Waiting({ c, t, onCancel, cancelling }) {
 function InCall({ c, t, vitals, onSend }) {
   const [msg, setMsg] = useState('');
   const endRef = useRef(null);
-  const v = useDrift(vitals);
+  // Exactly what was recorded at this kiosk — no simulated movement.
+  const v = vitals;
   // The kiosk is the patient's side of the call (the operator's account is allowed on its own consults).
   const audioOnly = c.mode === 'audio';
   const call = useCall({ consultId: c.id, role: 'patient', audioOnly, enabled: c.mode !== 'chat' });
@@ -103,13 +91,13 @@ function InCall({ c, t, vitals, onSend }) {
         <div className="k-video-ctl">
           <button type="button" className={cx(muted && 'off')} onClick={call.toggleMute} disabled={!localStream} aria-label={muted ? 'Unmute microphone' : 'Mute microphone'} aria-pressed={muted}>{muted ? <MicOff /> : <Mic />}</button>
           {!audioOnly && <button type="button" className={cx(cameraOff && 'off')} onClick={call.toggleCamera} disabled={!localStream?.getVideoTracks().length} aria-label={cameraOff ? 'Turn camera on' : 'Turn camera off'} aria-pressed={cameraOff}>{cameraOff ? <VideoOff /> : <Video />}</button>}
-          <span className="k-video-cap"><Languages size={16} />Live captions in {c.patientLanguage || 'Hindi'}</span>
+          {c.patientLanguage && <span className="k-video-cap"><Languages size={16} />Patient speaks {c.patientLanguage}</span>}
         </div>
       </div>
       <aside className="k-callside">
         <div className="k-callbox">
-          <h3>Live vitals <span className="k-live-dot" /></h3>
-          <p className="k-fine">The doctor sees these as they update.</p>
+          <h3>Today&apos;s readings</h3>
+          <p className="k-fine">Recorded at this kiosk and shared with the doctor.</p>
           {v ? (
             <div className="k-lv" dir="ltr">
               {v.bp && <div><Gauge /><span>BP</span><strong>{v.bp}</strong></div>}
@@ -139,7 +127,7 @@ function InCall({ c, t, vitals, onSend }) {
 export default function StepConsult() {
   const { t, say, flow, setFlow, goto } = useKiosk();
   const id = flow.consultId;
-  const { data: c, error, reload } = useLive(id ? `/consults/${id}` : null, ['queue', 'consults', `consult:${id}`]);
+  const { data: c, error, reload } = useLive(id ? `/consults/${id}` : null, ['queue', 'consults', 'prescriptions', `consult:${id}`]);
   const [err, setErr] = useState('');
   const [cancelling, setCancelling] = useState(false);
   const lastStatus = useRef(null);
@@ -208,7 +196,7 @@ export default function StepConsult() {
           <KButton onClick={() => setFlow({ consultId: null, step: 3 })}>{t('back')}</KButton>
         </div>
       )}
-      {c?.status === 'queued' && <p className="k-fine center"><Video size={14} style={{ display: 'inline', verticalAlign: '-2px' }} /> Camera and microphone are tested and ready.</p>}
+      {c?.status === 'queued' && <p className="k-fine center"><Video size={14} style={{ display: 'inline', verticalAlign: '-2px' }} /> The browser will ask to use the camera and microphone when the doctor joins.</p>}
     </StepFrame>
   );
 }

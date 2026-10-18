@@ -14,7 +14,7 @@ export function usePatientLive(url, topics) {
   return useLive(url, topics, [profileKey]);
 }
 
-export const HOME_TOPICS = ['consults', 'queue', 'prescriptions', 'pharmacy', 'consents', 'records', 'lab', 'dispatch', 'advisories'];
+export const HOME_TOPICS = ['consults', 'queue', 'prescriptions', 'pharmacy', 'medorders', 'payments', 'consents', 'records', 'lab', 'dispatch', 'advisories', 'alerts', 'notifications', 'family', 'patients'];
 
 export const LANGUAGES = ['Hindi', 'English', 'Bengali', 'Marathi', 'Telugu', 'Tamil', 'Gujarati', 'Urdu', 'Kannada', 'Odia', 'Malayalam', 'Punjabi', 'Assamese', 'Awadhi', 'Bhojpuri', 'Maithili'];
 export const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'Unknown'];
@@ -99,3 +99,11 @@ export function PageSkeleton() {
 }
 
 export const relationOf = (p) => (p.self ? 'You' : p.relation || (p.age < 18 ? 'Child' : 'Family'));
+
+// Medicine pack check: a verdict only counts when the server matched a batch actually stocked by a chemist on
+// Nexus (those come back with an expiry date). Anything else is "not found" — never a guessed genuine/fake/recall.
+export function scanVerdict(r) {
+  if (!r) return null;
+  if (r.status === 'invalid' || (['genuine', 'expired'].includes(r.status) && r.expiry)) return r;
+  return { ...r, status: 'unknown', drug: null, batch: null };
+}

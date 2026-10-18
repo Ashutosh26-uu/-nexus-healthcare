@@ -54,9 +54,9 @@ export default function IndiaMap({ regions = [], alerts = [], corridors = [], se
         ))}
       </svg>
 
-      {regions.map((r) => {
+      {regions.filter((r) => r.x != null && r.y != null).map((r) => {
         const tone = regionTone(r.state, alerts);
-        const size = Math.round(20 + Math.sqrt(r.doctorsOnline) * 1.55);
+        const size = Math.round(20 + Math.sqrt(r.doctorsOnline || 0) * 1.55);
         return (
           <button
             key={r.state}
@@ -64,18 +64,19 @@ export default function IndiaMap({ regions = [], alerts = [], corridors = [], se
             className={cx('cc-bubble', tone, selected === r.state && 'on')}
             style={{ left: `${r.x}%`, top: `${r.y}%`, width: size, height: size }}
             onClick={() => onSelect?.(selected === r.state ? null : r.state)}
-            aria-label={`${r.state}: ${r.doctorsOnline} doctors online, ${r.kiosks} kiosks`}
+            aria-label={`${r.state}: ${r.doctorsOnline ?? 0} doctors online, ${r.kiosks ?? 0} kiosks`}
           >
             {tone === 'alert' && <span className="cc-ring" />}
             <span className="cc-bubble-code">{r.code}</span>
             <span className="cc-tip">
               <strong>{r.state}</strong>
-              <span>{fmtNum(r.doctorsOnline)} doctors online · {r.kiosks} kiosks</span>
+              <span>{fmtNum(r.doctorsOnline)} doctors online · {r.kiosks ?? 0} kiosks</span>
             </span>
           </button>
         );
       })}
 
+      {!regions.some((r) => r.x != null) && <p className="small muted center" style={{ position: 'absolute', insetInline: 0, top: '44%', margin: 0 }}>No states reporting yet</p>}
     </div>
       <div className="cc-legend tiny static">
         <span><i className="calm" /> Normal</span>

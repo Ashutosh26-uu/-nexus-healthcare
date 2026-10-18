@@ -1,27 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
 import { PlugZap, RefreshCw, ShieldCheck, Check, X, Radar, Server } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
-import { Card, Button, Empty, fmtDate, timeAgo, useToast } from '../../components/ui';
+import { Card, Button, Empty, PreviewBadge, fmtDate } from '../../components/ui';
 
 const NOTIFIABLE = /dengue|malaria|typhoid|widal|influenza/i;
 const SHARED = ['Test type (LOINC code)', 'Result (positive / negative / value)', 'Pin code of the patient', 'Date of the test'];
 const NOT_SHARED = ['Patient name', 'Health Passport / ABHA ID', 'Phone number or address', 'Age, gender or doctor name'];
 
 export default function Connectors({ orders }) {
-  const toast = useToast();
-  const [last, setLast] = useState(() => new Date(Date.now() - 4 * 60000).toISOString());
-  const [pulling, setPulling] = useState(false);
-  const timer = useRef(null);
-  useEffect(() => () => clearTimeout(timer.current), []); // leaving the page mid-pull must not toast later
-  const pull = () => {
-    setPulling(true);
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      setPulling(false);
-      setLast(new Date().toISOString());
-      toast('LIS checked — no new analyser results waiting');
-    }, 1300);
-  };
 
   // What the outbreak engine actually receives: one line per result, nothing personal.
   const feed = orders
@@ -34,21 +19,16 @@ export default function Connectors({ orders }) {
     <>
       <PageHeader title="LIS & data feed" subtitle="How results move in from your lab software, and what leaves the lab for public health." />
       <div className="grid two">
-        <Card title={<h3 className="row" style={{ gap: 8 }}><PlugZap size={18} /> LIS connector</h3>} action={<span className="badge green"><span className="dot green" /> Connected</span>}>
-          <dl className="kv">
-            <dt>Lab software</dt><dd>LabSoft LIS 6.2 (on-premise)</dd>
-            <dt>Protocol</dt><dd>HL7 v2.5 ORU → FHIR DiagnosticReport</dd>
-            <dt>Analysers linked</dt><dd>Sysmex XN-550 · Erba EM 200 · J Mitra NS1 reader</dd>
-            <dt>Last pull</dt><dd>{pulling ? 'Checking…' : timeAgo(last)}</dd>
-            <dt>This month</dt><dd>128 results imported, 0 mapping errors</dd>
-          </dl>
+        <Card title={<h3 className="row" style={{ gap: 8 }}><PlugZap size={18} /> LIS connector</h3>} action={<PreviewBadge>Coming soon</PreviewBadge>}>
+          <p className="small muted">Your lab software isn&apos;t connected to Nexus Healthcare yet, so results don&apos;t flow in automatically. For now, enter results on each order with <strong>Enter results</strong> — they go to the doctor and patient as soon as they&apos;re signed.</p>
+          <p className="small muted">We&apos;re building an HL7 / FHIR connector so analyser results can be pulled in directly.</p>
           <div className="row mt-2" style={{ gap: 10 }}>
-            <Button variant="secondary" size="sm" icon={RefreshCw} loading={pulling} onClick={pull}>Pull results now</Button>
-            <span className="tiny muted">Auto-pull runs every 10 minutes.</span>
+            <Button variant="secondary" size="sm" icon={RefreshCw} disabled>Pull results now</Button>
+            <span className="tiny muted">Available once a connector is set up.</span>
           </div>
           <div className="callout sky mt-2">
             <Server />
-            <span>When the LIS is connected you only need this portal to check and release reports. Manual entry is the fallback when the line is down.</span>
+            <span>Manual entry is fully supported — nothing is lost while the connector is being built.</span>
           </div>
         </Card>
 
@@ -64,7 +44,7 @@ export default function Connectors({ orders }) {
               <ul>{NOT_SHARED.map((s) => <li key={s}><X size={15} className="no" /> {s}</li>)}</ul>
             </div>
           </div>
-          <p className="tiny muted mb-0">Pin codes with very few tests are grouped with neighbours so no one can be identified. Every alert is reviewed by a health official before any public advisory.</p>
+          <p className="tiny muted mb-0">Every alert is reviewed by a health official before any public advisory.</p>
         </Card>
       </div>
 

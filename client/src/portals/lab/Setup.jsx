@@ -1,22 +1,21 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Users, UserPlus, Gift, PackagePlus, Phone } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Button, Card, Empty, Field, Loading, Switch, fmtMoney, useAction, cx } from '../../components/ui';
 import { api } from '../../api';
+import { useLive } from '../../live';
 
 // The lab's own setup: home-collection technicians and check-up packages patients can book.
+// Live: a colleague adding a technician or package on another screen shows up here straight away.
 export default function Setup() {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState('');
-  const load = useCallback(() => api.get('/lab/setup').then(setData).catch((e) => setError(e.message)), []);
-  useEffect(() => { load(); }, [load]);
+  const { data, error, setData, reload } = useLive('/lab/setup', ['lab']);
   if (!data) return error ? <Empty title="Couldn't load your setup">{error}</Empty> : <Loading />;
   return (
     <>
       <PageHeader title="Team & packages" subtitle="Your home-collection technicians and the health check-up packages patients can book from their app." />
       <div className="stack lg">
         <Collectors data={data} setData={setData} />
-        <Packages data={data} setData={setData} />
+        <Packages data={data} refresh={reload} />
       </div>
     </>
   );
@@ -59,14 +58,13 @@ function Collectors({ data, setData }) {
   );
 }
 
-function Packages({ data, setData }) {
+function Packages({ data, refresh }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [codes, setCodes] = useState([]);
   const [run, busy] = useAction();
   const listPrice = data.tests.filter((t) => codes.includes(t.code)).reduce((s, t) => s + (t.price || 0), 0);
-  const refresh = () => api.get('/lab/setup').then(setData).catch(() => {});
   const add = async (e) => {
     e.preventDefault();
     const r = await run('add', () => api.post('/lab/packages', { name, description, price: Number(price), codes }), `"${name}" is now bookable`);

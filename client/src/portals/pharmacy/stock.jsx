@@ -1,7 +1,7 @@
 // Shared stock helpers for the Pharmacy and Supply (distributor) portals.
 import { memo, useState } from 'react';
 import { ScanBarcode, PackagePlus } from 'lucide-react';
-import { Button, Field, Modal, Progress, Empty, useAction, useToast, fmtNum, fmtDate, cx } from '../../components/ui';
+import { Button, Field, Modal, PreviewBadge, Progress, Empty, useAction, useToast, fmtNum, fmtDate, cx } from '../../components/ui';
 import { api } from '../../api';
 import './stock.css';
 
@@ -93,7 +93,7 @@ export const StockTable = memo(function StockTable({ items, onSaved, showSafety,
                   <strong className="small" translate="no">{i.drug}</strong>
                   {isColdChain(i.drug) && <span className="badge sky cold-tag">2–8°C</span>}
                 </td>
-                <td className="mono small muted">{i.batch}</td>
+                <td className="mono small muted">{i.batch || '—'}</td>
                 <td>{ex.tone ? <span className={`badge ${ex.tone}`}>{ex.label}</span> : <span className="small">{ex.label}</span>}</td>
                 <td><QtyInput item={i} onSaved={onSaved} /></td>
                 {showSafety ? <td><QtyInput item={i} field="safetyStock" onSaved={onSaved} label={`${i.drug} safety stock`} /></td> : null}
@@ -116,8 +116,8 @@ export const StockTable = memo(function StockTable({ items, onSaved, showSafety,
 
 export function AddStockModal({ open, onClose, onAdded, defaultSafety = 20, title = 'Add stock' }) {
   const [run, busy] = useAction();
-  const inYear = new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10);
-  const blank = { drug: '', batch: '', expiry: inYear, qty: '', safetyStock: defaultSafety };
+  // No guessed expiry: it must be typed from the pack.
+  const blank = { drug: '', batch: '', expiry: '', qty: '', safetyStock: defaultSafety };
   const [form, setForm] = useState(blank);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const tooSoon = form.expiry && expiryInfo(form.expiry).days < 90;
@@ -134,8 +134,8 @@ export function AddStockModal({ open, onClose, onAdded, defaultSafety = 20, titl
           <datalist id="oc-drug-list">{COMMON_DRUGS.map((d) => <option key={d} value={d} />)}</datalist>
         </Field>
         <div className="grid two" style={{ gap: 12 }}>
-          <Field label="Batch number" hint="Leave blank to auto-number"><input className="input mono" value={form.batch} onChange={set('batch')} placeholder="e.g. PCM24A118" /></Field>
-          <Field label="Expiry date" error={tooSoon ? 'Expires within 3 months — are you sure?' : undefined}><input className="input" type="date" value={form.expiry} onChange={set('expiry')} required /></Field>
+          <Field label="Batch number" hint="Optional — leave blank if the pack has none"><input className="input mono" value={form.batch} onChange={set('batch')} placeholder="e.g. PCM24A118" /></Field>
+          <Field label="Expiry date *" hint={tooSoon ? undefined : 'Required — as printed on the strip or carton'} error={tooSoon ? 'Expires within 3 months — are you sure?' : undefined}><input className="input" type="date" value={form.expiry} onChange={set('expiry')} required onInvalid={(e) => e.currentTarget.setCustomValidity('Please enter the expiry date printed on the pack.')} onInput={(e) => e.currentTarget.setCustomValidity('')} /></Field>
         </div>
         <div className="grid two" style={{ gap: 12 }}>
           <Field label="Quantity received"><input className="input" type="number" min="1" value={form.qty} onChange={set('qty')} required /></Field>
@@ -153,7 +153,7 @@ export function AddStockModal({ open, onClose, onAdded, defaultSafety = 20, titl
 
 export function BarcodeModal({ open, onClose, onManual }) {
   return (
-    <Modal open={open} onClose={onClose} title="Scan a barcode" subtitle="Coming soon with billing-software sync">
+    <Modal open={open} onClose={onClose} title={<span className="row" style={{ gap: 8 }}>Scan a barcode <PreviewBadge>Coming soon</PreviewBadge></span>} subtitle="Not available yet — add stock by hand for now">
       <div className="scan-box">
         <div className="scan-frame">
           <ScanBarcode size={56} />

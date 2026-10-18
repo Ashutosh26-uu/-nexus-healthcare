@@ -9,10 +9,11 @@ import { LiveGate, RoleBadge } from './shared';
 
 const FACILITY_ROLE = { kiosk_operator: 'kiosk', hospital_admin: 'hospital', lab_tech: 'lab', pharmacist: 'pharmacy', distributor: 'warehouse' };
 const CREATABLE = ['official', 'doctor', 'hospital_admin', 'lab_tech', 'pharmacist', 'distributor', 'kiosk_operator', 'delivery', 'super_admin'];
-const STATES = ['Uttar Pradesh', 'Bihar', 'Karnataka', 'Maharashtra', 'Rajasthan', 'Tamil Nadu', 'West Bengal', 'Delhi'];
+// Every state and union territory — officials can be created for any of them.
+const STATES = ['Andaman and Nicobar Islands', 'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chandigarh', 'Chhattisgarh', 'Dadra and Nagar Haveli and Daman and Diu', 'Delhi', 'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jammu and Kashmir', 'Jharkhand', 'Karnataka', 'Kerala', 'Ladakh', 'Lakshadweep', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Puducherry', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'];
 
 function CreateUserModal({ open, onClose, facilities, onCreated }) {
-  const blank = { name: '', email: '', phone: '', role: 'official', scope: 'district', district: 'Barabanki', state: 'Uttar Pradesh', facilityId: '', password: '' };
+  const blank = { name: '', email: '', phone: '', role: 'official', scope: 'district', district: '', state: '', facilityId: '', password: '' };
   const [form, setForm] = useState(blank);
   const [err, setErr] = useState('');
   const [run, busy] = useAction();
@@ -67,9 +68,9 @@ function CreateUserModal({ open, onClose, facilities, onCreated }) {
             </Field>
             {form.scope === 'district' && (
               <div className="grid two" style={{ gap: 12 }}>
-                <Field label="District"><input className="input" value={form.district} onChange={set('district')} required /></Field>
+                <Field label="District"><input className="input" value={form.district} onChange={set('district')} placeholder="e.g. Barabanki" required /></Field>
                 <Field label="State">
-                  <select className="select" value={form.state} onChange={set('state')}>{STATES.map((s) => <option key={s}>{s}</option>)}</select>
+                  <select className="select" value={form.state} onChange={set('state')} required><option value="" disabled>Choose a state</option>{STATES.map((s) => <option key={s}>{s}</option>)}</select>
                 </Field>
               </div>
             )}

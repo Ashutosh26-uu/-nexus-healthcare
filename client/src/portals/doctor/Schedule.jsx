@@ -164,7 +164,7 @@ export default function Schedule() {
               </div>
             </Field>
             <hr className="divider" />
-            <Field label={<span className="row" style={{ gap: 6 }}><IndianRupee size={15} />Consultation fee</span>} hint={`You receive ${fmtMoney(Math.round(form.fee * 0.9))} per consult after the 10% platform fee. Kiosk pilot visits are paid by the state. The fee is set by the Nexus Healthcare team — contact us to change it.`}>
+            <Field label={<span className="row" style={{ gap: 6 }}><IndianRupee size={15} />Consultation fee</span>} hint={`You receive ${fmtMoney(Math.round(form.fee * 0.9))} per consult after the 10% platform fee. The fee is set by the Nexus Healthcare team — contact us to change it.`}>
               {/* Read-only: /doctor/me ignores `fee` on purpose (earnings integrity), so an editable box would "save" nothing. */}
               <div className="input-wrap">
                 <IndianRupee />

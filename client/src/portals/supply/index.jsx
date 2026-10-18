@@ -13,13 +13,13 @@ import './supply.css';
 export default function SupplyApp() {
   const live = useLive('/distributor/home', ['supply', 'pharmacy', 'dispatch', 'gov', 'alerts']);
   const home = live.data;
-  const toApprove = home?.transfers.filter((t) => ['requested', 'accepted'].includes(t.status)).length || 0;
+  const toApprove = (home?.transfers || []).filter((t) => ['requested', 'accepted'].includes(t.status)).length || 0;
 
   const nav = [
     { to: '/supply', label: 'Warehouse stock', icon: Warehouse, end: true },
     { to: '/supply/approvals', label: 'Dispatch approvals', icon: Truck, badge: toApprove || null },
     { to: '/supply/forecast', label: 'Demand forecast', icon: TrendingUp },
-    { to: '/supply/shortages', label: 'Regional shortages', icon: AlertOctagon, badge: home?.regionalShortages.length || null },
+    { to: '/supply/shortages', label: 'Regional shortages', icon: AlertOctagon, badge: home?.regionalShortages?.length || null },
     { to: '/supply/orders', label: 'Bulk orders', icon: ClipboardList },
   ];
 

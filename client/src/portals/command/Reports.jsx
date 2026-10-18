@@ -11,12 +11,11 @@ const stamp = () => new Date().toISOString().slice(0, 10);
 const REPORTS = [
   {
     id: 'capacity',
-    title: 'Weekly capacity report',
+    title: 'Capacity report',
     icon: BedDouble,
-    schedule: 'Every Monday, 08:00',
     audience: 'Ministry of Health · State NHM',
     desc: 'Beds, ICU and oxygen headroom for every network hospital, with occupancy.',
-    rows: (d) => d.capacity.map((h) => ({
+    rows: (d) => (d.capacity || []).map((h) => ({
       hospital: h.name, district: h.district, state: h.state, total_beds: h.totalBeds, free_beds: h.freeBeds,
       occupancy_pct: h.totalBeds ? Math.round(((h.totalBeds - h.freeBeds) / h.totalBeds) * 100) : 0,
       icu_total: h.icuTotal, icu_free: h.icuFree, oxygen_free: h.oxygenFree,
@@ -26,12 +25,11 @@ const REPORTS = [
     id: 'outbreak',
     title: 'Outbreak bulletin',
     icon: Activity,
-    schedule: 'Daily, 18:00',
     audience: 'IDSP district & state cells',
     desc: 'Every disease signal with AI confidence, multiplier over baseline and the action taken.',
-    rows: (d) => d.alerts.filter((a) => a.type === 'outbreak').map((a) => ({
+    rows: (d) => (d.alerts || []).filter((a) => a.type === 'outbreak').map((a) => ({
       alert_id: a.id, disease: a.disease, district: a.district, state: a.state, pincode: a.pincode, cases_7d: a.cases, baseline: a.baseline,
-      multiplier: a.multiplier, ai_confidence_pct: Math.round(a.confidence * 100), status: a.status, raised_at: a.createdAt,
+      multiplier: a.multiplier ?? '', ai_confidence_pct: a.confidence != null ? Math.round(a.confidence * 100) : '', status: a.status, raised_at: a.createdAt,
       last_action: a.actions?.at(-1)?.action || '',
     })),
   },
@@ -39,7 +37,6 @@ const REPORTS = [
     id: 'supply',
     title: 'Supply & shortage report',
     icon: Package,
-    schedule: 'Every Monday and Thursday, 09:00',
     audience: 'State drug warehouse · procurement',
     desc: 'Medicines under 14 days of cover and every transfer currently on the road.',
     rows: (d) => [
@@ -61,7 +58,7 @@ export default function Reports() {
 
   return (
     <>
-      <PageHeader eyebrow="Reports" title="Scheduled reports" subtitle={`Generated from live data for the ${scopeName(data.scope).toLowerCase()} view. Download as CSV or open a print-ready copy.`} />
+      <PageHeader eyebrow="Reports" title="Reports" subtitle={`Generated from live data for the ${scopeName(data.scope).toLowerCase()} view. Download as CSV or open a print-ready copy whenever you need one — nothing is sent automatically.`} />
       <div className="cc-reports">
         {REPORTS.map((r) => {
           const n = r.rows(data).length;
@@ -73,8 +70,8 @@ export default function Reports() {
                   <h3 style={{ marginBottom: 4 }}>{r.title}</h3>
                   <p className="small muted mb-1">{r.desc}</p>
                   <div className="row wrap tiny muted" style={{ gap: 14 }}>
-                    <span className="row" style={{ gap: 5 }}><CalendarClock size={14} /> {r.schedule}</span>
-                    <span>For: {r.audience}</span>
+                    <span className="row" style={{ gap: 5 }}><CalendarClock size={14} /> On demand</span>
+                    <span>Suggested for: {r.audience}</span>
                     <span>{n} row{n === 1 ? '' : 's'} today</span>
                   </div>
                 </div>
@@ -101,7 +98,7 @@ export function ReportView() {
   if (!r) return <Empty icon={FileText} title="Report not found"><Link to="/command/reports">Back to reports</Link></Empty>;
   const rows = r.rows(data);
   const cols = rows[0] ? Object.keys(rows[0]) : [];
-  const t = data.totals;
+  const t = data.totals || {};
 
   return (
     <div className="cc-print">
@@ -134,8 +131,8 @@ export function ReportView() {
           <section>
             <h3>Summary</h3>
             <ul className="small">
-              {data.alerts.filter((a) => a.type === 'outbreak').map((a) => (
-                <li key={a.id}><strong>{alertTitle(a)}</strong> — {a.cases} cases against a baseline of {a.baseline} ({a.multiplier}×), AI confidence {Math.round(a.confidence * 100)}%, status {a.status}.</li>
+              {(data.alerts || []).filter((a) => a.type === 'outbreak').map((a) => (
+                <li key={a.id}><strong>{alertTitle(a)}</strong> — {a.cases ?? 0} case{a.cases === 1 ? '' : 's'}{a.baseline != null ? ` against a baseline of ${a.baseline}` : ''}{a.multiplier != null ? ` (${a.multiplier}×)` : ''}{a.confidence != null ? `, AI confidence ${Math.round(a.confidence * 100)}%` : ''}, status {a.status}.</li>
               ))}
             </ul>
           </section>

@@ -107,7 +107,7 @@ export default function Login() {
                 <Link to="/forgot-password" state={{ email: identifier.includes('@') ? identifier.trim() : '' }} className="small">Forgot password?</Link>
               </div>
               <Button type="submit" size="lg" block loading={busy}>Sign in <ArrowRight /></Button>
-              <p className="tiny muted center mb-0"><ShieldCheck size={13} style={{ display: 'inline', verticalAlign: '-2px' }} /> Doctors, admins and officials get a second factor in production.</p>
+              <p className="tiny muted center mb-0"><ShieldCheck size={13} style={{ display: 'inline', verticalAlign: '-2px' }} /> Staff accounts always sign in with their password — one-time codes are only for patients.</p>
             </form>
           )}
 
@@ -124,7 +124,8 @@ export default function Login() {
         </div>
       </div>
 
-      {config?.demo === false ? (
+      {/* Demo accounts only on a demo deployment — while the config loads (or if it can't be read) show the live panel. */}
+      {config?.demo !== true ? (
         <aside className="auth-side">
           <div className="auth-side-inner">
             <span className="eyebrow" style={{ color: '#f3b89f' }}>Nexus Healthcare</span>

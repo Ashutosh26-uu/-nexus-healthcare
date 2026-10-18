@@ -294,7 +294,7 @@ export default function OrderMedicines() {
               </div>
             )}
           </div>
-          {!quote.shops.length && !quote.chemistsNearby && <Empty icon={Store} title={`No chemist on Nexus within ${quote.radiusKm} km yet`}>We&apos;ve noted the demand. You can still buy from any chemist using your prescription.</Empty>}
+          {!quote.shops.length && !quote.chemistsNearby && <Empty icon={Store} title={`No chemist on Nexus within ${quote.radiusKm} km yet`}>You can still buy from any chemist using your prescription.</Empty>}
           {error && <div className="form-error mt-1">{error}</div>}
           <div className="row between mt-2">
             <Button variant="ghost" icon={ArrowLeft} onClick={() => setStep(0)}>Change medicines</Button>
@@ -319,9 +319,9 @@ export default function OrderMedicines() {
             <dt>Medicines</dt><dd>{fmtMoney(medicines)}{open ? ' (estimate)' : ''}</dd>
             {fulfilment === 'delivery' && <><dt>Delivery</dt><dd>{fmtMoney(deliveryFee)}</dd></>}
             <dt>Total</dt><dd><strong>{fmtMoney(total)}</strong></dd>
-            {fulfilment === 'delivery' && <><dt>Pay now (35%)</dt><dd><strong className="pt-green">{fmtMoney(advance)}</strong></dd><dt>On delivery</dt><dd>{fmtMoney(Math.round((total - advance) * 100) / 100)}</dd></>}
+            {fulfilment === 'delivery' && <><dt>Pay now ({Math.round((quote?.advanceShare || 0.35) * 100)}%)</dt><dd><strong className="pt-green">{fmtMoney(advance)}</strong></dd><dt>On delivery</dt><dd>{fmtMoney(Math.round((total - advance) * 100) / 100)}</dd></>}
           </dl>
-          {fulfilment === 'delivery' && <p className="tiny muted mb-0"><ShieldCheck size={12} style={{ verticalAlign: '-2px' }} /> A 35% advance confirms the order. If the chemist can&apos;t fulfil it, the advance is refunded.</p>}
+          {fulfilment === 'delivery' && <p className="tiny muted mb-0"><ShieldCheck size={12} style={{ verticalAlign: '-2px' }} /> A {Math.round((quote?.advanceShare || 0.35) * 100)}% advance confirms the order. If the chemist can&apos;t fulfil it, the advance is refunded.</p>}
           {error && <div className="form-error mt-1">{error}</div>}
           <div className="row between mt-2">
             <Button variant="ghost" icon={ArrowLeft} onClick={() => setStep(1)}>Back</Button>

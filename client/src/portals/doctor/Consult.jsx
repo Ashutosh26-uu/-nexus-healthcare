@@ -194,7 +194,7 @@ function TriagePanel({ consult, override, setOverride }) {
         <select id="ovr" className="select sm" value={override || t.level} onChange={(e) => setOverride(e.target.value === t.level ? '' : e.target.value)}>
           {Object.entries(TRIAGE).map(([k, v]) => <option key={k} value={k}>{v.label}{k === t.level ? ' (AI)' : ''}</option>)}
         </select>
-        <span className="tiny muted">{override ? 'Override saved with the consult — it helps train the triage model.' : 'Decision support only. You can override.'}</span>
+        <span className="tiny muted">{override ? 'Your assessment is saved with the consult when you finish the prescription.' : 'Decision support only. You can override.'}</span>
       </div>
     </div>
   );
@@ -264,7 +264,7 @@ export default function Consult() {
       {!done && consult.status !== 'completed' && <PatientSummary consultId={consult.id} />}
 
       {!done && translated && (
-        <div className="dr-translate"><Languages size={15} />Patient speaks {consult.patientLanguage}. Symptoms, notes and chat are auto-translated {consult.patientLanguage} → {docFirstLang}. Your prescription will be printed in {consult.patientLanguage}.</div>
+        <div className="dr-translate"><Languages size={15} />Patient speaks {consult.patientLanguage}. Chat messages are sent exactly as typed, so keep them short and simple — and check they understand the plan before you finish.</div>
       )}
 
       {!done && (

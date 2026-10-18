@@ -5,6 +5,7 @@ import { useAuth } from '../../auth';
 import { Avatar, Button, Card, Empty, Field, Modal, Pills, Progress, StatusBadge, Tabs, cx, fmtDate, fmtDateTime, timeAgo, useAction } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, usePatientLive, firstName, Skeleton } from './shared';
+import { useSupport, telHref } from '../../config';
 
 const SCOPES = [
   { value: 'history', label: 'Visit history & notes' },
@@ -31,6 +32,7 @@ const ACTIONS = {
 };
 
 export default function Consents() {
+  const support = useSupport();
   const { patient, profiles } = usePatient();
   const { user } = useAuth();
   const { data, loading, error, setData } = usePatientLive('/consents', ['consents', 'audit', 'consults']);
@@ -177,7 +179,7 @@ export default function Consents() {
                       <div className="grow">
                         <div className="small"><strong>{me ? 'You' : a.actorName}</strong> <span className="muted">· {ACTIONS[a.action] || a.action.replace(/_/g, ' ')}</span>{a.recordType ? <span className="muted"> · {a.recordType}</span> : null}</div>
                         {a.reason && <div className="tiny muted">{bg ? 'Reason given: ' : ''}{a.reason}</div>}
-                        {bg && <div className="tiny pt-glass-note"><ShieldAlert size={12} className="inline-ic" /> Emergency access is reviewed by an Nexus Healthcare admin. If this wasn&apos;t you or a real emergency, call 1800-200-4455.</div>}
+                        {bg && <div className="tiny pt-glass-note"><ShieldAlert size={12} className="inline-ic" /> Emergency access is reviewed by a Nexus Healthcare admin.{support.phone ? <> If this wasn&apos;t you or a real emergency, call <a href={telHref(support.phone)} translate="no">{support.phone}</a>.</> : support.email ? <> If this wasn&apos;t you or a real emergency, email <a href={`mailto:${support.email}`} translate="no">{support.email}</a>.</> : null}</div>}
                       </div>
                       <span className="tiny muted nowrap" title={fmtDateTime(a.at)}>{timeAgo(a.at)}</span>
                     </div>

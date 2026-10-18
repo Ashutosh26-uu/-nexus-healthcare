@@ -51,10 +51,10 @@ export default function DoctorProfile({ doc, onClose, onConsult, busy, consultLa
             text={`${doc.name} (${doc.specialty}${doc.experience ? `, ${doc.experience} yrs experience` : ''}) is on Nexus Healthcare — registration-verified doctors, book from your phone:`} />
         </div>
         <div className="pt-dp-stats">
-          <div><Briefcase size={16} /><strong>{doc.experience} yrs</strong><span>experience</span></div>
-          <div><Star size={16} /><strong>{st.rating ? Number(st.rating).toFixed(1) : 'New'}</strong><span>{st.reviewCount ? `${fmt(st.reviewCount)} reviews` : 'rating'}</span></div>
+          {doc.experience > 0 && <div><Briefcase size={16} /><strong>{doc.experience} yrs</strong><span>experience</span></div>}
+          <div><Star size={16} /><strong>{st.rating && st.reviewCount ? Number(st.rating).toFixed(1) : 'New'}</strong><span>{st.reviewCount ? `${fmt(st.reviewCount)} reviews` : 'rating'}</span></div>
           <div><Smile size={16} /><strong>{st.satisfaction != null ? `${st.satisfaction}%` : '—'}</strong><span>satisfied patients</span></div>
-          <div><Users size={16} /><strong>{fmt(st.patientsSeen || Math.max(doc.consultsDone || 0, doc.patientsLifetime || 0))}+</strong><span>patients seen</span></div>
+          {(st.patientsSeen || Math.max(doc.consultsDone || 0, doc.patientsLifetime || 0)) > 0 && <div><Users size={16} /><strong>{fmt(st.patientsSeen || Math.max(doc.consultsDone || 0, doc.patientsLifetime || 0))}</strong><span>patients seen</span></div>}
           <div><IndianRupee size={16} /><strong>{fmtMoney(doc.fee)}</strong><span>consult fee</span></div>
         </div>
         <dl className="pt-dp-kv">

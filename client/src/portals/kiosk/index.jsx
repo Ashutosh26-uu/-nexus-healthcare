@@ -125,7 +125,7 @@ export default function KioskApp() {
   const { user, facility, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const home = useLive('/kiosk/home', ['queue', 'consults', 'kiosks', 'prescriptions']);
+  const home = useLive('/kiosk/home', ['queue', 'consults', 'kiosks', 'prescriptions', 'doctors']);
   const [flow, setFlowState] = useState(loadFlow);
   const [lang, setLangState] = useState(() => { try { return localStorage.getItem('oc_kiosk_lang') || 'hi'; } catch { return 'hi'; } });
   const [voiceOn, setVoiceOn] = useState(() => { try { return localStorage.getItem('oc_kiosk_voice') !== 'off'; } catch { return true; } });

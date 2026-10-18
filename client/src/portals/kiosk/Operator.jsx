@@ -1,7 +1,8 @@
 import { useNavigate } from 'react-router-dom';
-import { Gauge, Activity, Thermometer, Scale, Droplet, Printer, Camera, Wifi, WifiOff, RotateCcw, Users, Timer, Server, CloudOff, ArrowRight, Inbox, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Gauge, Activity, Thermometer, Scale, Droplet, Printer, Camera, Wifi, WifiOff, RotateCcw, Users, Server, CloudOff, ArrowRight, Inbox, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { api } from '../../api';
-import { Avatar, TriageBadge, StatusBadge, useAction, fmtTime, cx } from '../../components/ui';
+import { Avatar, TriageBadge, StatusBadge, PreviewBadge, useAction, fmtTime, cx } from '../../components/ui';
+import { usePublicConfig } from '../../config';
 import { useKiosk } from './context';
 import { KButton } from './KUi';
 import { AvailBadge, AvailLine, availClass } from '../../components/Availability';
@@ -21,13 +22,16 @@ export default function Operator() {
   const navigate = useNavigate();
   const [run, busy] = useAction();
   const queue = home.data?.queue || [];
-  const devices = kiosk?.devices || {};
-  const faults = Object.values(devices).filter((s) => s !== 'ok').length;
+  // Device status is only simulated on the demo network — a live kiosk has no device monitoring yet.
+  const demo = usePublicConfig()?.demo === true;
+  const devices = (demo && kiosk?.devices) || {};
+  const faults = Object.values(devices).filter((s) => s && s !== 'ok').length;
+  const done = queue.filter((c) => c.status === 'completed').length;
 
   const toggleOffline = () => run('status', async () => {
     const k = await api.put('/kiosk/status', { status: offline ? 'online' : 'offline' });
     home.setData((d) => (d ? { ...d, kiosk: k } : d));
-  }, offline ? 'Back online — syncing stored visits' : 'Offline mode on. Visits will be stored on this kiosk.');
+  }, offline ? 'Back online' : 'Offline mode on — the network now shows this kiosk as offline.');
 
   const next = () => { reset(); navigate('/kiosk'); };
 
@@ -37,7 +41,7 @@ export default function Operator() {
         <div>
           <span className="k-eyebrow">Operator panel</span>
           <h1 className="k-title">Namaste, {user?.name?.split(' ')[0]} didi</h1>
-          <p className="k-sub">{kiosk?.name} · software {kiosk?.version}</p>
+          <p className="k-sub">{kiosk?.name}{kiosk?.version ? ` · software ${kiosk.version}` : ''}</p>
         </div>
         <div className="k-op-actions">
           {flow.patient && <KButton variant="ghost" icon={ArrowRight} onClick={() => navigate('/kiosk')}>Back to {flow.patient.name.split(' ')[0]}'s visit</KButton>}
@@ -49,17 +53,19 @@ export default function Operator() {
         <div className="k-op-offline">
           <CloudOff />
           <div className="grow">
-            <strong>Offline — visits stored locally and will sync</strong>
-            <span>Vitals, registrations and triage keep working. Teleconsults resume when the connection is back.</span>
+            <strong>Offline mode is on</strong>
+            <span>Doctors and the district team see this kiosk as offline. Looking up patients, saving visits and teleconsults need the internet — switch back when it returns.</span>
           </div>
         </div>
       )}
 
       <div className="k-op-stats">
-        <div className="k-op-stat"><Users /><small>Visits today</small><strong>{(kiosk?.visitsToday || 0) + queue.length}</strong></div>
-        <div className="k-op-stat"><Timer /><small>Uptime (30 days)</small><strong>{kiosk?.uptime ?? '—'}%</strong></div>
+        <div className="k-op-stat"><Users /><small>Teleconsults today</small><strong>{queue.length}</strong></div>
+        <div className="k-op-stat"><CheckCircle2 /><small>Completed today</small><strong>{done}</strong></div>
         <div className="k-op-stat"><Activity /><small>Waiting for doctor</small><strong>{queue.filter((c) => c.status === 'queued').length}</strong></div>
-        <div className={cx('k-op-stat', faults && 'warn')}><Server /><small>Device faults</small><strong>{faults}</strong></div>
+        {demo
+          ? <div className={cx('k-op-stat', faults && 'warn')}><Server /><small>Device faults</small><strong>{faults}</strong></div>
+          : <div className="k-op-stat"><Server /><small>Device faults</small><strong>—</strong></div>}
       </div>
 
       <section className="k-op-card k-docs">
@@ -86,7 +92,7 @@ export default function Operator() {
         <section className="k-op-card">
           <div className="k-op-card-h"><h3>Today's patients</h3><span className="k-fine">{queue.length} through Nexus Healthcare</span></div>
           {queue.length === 0 ? (
-            <div className="k-op-empty"><Inbox /><span>No teleconsults yet today. The first patient is usually in by 9.</span></div>
+            <div className="k-op-empty"><Inbox /><span>No teleconsults yet today.</span></div>
           ) : (
             <div className="k-op-list">
               {queue.map((c) => (
@@ -113,18 +119,19 @@ export default function Operator() {
             <div className="k-op-net">
               <span className={cx('k-op-net-icon', offline ? 'off' : 'on')}>{offline ? <WifiOff /> : <Wifi />}</span>
               <div className="grow">
-                <strong>{offline ? 'Offline mode' : 'Online · 4G'}</strong>
-                <span>{offline ? 'Store-and-sync is on' : 'Signal good · last sync just now'}</span>
+                <strong>{offline ? 'Offline mode' : 'Online'}</strong>
+                <span>{offline ? 'Shown as offline to the network' : 'Connected to Nexus Healthcare'}</span>
               </div>
               <button type="button" className={cx('k-switch', offline && 'on')} role="switch" aria-checked={offline} onClick={toggleOffline} disabled={busy === 'status'}>
                 <span />
               </button>
             </div>
-            <p className="k-fine">Turn on offline mode when the network drops. Everything is saved here and uploaded later.</p>
+            <p className="k-fine">Turn on offline mode when the network is down for a while, so doctors and the district team know.</p>
           </section>
 
           <section className="k-op-card">
-            <div className="k-op-card-h"><h3>Device health</h3>{faults ? <span className="k-badge warn"><AlertTriangle size={14} />{faults} need attention</span> : <span className="k-badge ok"><CheckCircle2 size={14} />All good</span>}</div>
+            <div className="k-op-card-h"><h3>Device health</h3>{!demo ? <PreviewBadge>Coming soon</PreviewBadge> : faults ? <span className="k-badge warn"><AlertTriangle size={14} />{faults} need attention</span> : <span className="k-badge ok"><CheckCircle2 size={14} />All good</span>}</div>
+            {!demo && <p className="k-fine">Automatic device monitoring isn&apos;t connected yet. Check the BP cuff, oximeter, thermometer, scale, glucometer and printer by hand at the start of the day.</p>}
             <div className="k-devices">
               {Object.entries(devices).map(([k, s]) => {
                 const m = DEVICE_META[k] || { label: k, icon: Server };
@@ -132,12 +139,12 @@ export default function Operator() {
                   <div key={k} className={cx('k-device', s !== 'ok' && 'bad')}>
                     <m.icon />
                     <strong>{m.label}</strong>
-                    <span>{s === 'ok' ? 'Working' : s.replace(/_/g, ' ')}</span>
+                    <span>{s === 'ok' ? 'Working' : String(s || 'unknown').replace(/_/g, ' ')}</span>
                   </div>
                 );
               })}
             </div>
-            {faults > 0 && <p className="k-fine">A fault ticket has been raised with the district kiosk team automatically.</p>}
+            {faults > 0 && <p className="k-fine">Please tell the district kiosk team about any device that needs attention.</p>}
           </section>
         </div>
       </div>

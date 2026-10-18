@@ -7,14 +7,14 @@ const short = (d) => d.replace(/ rapid kit| sachet| inhaler| \d+(mg|mcg)/gi, '')
 export default function Forecast({ home }) {
   // Live networks: null until chemists have sent transfer requests to project from.
   const rows = (home.forecast || []).map((f) => {
-    const inv = home.inventory.find((i) => i.drug === f.drug);
+    const inv = (home.inventory || []).find((i) => i.drug === f.drug);
     const usable = inv ? Math.max(inv.qty - inv.safetyStock, 0) : 0;
     return { ...f, stock: inv?.qty ?? 0, usable, gap: f.next14d - usable };
   });
 
   return (
     <>
-      <PageHeader title="Regional demand forecast" subtitle="Expected demand over the next 14 days, from prescriptions, lab positives and outbreak alerts across your service area." />
+      <PageHeader title="Regional demand forecast" subtitle="Expected demand over the next 14 days, projected from the transfer requests chemists have sent your warehouse." />
 
       <div className="grid side">
         <div className="table-wrap">
@@ -43,7 +43,7 @@ export default function Forecast({ home }) {
           </Card>
           <div className="callout sky">
             <Info />
-            <span>“Spare stock” is what's above your safety line. Where it says <strong>Short</strong>, raise a bulk order now — lead time from manufacturers is usually 7–10 days.</span>
+            <span>“Spare stock” is what's above your safety line. Where it says <strong>Short</strong>, raise a bulk order now and check your supplier&apos;s lead time.</span>
           </div>
         </div>
       </div>

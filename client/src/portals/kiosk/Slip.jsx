@@ -1,11 +1,13 @@
 import { LogoMark } from '../../components/Logo';
 import { TRIAGE } from '../../components/ui';
+import { useSupport } from '../../config';
 import { getLocale } from '../../i18n';
 
 const fmt = (iso) => new Date(iso || Date.now()).toLocaleString(getLocale(), { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 /* Printable slip — what the kiosk thermal/A5 printer produces. Also shown on screen. */
 export default function Slip({ kiosk, patient, consult, triage, vitals, booking, kind = 'rx' }) {
+  const support = useSupport();
   const rx = consult?.prescription;
   const v = consult?.vitals || vitals;
   return (
@@ -67,7 +69,7 @@ export default function Slip({ kiosk, patient, consult, triage, vitals, booking,
         </>
       )}
 
-      <div className="k-slip-foot">Emergency: call 108 · Helpline 1800-200-4455 · This slip is also on your Health Passport.</div>
+      <div className="k-slip-foot">Emergency: call 108{support.phone ? ` · Helpline ${support.phone}` : ''} · This slip is also on your Health Passport.</div>
     </div>
   );
 }

@@ -275,7 +275,14 @@ const dataMode = () => (process.env.DATA_MODE || (process.env.NODE_ENV === 'prod
 function liveSeed({ withAdmin = true } = {}) {
   const full = demoSeed();
   const crypto = require('crypto');
-  const empty = ['reviews', 'medOrders', 'careTransfers', 'payments', 'patients', 'doctors', 'facilities', 'consults', 'prescriptions', 'labOrders', 'inventory', 'beds', 'roster', 'referrals', 'opdSlots', 'transfers', 'deliveries', 'alerts', 'corridors', 'consents', 'audit', 'notifications', 'advisories', 'regions', 'records'];
+  const empty = ['reviews', 'medOrders', 'careTransfers', 'payments', 'patients', 'doctors', 'facilities', 'consults', 'prescriptions', 'labOrders', 'inventory', 'beds', 'roster', 'referrals', 'opdSlots', 'transfers', 'deliveries', 'alerts', 'corridors', 'consents', 'audit', 'notifications', 'advisories', 'regions', 'records', 'pharmacyReturns', 'purchaseOrders', 'credits', 'vitalsLog'];
+  // The rule set is reference data, but the demo's change history ("signed off by medical advisor", "after
+  // pilot feedback") never happened on a live network: start at v1 with one honest entry (and a snapshot,
+  // so an admin can roll back to the defaults).
+  const { history: _demoHistory, ...rules } = full.aiConfig;
+  const now0 = new Date().toISOString();
+  full.aiConfig = { ...rules, version: 1, history: [{ version: 1, at: now0, by: 'System', note: 'Default rule set installed — not yet reviewed by a medical advisor', snapshot: { triage: rules.triage, routing: rules.routing, outbreak: rules.outbreak } }] };
+  if (full.wallets) full.wallets = {};
   if (!withAdmin) { const shape = { ...full, users: [], otps: {} }; for (const k of empty) shape[k] = []; return shape; }
   const email = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
   let password = process.env.ADMIN_PASSWORD || '';

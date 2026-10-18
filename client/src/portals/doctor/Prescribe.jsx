@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, UserPlus, ShieldCheck, KeyRound, Pill, FlaskConical, Trash2, Store, Building2, Send, CheckCircle2, Download, FileUp, AlertTriangle, ShieldAlert, PenLine, RotateCcw, Smartphone, X, Mail } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
+import { useLive } from '../../live';
 import { Avatar, Button, Card, Empty, Field, Modal, fmtDate, useAction, useToast, cx } from '../../components/ui';
 import { OtpInput } from '../../components/OtpFlow';
 import { useDoctorHome } from './context';
@@ -321,9 +322,10 @@ function Done({ result, onNew }) {
 export default function Prescribe() {
   const [patient, setPatient] = useState(null);
   const [result, setResult] = useState(null);
-  const [recent, setRecent] = useState(null);
-  const load = () => api.get('/doctor/prescriptions').then(setRecent).catch(() => setRecent([]));
-  useEffect(() => { load(); }, []);
+  // Live: a chemist filling or a lab picking up a prescription updates this list without a refresh.
+  const rx = useLive('/doctor/prescriptions', ['prescriptions', 'pharmacy', 'lab']);
+  const recent = rx.data ? (Array.isArray(rx.data) ? rx.data : []) : rx.error ? [] : null;
+  const load = rx.reload;
 
   return (
     <div className="stack lg">
@@ -339,7 +341,7 @@ export default function Prescribe() {
               <div key={r.id} className="dr-pr-recent-row">
                 <div className="grow" style={{ minWidth: 0 }}>
                   <strong className="small" translate="no">{r.patientName}</strong> <span className="tiny muted">· {fmtDate(r.createdAt)} · {r.source === 'clinic' ? 'In clinic' : r.consultId ? 'Teleconsult' : 'E-Clinic'}</span>
-                  <div className="tiny muted">{r.items.map((i) => i.drug).join(', ') || 'Tests only'}{r.labs?.length ? ` · ${r.labs.map((l) => l.tests.join(', ')).join(', ')}` : ''}</div>
+                  <div className="tiny muted">{(r.items || []).map((i) => i.drug).join(', ') || 'Tests only'}{r.labs?.length ? ` · ${r.labs.map((l) => (l.tests || []).join(', ')).join(', ')}` : ''}</div>
                 </div>
                 {r.pharmacyName && <span className="badge tiny"><Store size={11} /> {r.pharmacyName}</span>}
                 <button type="button" className="icon-btn" title="Print / download" onClick={() => window.open(`/rx/${r.id}`, '_blank', 'noopener')}><Download size={15} /></button>

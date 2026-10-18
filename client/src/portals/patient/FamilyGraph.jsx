@@ -1,23 +1,15 @@
-import { useEffect, useState } from 'react';
 import { Users, ShieldAlert, CalendarCheck, Dna } from 'lucide-react';
 import { Card, Empty, cx } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
-import { api } from '../../api';
-import { usePatient, PageSkeleton } from './shared';
+import { usePatientLive, PageSkeleton } from './shared';
 
 export default function FamilyGraph() {
-  const { profileKey } = usePatient();
-  const [data, setData] = useState(null);
-  const [error, setError] = useState('');
-  useEffect(() => {
-    let alive = true; // a quick profile switch must not let the previous person's graph land on screen
-    setData(null); setError('');
-    api.get('/patient/family-graph').then((r) => alive && setData(r)).catch((e) => alive && setError(e.message));
-    return () => { alive = false; };
-  }, [profileKey]);
+  // Live: adding a family member or updating anyone's conditions redraws the graph without a refresh.
+  const { data: raw, error } = usePatientLive('/patient/family-graph', ['family', 'patients', 'records', 'consults']);
 
-  if (error) return <Empty title="Couldn't load your family graph">{error}</Empty>;
-  if (!data) return <PageSkeleton />;
+  if (error && !raw) return <Empty title="Couldn't load your family graph">{error}</Empty>;
+  if (!raw) return <PageSkeleton />;
+  const data = { profiles: Array.isArray(raw.profiles) ? raw.profiles : [], risks: Array.isArray(raw.risks) ? raw.risks : [] };
 
   return (
     <div className="stack lg">
@@ -51,8 +43,8 @@ export default function FamilyGraph() {
                 <span className="pt-fg-risk-ic"><ShieldAlert size={18} /></span>
                 <div><div className="strong">{r.name}</div><div className="tiny muted">Runs in your family</div></div>
               </div>
-              <div className="pt-fg-line"><span className="tiny strong">In the family:</span> {r.affected.map((a) => <span key={a.name} className="badge rose" translate="no">{a.name} ({a.relation})</span>)}</div>
-              {r.atRisk.length > 0 && <div className="pt-fg-line"><span className="tiny strong">Should get screened:</span> {r.atRisk.map((a) => <span key={a.name} className="badge sun" translate="no">{a.name} ({a.relation})</span>)}</div>}
+              <div className="pt-fg-line"><span className="tiny strong">In the family:</span> {(r.affected || []).map((a) => <span key={a.name} className="badge rose" translate="no">{a.name} ({a.relation})</span>)}</div>
+              {r.atRisk?.length > 0 && <div className="pt-fg-line"><span className="tiny strong">Should get screened:</span> {r.atRisk.map((a) => <span key={a.name} className="badge sun" translate="no">{a.name} ({a.relation})</span>)}</div>}
               <div className="callout green" style={{ marginTop: 6 }}><CalendarCheck /><span className="small">{r.advice} <strong>Suggested test:</strong> {r.screen}.</span></div>
             </Card>
           ))}

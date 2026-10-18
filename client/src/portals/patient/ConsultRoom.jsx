@@ -5,7 +5,7 @@ import { api } from '../../api';
 import { useCall } from '../../components/useCall';
 import CallMedia from '../../components/CallMedia';
 import { useLive } from '../../live';
-import { Avatar, Button, Card, Empty, Modal, StatusBadge, TriageBadge, cx, fmtDateTime, fmtTime, timeAgo, useAction, useToast } from '../../components/ui';
+import { Avatar, Button, Card, Empty, Modal, StatusBadge, TriageBadge, cx, fmtDateTime, fmtMoney, fmtTime, timeAgo, useAction, useToast } from '../../components/ui';
 import { usePatient, PageSkeleton } from './shared';
 import VisitPass from './VisitPass';
 import PaymentStep from './Payment';
@@ -59,7 +59,7 @@ function AwaitingPayment({ c, onPaid }) {
 
 export default function ConsultRoom() {
   const { id } = useParams();
-  const { data: c, error, loading, setData, reload } = useLive(`/consults/${id}`, [`consult:${id}`, 'consults', 'queue']);
+  const { data: c, error, loading, setData, reload } = useLive(`/consults/${id}`, [`consult:${id}`, 'consults', 'queue', 'payments', 'prescriptions']);
   const { reloadHome } = usePatient();
   const navigate = useNavigate();
 
@@ -82,7 +82,7 @@ export default function ConsultRoom() {
       {c.status === 'completed' && <Summary c={c} />}
       {c.status === 'cancelled' && (
         <Card className="center pad-lg">
-          <Empty icon={X} title="This consult was cancelled">No charge was made. Whenever you&apos;re ready, a doctor is a tap away.</Empty>
+          <Empty icon={X} title="This consult was cancelled">Any refund due goes back the way you paid. Whenever you&apos;re ready, a doctor is a tap away.</Empty>
           <Button onClick={() => navigate('/patient/consult')}>Find a doctor</Button>
         </Card>
       )}
@@ -97,13 +97,21 @@ function CancelButton({ c, label = 'Cancel consult' }) {
   const [open, setOpen] = useState(false);
   const [run, busy] = useAction();
   const { reloadHome } = usePatient();
-  const cancel = () => run('cancel', async () => { await api.post(`/consults/${c.id}/cancel`); reloadHome(); setOpen(false); }, 'Cancelled. No charge was made.');
+  const toast = useToast();
+  // Same rule as the server: a full refund unless a booked time is less than 2 hours away.
+  const lateCancel = !!c.scheduledAt && Date.parse(c.scheduledAt) - Date.now() <= 2 * 3600000;
+  const cancel = () => run('cancel', async () => {
+    const r = await api.post(`/consults/${c.id}/cancel`);
+    reloadHome(); setOpen(false);
+    toast(r?.refund ? `Cancelled — ${fmtMoney(r.refund)} will be refunded` : 'Cancelled');
+  });
   return (
     <>
       <Button variant="ghost" onClick={() => setOpen(true)}>{label}</Button>
       <Modal open={open} onClose={() => setOpen(false)} title="Cancel this consult?" subtitle={`With ${c.doctorName}`}
         footer={<><Button variant="ghost" onClick={() => setOpen(false)}>Keep it</Button><Button variant="danger" loading={busy === 'cancel'} onClick={cancel}>Yes, cancel</Button></>}>
-        <p className="mb-0">You&apos;ll lose your place{c.status === 'queued' ? ' in the queue' : ' for this slot'}. You can always book again — there&apos;s no charge for cancelling.</p>
+        <p className="mb-0">You&apos;ll lose your place{c.status === 'queued' ? ' in the queue' : ' for this slot'}. You can always book again.{' '}
+          {lateCancel ? 'Your visit is less than 2 hours away, so a payment already made can’t be refunded.' : 'If you’ve paid, you’ll get a full refund.'}</p>
       </Modal>
     </>
   );
@@ -118,7 +126,7 @@ function RunningLate({ c }) {
 
 /* ---------- waiting room ---------- */
 function Waiting({ c, setData }) {
-  const wait = Math.max(2, (c.position - 1) * 8 + 2);
+  const ahead = Math.max(0, (Number(c.position) || 1) - 1);
   return (
     <div className="grid side">
       <section className="card pt-waiting">
@@ -128,7 +136,12 @@ function Waiting({ c, setData }) {
         </div>
         <div className="eyebrow">Waiting room</div>
         <h2 className="mb-1">{c.position <= 1 ? 'You’re next!' : `You’re number ${c.position} in line`}</h2>
-        <p className="muted">{c.doctorName} ({c.doctorSpecialty}) will join you in about <strong>{wait} minutes</strong>. This page updates by itself — no need to refresh.</p>
+        <p className="muted">
+          {ahead === 0
+            ? <>{c.doctorName} ({c.doctorSpecialty}) will join you as soon as they&apos;re free.</>
+            : <>{c.doctorName} ({c.doctorSpecialty}) has <strong>{ahead === 1 ? '1 person' : `${ahead} people`}</strong> to see before you.</>}
+          {' '}This page updates by itself — no need to refresh.
+        </p>
         <RunningLate c={c} />
         <div className="pt-wait-facts">
           <div><span className="tiny muted">Mode</span><strong>{MODE_LABEL[c.mode]}</strong></div>
@@ -312,7 +325,7 @@ function Summary({ c }) {
   const rate = (n) => run('rate', async () => {
     await api.post(`/consults/${c.id}/review`, { stars: n });
     setRating(n);
-  }, n >= 4 ? 'Thank you! We’ll pass this on to the doctor.' : 'Thanks for telling us — we’ll look into it.');
+  }, n >= 4 ? 'Thank you! Your rating is saved.' : 'Thanks for telling us — your rating is saved.');
   const rx = c.prescription;
   return (
     <div className="grid side">

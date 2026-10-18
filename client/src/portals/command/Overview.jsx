@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BedDouble, HeartPulse, Stethoscope, MonitorSmartphone, Video, Siren, ChevronRight, MapPin, Building2, ShieldCheck, ArrowUpRight } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
-import { Card, Sparkline, Progress, StatusBadge, Empty, cx, fmtNum, timeAgo } from '../../components/ui';
+import { Card, Progress, StatusBadge, Empty, PreviewBadge, cx, fmtNum, timeAgo } from '../../components/ui';
 import { useAuth } from '../../auth';
-import { useGov, trendTo, PINS, HOSPITAL_PIN, ALERT_KIND, alertTitle, isOpen, ScopeChip } from './shared';
+import { useGov, ALERT_KIND, alertTitle, isOpen, ScopeChip } from './shared';
 import IndiaMap, { regionTone } from './IndiaMap';
 import DistrictSketch from './DistrictSketch';
 import { getLocale } from '../../i18n';
@@ -30,15 +30,14 @@ function greeting() {
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
 }
 
-export function KpiTile({ label, value, icon: Icon, color, series, note, warn }) {
+export function KpiTile({ label, value, icon: Icon, note, warn }) {
   return (
     <div className={cx('card cc-kpi', warn && 'warn')}>
       <div className="row between">
         <span className="cc-kpi-label">{Icon && <Icon />}{label}</span>
         {note && <span className="tiny muted">{note}</span>}
       </div>
-      <div className="cc-kpi-value">{fmtNum(value)}</div>
-      <div className="cc-kpi-spark"><Sparkline data={series} color={color} height={34} /></div>
+      <div className="cc-kpi-value">{value == null ? '—' : fmtNum(value)}</div>
     </div>
   );
 }
@@ -81,9 +80,9 @@ function HospitalRow({ h, onPin }) {
           <div className="small" style={{ fontWeight: 600 }} translate="no">{h.name}</div>
           <div className="tiny muted">
             {h.district}
-            {HOSPITAL_PIN[h.id] && (onPin
-              ? <> · <button type="button" className="cc-link" onClick={() => onPin(HOSPITAL_PIN[h.id])}>pin {HOSPITAL_PIN[h.id]}</button></>
-              : <> · pin {HOSPITAL_PIN[h.id]}</>)}
+            {h.pincode && (onPin
+              ? <> · <button type="button" className="cc-link" onClick={() => onPin(h.pincode)}>pin {h.pincode}</button></>
+              : <> · pin {h.pincode}</>)}
           </div>
         </div>
         <div className="right">
@@ -97,12 +96,17 @@ function HospitalRow({ h, onPin }) {
 }
 
 function DrillPanel({ data, path, setPath }) {
-  const { regions = [], capacity = [], alerts = [] } = data;
+  const capacity = data.capacity || [];
+  const alerts = data.alerts || [];
+  // States the server reports; if it sends none, list the states the network's hospitals and alerts are in.
+  const regions = data.regions?.length ? data.regions
+    : [...new Set([...capacity, ...alerts].map((x) => x.state).filter(Boolean))].map((st) => ({ state: st, districts: [], doctorsOnline: null, kiosks: null }));
   const [state, district, pin] = path;
   const depth = path.length;
 
   if (depth === 0) {
-    const rows = [...regions].sort((a, b) => b.doctorsOnline - a.doctorsOnline);
+    const rows = [...regions].sort((a, b) => (b.doctorsOnline || 0) - (a.doctorsOnline || 0));
+    if (!rows.length) return <Empty icon={MapPin} title="No states reporting yet">States appear here as hospitals, labs and doctors join the network.</Empty>;
     return (
       <div className="stack">
         <p className="small muted mb-0">Select a state on the map or below to see its districts and hospitals.</p>
@@ -114,7 +118,7 @@ function DrillPanel({ data, path, setPath }) {
                 <span className={cx('cc-dot', regionTone(r.state, alerts))} />
                 <span className="grow">
                   <span className="small" style={{ fontWeight: 600 }}>{r.state}</span>
-                  <span className="tiny muted" style={{ display: 'block' }}>{fmtNum(r.doctorsOnline)} doctors · {r.kiosks} kiosks · {r.population}M people</span>
+                  <span className="tiny muted" style={{ display: 'block' }}>{[r.doctorsOnline != null && `${fmtNum(r.doctorsOnline)} doctors online`, r.kiosks != null && `${r.kiosks} kiosks`, r.hospitals != null && `${r.hospitals} hospitals`].filter(Boolean).join(' · ') || 'Reporting'}</span>
                 </span>
                 {open > 0 && <span className="badge rose">{open} open</span>}
                 <ChevronRight size={16} className="muted" />
@@ -127,14 +131,14 @@ function DrillPanel({ data, path, setPath }) {
   }
 
   if (depth === 1) {
-    const r = regions.find((x) => x.state === state) || { districts: [], doctorsOnline: 0, kiosks: 0 };
+    const r = regions.find((x) => x.state === state) || { districts: [], doctorsOnline: null, kiosks: null };
     const hs = capacity.filter((h) => h.state === state);
     const districts = [...new Set([...(r.districts || []), ...hs.map((h) => h.district)])];
     return (
       <div className="stack">
         <div className="cc-mini-stats">
-          <div><span className="tiny muted">Doctors online</span><strong>{fmtNum(r.doctorsOnline)}</strong></div>
-          <div><span className="tiny muted">Kiosks</span><strong>{r.kiosks}</strong></div>
+          <div><span className="tiny muted">Doctors online</span><strong>{r.doctorsOnline != null ? fmtNum(r.doctorsOnline) : '—'}</strong></div>
+          <div><span className="tiny muted">Kiosks</span><strong>{r.kiosks ?? '—'}</strong></div>
           <div><span className="tiny muted">Free beds</span><strong>{fmtNum(hs.reduce((s, h) => s + h.freeBeds, 0))}</strong></div>
         </div>
         <h4 className="mb-0 mt-1">Districts</h4>
@@ -165,8 +169,9 @@ function DrillPanel({ data, path, setPath }) {
 
   if (depth === 2) {
     const hs = capacity.filter((h) => h.district === district);
-    const pins = (PINS[district] || []).map((p) => p.pin);
-    alerts.forEach((a) => { if (a.district === district && a.pincode && !pins.includes(a.pincode)) pins.push(a.pincode); });
+    // Only pin codes the network really has: where alerts were raised or a hospital sits.
+    const pins = [];
+    [...alerts.filter((a) => a.district === district), ...hs].forEach((x) => { if (x.pincode && !pins.includes(x.pincode)) pins.push(x.pincode); });
     const da = alerts.filter((a) => a.district === district && isOpen(a));
     return (
       <div className="stack">
@@ -174,35 +179,35 @@ function DrillPanel({ data, path, setPath }) {
         <h4 className="mb-0">Hospitals</h4>
         {hs.length ? hs.map((h) => <HospitalRow key={h.id} h={h} onPin={(p) => setPath([state, district, p])} />) : <p className="small muted mb-0">No network hospitals reporting yet in {district}.</p>}
         <h4 className="mb-0 mt-1">Pin codes</h4>
+        {pins.length === 0 ? <p className="small muted mb-0">No pin-code signals in {district} yet.</p> : (
         <div className="cc-pin-grid">
           {pins.map((p) => {
             const hot = alerts.some((a) => a.pincode === p && isOpen(a));
-            const meta = (PINS[district] || []).find((x) => x.pin === p);
             return (
               <button key={p} type="button" className={cx('cc-pin-chip', hot && 'hot')} onClick={() => setPath([state, district, p])}>
                 <strong>{p}</strong>
-                <span className="tiny muted">{meta?.area || 'Reported area'}</span>
+                <span className="tiny muted">{hot ? 'Open signal' : 'Reported area'}</span>
               </button>
             );
           })}
         </div>
+        )}
       </div>
     );
   }
 
-  const meta = (PINS[district] || []).find((x) => x.pin === pin);
   const pa = alerts.filter((a) => a.pincode === pin);
-  const hs = capacity.filter((h) => HOSPITAL_PIN[h.id] === pin);
+  const hs = capacity.filter((h) => h.pincode === pin);
   return (
     <div className="stack">
       <div>
         <div className="serif" style={{ fontSize: '1.6rem', fontWeight: 600, lineHeight: 1.1 }}>{pin}</div>
-        <div className="small muted">{meta?.area || 'Reported area'} · {district}</div>
+        <div className="small muted">{district}</div>
       </div>
       {pa.length ? pa.map((a) => <AlertLine key={a.id} a={a} />) : <div className="callout green small"><ShieldCheck /> No signals above baseline at this pin code.</div>}
       {hs.map((h) => <HospitalRow key={h.id} h={h} />)}
       {!hs.length && <p className="small muted mb-0"><Building2 size={14} style={{ display: 'inline', verticalAlign: '-2px' }} /> No network hospital at this pin — patients route to the district hospital.</p>}
-      <p className="tiny muted mb-0">Aggregated, anonymised counts only. Pin codes with fewer than 10 tests are grouped with neighbours so no individual can be identified.</p>
+      <p className="tiny muted mb-0">Aggregated, anonymised counts only — no names or patient details reach this view.</p>
     </div>
   );
 }
@@ -255,10 +260,9 @@ export default function Overview() {
           <KpiTile
             key={k.id}
             {...k}
-            value={t[k.id]}
-            series={trendTo(`${data.scope.level}-${k.id}`, t[k.id], 12, k.id === 'openAlerts' ? 0.4 : 0.09)}
-            warn={(k.warnBelow !== undefined && t[k.id] < k.warnBelow) || (k.warnAbove !== undefined && t[k.id] > k.warnAbove)}
-            note={k.id === 'consultsToday' ? 'since 00:00' : k.id === 'openAlerts' && t.openAlerts ? 'needs review' : null}
+            value={t?.[k.id]}
+            warn={t?.[k.id] != null && ((k.warnBelow !== undefined && t[k.id] < k.warnBelow) || (k.warnAbove !== undefined && t[k.id] > k.warnAbove))}
+            note={k.id === 'consultsToday' ? 'since 00:00' : k.id === 'openAlerts' && t?.openAlerts ? 'needs review' : null}
           />
         ))}
       </div>
@@ -284,7 +288,7 @@ export default function Overview() {
             ? <div className="stack" style={{ gap: 6 }}>{openAlerts.map((a) => <AlertLine key={a.id} a={a} />)}</div>
             : <Empty icon={ShieldCheck} title="All clear">No open alerts in your area.</Empty>}
         </Card>
-        <Card title="Triage corridors" action={<Link to="/command/actions" className="small row" style={{ gap: 4 }}>Manage <ArrowUpRight size={14} /></Link>}>
+        <Card title={<h3>Triage corridors <PreviewBadge /></h3>} action={<Link to="/command/actions" className="small row" style={{ gap: 4 }}>Manage <ArrowUpRight size={14} /></Link>}>
           {activeCorridors.length ? (
             <div className="stack" style={{ gap: 10 }}>
               {activeCorridors.map((c) => (

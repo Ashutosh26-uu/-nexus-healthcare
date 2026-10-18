@@ -3,6 +3,7 @@ import { UserPlus, Video, Stethoscope } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Avatar, Button, Field, Modal, Switch, Empty, Pills, useAction, useToast } from '../../components/ui';
 import { api } from '../../api';
+import { useLive } from '../../live';
 import { AvailBadge, AvailLine, availClass } from '../../components/Availability';
 import { ClinicDoctors } from '../doctor/Clinic';
 
@@ -12,7 +13,7 @@ export default function Roster({ home, setData, reload }) {
   const toast = useToast();
   const [filter, setFilter] = useState('all');
   const [adding, setAdding] = useState(false);
-  const roster = home.roster;
+  const roster = home.roster || [];
   const depts = [...new Set([...(home.facility.departments || []), ...roster.map((r) => r.department)])];
 
   const toggle = async (r, key, value) => {
@@ -45,7 +46,7 @@ export default function Roster({ home, setData, reload }) {
             <span className="tiny muted">Availability follows each doctor&apos;s own hours — automatically</span>
           </div>
           <div className="hs-docs">
-            {home.doctors.map((d) => (
+            {(home.doctors || []).map((d) => (
               <div key={d.id} className={`hs-doc ${availClass(d.availability)}`}>
                 <Avatar name={d.name} />
                 <div className="grow" style={{ minWidth: 0 }}>
@@ -142,24 +143,20 @@ function AddStaff({ open, onClose, depts, onAdded }) {
 
 // Doctors this hospital lists on Nexus — patients within 20 km can find and book them.
 function ListedDoctors() {
-  const [data, setData] = useState(null);
+  // Live: a listed doctor who signs up, gets verified or is removed updates this list without a refresh.
+  const { data, setData } = useLive('/hospital/doctors', ['doctors', 'hospital']);
   const [open, setOpen] = useState(false);
   const [run, busy] = useAction();
-  useEffect(() => {
-    let alive = true;
-    api.get('/hospital/doctors').then((r) => alive && setData(r)).catch(() => {});
-    return () => { alive = false; };
-  }, []);
   if (!data) return null;
   return (
     <div className="card mb-2">
       <div className="row between wrap" style={{ gap: 8 }}>
-        <div><h4 className="mb-0 row" style={{ gap: 8 }}><Stethoscope size={17} />Doctors patients can book ({data.doctors.length})</h4><span className="tiny muted">List every doctor here — patients within 20 km see them with timings, fees and reviews.</span></div>
+        <div><h4 className="mb-0 row" style={{ gap: 8 }}><Stethoscope size={17} />Doctors patients can book ({(data.doctors || []).length})</h4><span className="tiny muted">List every doctor here — patients within 20 km see them with timings, fees and reviews.</span></div>
         <Button size="sm" variant={open ? 'ghost' : 'secondary'} icon={UserPlus} onClick={() => setOpen((v) => !v)}>{open ? 'Close' : 'Manage list'}</Button>
       </div>
       {open && (
         <div className="mt-2">
-          <ClinicDoctors who="hospital" doctors={data.doctors} specialties={data.specialties} busy={busy}
+          <ClinicDoctors who="hospital" doctors={data.doctors || []} specialties={data.specialties} busy={busy}
             onAdd={(body) => run('add', async () => { const r = await api.post('/hospital/doctors', body); setData((d) => ({ ...d, doctors: r.doctors })); return true; }, 'Doctor listed')}
             onRemove={(x) => run(`rm-${x.id}`, async () => { const r = await api.del(`/hospital/doctors/${x.id}`); setData((d) => ({ ...d, doctors: r.doctors })); }, 'Removed')} />
         </div>

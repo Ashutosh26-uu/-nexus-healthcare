@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Repeat, Stethoscope, ArrowRight, ArrowLeft, ShieldCheck, Check, FileText, FlaskConical, ClipboardList, Copy as CopyIcon, History } from 'lucide-react';
 import { api } from '../../api';
-import { Avatar, Button, Card, Field, cx, fmtDate, useToast } from '../../components/ui';
+import { Avatar, Button, Card, Empty, Field, cx, fmtDate, useToast } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
-import { usePatient, PageSkeleton } from './shared';
+import { usePatient, usePatientLive, PageSkeleton } from './shared';
 import NearbyDoctors from './NearbyDoctors';
 import BookingFlow from './BookingFlow';
 
@@ -13,7 +13,9 @@ import BookingFlow from './BookingFlow';
 export default function ChangeDoctor() {
   const { patient } = usePatient();
   const toast = useToast();
-  const [data, setData] = useState(null);
+  // Live: a finished visit adds that doctor here, and a transfer shows up in the history, without a refresh.
+  const live = usePatientLive('/patient/transfers', ['consults', 'consents', 'records', 'doctors']);
+  const data = live.data ? { currentDoctors: live.data.currentDoctors || [], transfers: live.data.transfers || [], counts: live.data.counts || {} } : null;
   const [step, setStep] = useState(0);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState(null);
@@ -24,8 +26,12 @@ export default function ChangeDoctor() {
   const [done, setDone] = useState(null);
   const [book, setBook] = useState(null);
 
-  const load = () => api.get('/patient/transfers').then((r) => { setData(r); setFrom((f) => f || r.currentDoctors[0]?.id || ''); }).catch(() => setData({ currentDoctors: [], transfers: [], counts: {} }));
-  useEffect(() => { load(); }, [patient?.id]);
+  // Pre-select the most recent doctor once per profile; later live refreshes never override the patient's pick.
+  const firstDoc = data?.currentDoctors[0]?.id || '';
+  const picked = useRef(false);
+  useEffect(() => { picked.current = false; setFrom(''); }, [patient?.id]);
+  useEffect(() => { if (!picked.current && firstDoc) { picked.current = true; setFrom(firstDoc); } }, [firstDoc]);
+  if (live.error && !data) return <Empty title="We couldn't load your doctors">{live.error}</Empty>;
   if (!data) return <PageSkeleton />;
   const fromDoc = data.currentDoctors.find((x) => x.id === from);
 
@@ -33,7 +39,7 @@ export default function ChangeDoctor() {
     setBusy(true); setError('');
     try {
       const r = await api.post('/patient/transfers', { fromDoctorId: from || undefined, toDoctorId: to.id, reason });
-      setDone(r); toast('Records transferred'); load();
+      setDone(r); toast('Records transferred'); live.reload();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
 
@@ -89,9 +95,9 @@ export default function ChangeDoctor() {
                 <div><span className="tiny muted">To</span><strong translate="no">{to.name}</strong><span className="tiny muted">{to.specialty}{to.facility?.name ? ` · ${to.facility.name}` : ''}</span></div>
               </div>
               <div className="pt-cd-copy">
-                <span><ClipboardList size={15} /> {data.counts.visits} visits</span>
-                <span><FileText size={15} /> {data.counts.prescriptions} prescriptions</span>
-                <span><FlaskConical size={15} /> {data.counts.reports} reports</span>
+                <span><ClipboardList size={15} /> {data.counts.visits ?? 0} visits</span>
+                <span><FileText size={15} /> {data.counts.prescriptions ?? 0} prescriptions</span>
+                <span><FlaskConical size={15} /> {data.counts.reports ?? 0} reports</span>
               </div>
               <Field label="Reason (optional)"><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. closer to home, second opinion" /></Field>
               <label className="row small" style={{ gap: 8, alignItems: 'flex-start' }}>

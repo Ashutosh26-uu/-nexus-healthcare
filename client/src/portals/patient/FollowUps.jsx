@@ -56,13 +56,13 @@ export default function FollowUps() {
   const { patient, profiles, reloadHome } = usePatient();
   const navigate = useNavigate();
   // Live: a follow-up the doctor books, or a consult that starts, shows up without a refresh.
-  const { data, error, reload } = usePatientLive('/patient/follow-ups', ['consults', 'queue', 'lab']);
+  const { data, error, reload } = usePatientLive('/patient/follow-ups', ['consults', 'queue', 'lab', 'payments']);
   const changed = () => { reload(); reloadHome(); };
   const [rebook, setRebook] = useState(null);
   const isSelf = profiles.find((p) => p.id === patient?.id)?.self;
   if (error && !data) return <Empty title="We couldn't load your visits">{error}</Empty>;
   if (!data) return <PageSkeleton />;
-  const [next, ...later] = data.upcoming;
+  const [next, ...later] = data.upcoming || [];
 
   return (
     <div className="stack lg">
@@ -117,7 +117,7 @@ export default function FollowUps() {
         </Card>
       )}
 
-      {data.reportsReady.length > 0 && (
+      {data.reportsReady?.length > 0 && (
         <Card title={<h4 className="row mb-0" style={{ gap: 8 }}><FlaskConical size={17} />Reports to discuss</h4>}>
           <div className="pt-fu-list">
             {data.reportsReady.map((r) => (
@@ -133,7 +133,7 @@ export default function FollowUps() {
         </Card>
       )}
 
-      {data.past.length > 0 && (
+      {data.past?.length > 0 && (
         <Card title={<h4 className="row mb-0" style={{ gap: 8 }}><Stethoscope size={17} />Recent visits</h4>}>
           <div className="pt-fu-list">
             {data.past.map((c) => (

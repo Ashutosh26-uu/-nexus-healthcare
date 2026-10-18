@@ -91,11 +91,12 @@ function EarningsCard({ earnedToday, today, active }) {
   return (
     <div className="dj-earn">
       <div className="row between">
-        <span className="small row" style={{ gap: 6 }}><Wallet size={16} /> Earned today</span>
+        <span className="small row" style={{ gap: 6 }}><Wallet size={16} /> Estimated earnings today</span>
         <span className="tiny">{today.length} drop{today.length === 1 ? '' : 's'}</span>
       </div>
       <div className="dj-earn-amt">{fmtMoney(earnedToday)}</div>
-      <div className="tiny">{pipeline ? `+${fmtMoney(pipeline)} more when you finish your active jobs` : 'Accept a job below to start earning'}</div>
+      <div className="tiny">{pipeline ? `About +${fmtMoney(pipeline)} more when you finish your active jobs` : 'Accept a job below to start earning'}</div>
+      <div className="tiny" style={{ opacity: 0.8 }}>Estimate at ₹30 + ₹6/km (+₹20 cold chain). Your actual pay is set by your delivery partner.</div>
     </div>
   );
 }
@@ -132,7 +133,7 @@ function Jobs({ fresh, active, today, earnedToday, online, reload }) {
             <JobSummary job={j} />
             <JobMeta job={j} />
             <button className="dj-big-btn" disabled={busy === 'acc' + j.id} onClick={() => accept(j)}>
-              {busy === 'acc' + j.id && <span className="spinner sm" style={{ borderTopColor: '#fff' }} />} Accept job · {fmtMoney(payFor(j))}
+              {busy === 'acc' + j.id && <span className="spinner sm" style={{ borderTopColor: '#fff' }} />} Accept job · ~{fmtMoney(payFor(j))}
             </button>
           </article>
         ))
@@ -187,7 +188,7 @@ function Active({ active, reload }) {
             <div className="dj-steps">
               {STEP_LABELS.map((l, i) => <span key={l} className={cx(i <= idx && 'done', i === idx && 'cur')}><i />{l}</span>)}
             </div>
-            <RouteMap job={j} progress={st === 'in_transit' ? 0.55 : st === 'picked' ? 0.04 : 0} />
+            <RouteMap job={j} />
             <JobSummary job={j} />
             <JobMeta job={j} />
             {st === 'accepted' && (
@@ -216,8 +217,8 @@ function HistoryPage({ done, today, earnedToday }) {
   return (
     <>
       <div className="dj-stats">
-        <div><span>Today</span><strong>{fmtMoney(earnedToday)}</strong><em>{today.length} drop{today.length === 1 ? "" : "s"}</em></div>
-        <div><span>This week</span><strong>{fmtMoney(week.reduce((s, j) => s + payFor(j), 0))}</strong><em>{week.length} drop{week.length === 1 ? "" : "s"}</em></div>
+        <div><span>Today (est.)</span><strong>{fmtMoney(earnedToday)}</strong><em>{today.length} drop{today.length === 1 ? "" : "s"}</em></div>
+        <div><span>This week (est.)</span><strong>{fmtMoney(week.reduce((s, j) => s + payFor(j), 0))}</strong><em>{week.length} drop{week.length === 1 ? "" : "s"}</em></div>
       </div>
       <h2 className="dj-h">Completed</h2>
       {done.length === 0 ? <div className="dj-card"><Empty title="No deliveries yet">Your completed drops will be listed here.</Empty></div> : (
@@ -230,7 +231,7 @@ function HistoryPage({ done, today, earnedToday }) {
                 <div className="tiny muted">{j.items}</div>
                 <div className="tiny muted">{isToday(j.deliveredAt) ? `Today, ${fmtTime(j.deliveredAt)}` : fmtDateTime(j.deliveredAt || j.createdAt)} · {j.distanceKm} km</div>
               </div>
-              <strong className="dj-hist-pay">{fmtMoney(payFor(j))}</strong>
+              <strong className="dj-hist-pay">~{fmtMoney(payFor(j))}</strong>
             </div>
           ))}
         </div>

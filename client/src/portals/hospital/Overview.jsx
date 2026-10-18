@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { BedDouble, HeartPulse, Ambulance, Stethoscope, ArrowRight, Clock, Video } from 'lucide-react';
+import { BedDouble, HeartPulse, Ambulance, Stethoscope, ArrowRight, Video } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Card, Stat, Donut, Sparkline, TriageBadge, Avatar, Empty, timeAgo, fmtNum } from '../../components/ui';
 import { useAuth } from '../../auth';
@@ -12,16 +12,20 @@ function greeting() {
 
 export default function Overview({ home }) {
   const { user } = useAuth();
-  const { beds, referrals, roster, analytics, facility } = home;
+  const { analytics, facility } = home;
+  const beds = home.beds || [];
+  const referrals = home.referrals || [];
+  const roster = home.roster || [];
   const free = beds.reduce((s, b) => s + (b.total - b.occupied), 0);
   const total = beds.reduce((s, b) => s + b.total, 0);
   const occupied = total - free;
   const icu = beds.find((b) => b.type === 'icu');
   const pending = referrals.filter((r) => r.status === 'pending');
   const onDuty = roster.filter((r) => r.onDuty);
-  // Live networks don't keep bed history yet (occupancyTrend may be null or a single point).
-  const trend = [...(analytics?.occupancyTrend || []).slice(0, -1), Math.round((occupied / (total || 1)) * 100)];
-  const nowPct = trend[trend.length - 1];
+  // Live networks don't keep bed history yet (occupancyTrend may be null or a single point) — no line is drawn from one point.
+  const nowPct = total ? Math.round((occupied / total) * 100) : null;
+  const history = Array.isArray(analytics?.occupancyTrend) ? analytics.occupancyTrend.filter((v) => typeof v === 'number') : [];
+  const trend = nowPct != null && history.length > 1 ? [...history.slice(0, -1), nowPct] : [];
 
   return (
     <>
@@ -30,7 +34,7 @@ export default function Overview({ home }) {
       <div className="grid four">
         <Stat label="Free beds right now" icon={BedDouble} value={fmtNum(free)} sub={`of ${fmtNum(total)} across all wards`} />
         <Stat label="ICU beds free" icon={HeartPulse} value={icu ? icu.total - icu.occupied : '—'} sub={icu && icu.total - icu.occupied <= 1 ? 'Almost full — keep this updated' : 'Updated live'} />
-        <Stat label="Referrals waiting" icon={Ambulance} value={pending.length} sub={pending.length ? 'Ambulance crews are waiting on you' : 'Nothing pending'} />
+        <Stat label="Referrals waiting" icon={Ambulance} value={pending.length} sub={pending.length ? 'A doctor is waiting for your answer' : 'Nothing pending'} />
         <Stat label="Doctors on duty" icon={Stethoscope} value={onDuty.length} sub={`${roster.filter((r) => r.teleconsult).length} open for teleconsult`} />
       </div>
 
@@ -52,10 +56,10 @@ export default function Overview({ home }) {
           </div>
           <div className="hosp-trend">
             <div className="row between">
-              <span className="small muted">Overall occupancy, last 14 days</span>
-              <span className="serif" style={{ fontSize: '1.3rem', fontWeight: 600 }}>{nowPct}%</span>
+              <span className="small muted">{trend.length ? `Overall occupancy, last ${trend.length} days` : 'Overall occupancy right now'}</span>
+              <span className="serif" style={{ fontSize: '1.3rem', fontWeight: 600 }}>{nowPct != null ? `${nowPct}%` : '—'}</span>
             </div>
-            <Sparkline data={trend} color={occTone(nowPct)} height={56} />
+            {trend.length > 1 ? <Sparkline data={trend} color={occTone(nowPct)} height={56} /> : <p className="tiny muted mb-0">{total ? 'A day-by-day history will show here as it builds up.' : 'Add your bed counts on the bed board to see occupancy.'}</p>}
           </div>
         </Card>
 
@@ -69,12 +73,11 @@ export default function Overview({ home }) {
                   <div className="grow">
                     <div className="row wrap" style={{ gap: 8 }}>
                       <strong translate="no">{r.patientName}</strong>
-                      <span className="tiny muted">{r.age} yrs</span>
+                      {r.age != null && <span className="tiny muted">{r.age} yrs</span>}
                       <TriageBadge level={r.urgency} />
                     </div>
                     <div className="small muted clamp-2">{r.reason}</div>
                     <div className="row wrap tiny muted mt-1" style={{ gap: '4px 12px' }}>
-                      <span className="row nowrap" style={{ gap: 4 }}><Clock size={12} /> ETA {r.eta}</span>
                       <span>Needs {BED_TYPES[r.bedType]?.short || r.bedType} bed</span>
                       <span>{timeAgo(r.createdAt)}</span>
                     </div>

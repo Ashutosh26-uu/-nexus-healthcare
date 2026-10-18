@@ -5,7 +5,7 @@ import { Progress, timeAgo, useToast, cx } from '../../components/ui';
 import { api } from '../../api';
 import { BED_TYPES, HmisCard, useTick } from './shared';
 
-export default function BedBoard({ home, setData, reload, hmis }) {
+export default function BedBoard({ home, setData, reload }) {
   const toast = useToast();
   const [saving, setSaving] = useState({});
   const timers = useRef({});
@@ -40,20 +40,20 @@ export default function BedBoard({ home, setData, reload, hmis }) {
     }, 450);
   };
 
-  const totals = home.beds.reduce((a, b) => ({ total: a.total + b.total, occ: a.occ + b.occupied }), { total: 0, occ: 0 });
+  const totals = (home.beds || []).reduce((a, b) => ({ total: a.total + b.total, occ: a.occ + b.occupied }), { total: 0, occ: 0 });
 
   return (
     <>
-      <PageHeader title="Live bed board" subtitle="Tap + when a patient is admitted, − when one is discharged. Changes reach the network and the district command centre within seconds." />
+      <PageHeader title="Live bed board" subtitle="Tap + when a patient is admitted, − when one is discharged. Changes reach referring doctors and the district command centre straight away." />
 
       <div className="grid side">
         <div className="bed-grid">
-          {home.beds.map((b) => (
+          {(home.beds || []).map((b) => (
             <BedCard key={b.type} bed={b} saving={saving[b.type]} onChange={(p) => change(b.type, p)} />
           ))}
         </div>
         <div className="stack lg">
-          <HmisCard hmis={hmis} />
+          <HmisCard />
           <div className="card">
             <h4>Whole hospital</h4>
             <div className="row between mb-1">
@@ -61,7 +61,7 @@ export default function BedBoard({ home, setData, reload, hmis }) {
               <strong>{Math.round((totals.occ / (totals.total || 1)) * 100)}%</strong>
             </div>
             <Progress value={totals.occ} max={totals.total} />
-            <p className="tiny muted mt-2 mb-0">When a ward crosses 90%, the routing engine starts sending new referrals to the next nearest hospital with space.</p>
+            <p className="tiny muted mt-2 mb-0">Doctors see these free-bed counts when they choose where to refer a patient, and a ward with no free beds isn't offered to them.</p>
           </div>
         </div>
       </div>

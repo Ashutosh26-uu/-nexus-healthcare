@@ -1,6 +1,6 @@
 // Transfer helpers shared by the Pharmacy and Supply portals.
 import { Check, X, Truck, AlertTriangle } from 'lucide-react';
-import { Button, useAction, fmtNum, cx } from '../../components/ui';
+import { Button, useAction, useToast, fmtNum, cx } from '../../components/ui';
 import { api } from '../../api';
 import { isColdChain } from './stock';
 import './pharmacy.css';
@@ -26,11 +26,18 @@ export function TransferProgress({ status }) {
 /* Accept / decline / dispatch controls for the facility that holds the stock. */
 export function SourceActions({ t, inv, reload, who = 'you' }) {
   const [run, busy] = useAction();
+  const toast = useToast();
   const after = inv ? inv.qty - t.qty : null;
   const breach = inv && after < (inv.safetyStock || 0);
   const act = async (action, msg) => {
     const ok = await run(action, () => api.post(`/transfers/${t.id}/${action}`), msg);
     if (ok) reload();
+    return ok;
+  };
+  // The toast says what really happened: a rider only if the server found one.
+  const dispatch = async () => {
+    const r = await act('dispatch');
+    if (r) toast(r.courierId ? `Dispatched — a rider is assigned${isColdChain(t.drug) ? ' (use a cold box)' : ''}` : 'Dispatched — no rider is free nearby yet; the dispatch team will assign one');
   };
 
   return (
@@ -52,7 +59,7 @@ export function SourceActions({ t, inv, reload, who = 'you' }) {
           </>
         )}
         {t.status === 'accepted' && (
-          <Button size="sm" variant="clay" icon={Truck} loading={busy === 'dispatch'} onClick={() => act('dispatch', `Dispatched — a rider is assigned${isColdChain(t.drug) ? ' with a cold box' : ''}`)}>Mark dispatched</Button>
+          <Button size="sm" variant="clay" icon={Truck} loading={busy === 'dispatch'} onClick={dispatch}>Mark dispatched</Button>
         )}
         {t.status === 'dispatched' && <span className="small muted row" style={{ gap: 6 }}><Truck size={15} /> With the rider</span>}
       </div>

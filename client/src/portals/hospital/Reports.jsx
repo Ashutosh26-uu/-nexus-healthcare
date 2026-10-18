@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Users, Footprints, Globe, IndianRupee, UserX, Timer, Download } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Button, Card, Stat, Empty, Loading, Pills, fmtMoney } from '../../components/ui';
-import { api } from '../../api';
+import { useLive } from '../../live';
 
 // Local calendar dates (toISOString() is UTC and slips a day for IST early in the morning).
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -46,18 +46,21 @@ export default function Reports() {
   const [mode, setMode] = useState('day');
   const [day, setDay] = useState(today);
   const [month, setMonth] = useState(today.slice(0, 7));
-  const [report, setReport] = useState(null);
-  const [error, setError] = useState('');
   const [from, to] = mode === 'day' ? [day, day] : monthRange(month);
-
+  // Tokens, check-ins and payments change these numbers — refetch on those broadcasts.
+  const live = useLive(`/hospital/reports?from=${from}&to=${to}`, ['consults', 'queue', 'payments']);
+  const { reload } = live;
+  const includesToday = from <= today && to >= today;
+  // Doctors' own actions don't always reach this desk's live channel, so today's figures also refresh every minute.
   useEffect(() => {
-    let alive = true;
-    setError('');
-    api.get(`/hospital/reports?from=${from}&to=${to}`).then((r) => alive && setReport(r)).catch((e) => alive && setError(e.message));
-    return () => { alive = false; };
-  }, [from, to]);
+    if (!includesToday) return undefined;
+    const t = setInterval(reload, 60000);
+    return () => clearInterval(t);
+  }, [includesToday, reload]);
+  const error = live.data ? '' : live.error || '';
+  const report = live.data;
 
-  const r = report && report.from === from && report.to === to ? report : null;
+  const r = report && report.from === from && report.to === to ? { ...report, hours: report.hours || new Array(24).fill(0), doctors: report.doctors || [], days: report.days || [], totals: report.totals || {} } : null;
   const maxHour = r ? Math.max(1, ...r.hours) : 1;
   // Show the usual OPD day (8 am – 8 pm), widened to any hour that actually had arrivals.
   const busy = r ? r.hours.map((n, h) => (n ? h : null)).filter((h) => h !== null) : [];

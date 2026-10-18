@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Building2, UserPlus, Trash2, MapPin, Clock, IndianRupee, ShieldCheck, Hourglass, Mail, Phone, CheckCircle2, LocateFixed, Stethoscope } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
-import { api } from '../../api';
+import { api, subscribe } from '../../api';
 import { Avatar, Button, Card, Empty, Field, Loading, fmtMoney, useAction, cx } from '../../components/ui';
 
 const DEPARTMENTS = ['General Medicine', 'Pediatrics', 'Obstetrics', 'Orthopedics', 'Dermatology', 'ENT', 'Ophthalmology', 'Cardiology', 'Dental', 'Physiotherapy'];
@@ -67,6 +67,10 @@ export default function Clinic() {
   const [error, setError] = useState('');
   const load = () => api.get('/doctor/clinic').then((r) => { setData(r); if (r.clinic) setForm({ name: r.clinic.name, address: r.clinic.address || '', district: r.clinic.district || '', state: r.clinic.state || '', pincode: r.clinic.pincode || '', hours: r.clinic.hours || '', opdFee: r.clinic.opdFee ?? '', phone: r.clinic.phone || '', licenceNo: r.clinic.licenceNo || '', departments: r.clinic.departments || [] }); }).catch((e) => setError(e.message));
   useEffect(() => { load(); }, []);
+  // Live: verification and listed doctors claiming their profiles refresh the page — without wiping unsaved form edits.
+  useEffect(() => subscribe((topics) => {
+    if (topics.includes('all') || topics.includes('doctors') || topics.includes('admin')) api.get('/doctor/clinic').then((r) => setData((d) => (d?.clinic && r.clinic ? r : d))).catch(() => {});
+  }), []);
   if (!data) return error ? <Empty title="Couldn't load your clinic">{error}</Empty> : <Loading />;
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -130,9 +134,9 @@ export default function Clinic() {
         </div>
       </Card>
 
-      <Card title={<h4 className="row mb-0" style={{ gap: 8 }}><Stethoscope size={17} />Doctors at {c.name} ({data.doctors.length + 1})</h4>}>
+      <Card title={<h4 className="row mb-0" style={{ gap: 8 }}><Stethoscope size={17} />Doctors at {c.name} ({(data.doctors || []).length + 1})</h4>}>
         <p className="tiny muted mt-0">You&apos;re listed as the owner. Add everyone else who sees patients here.</p>
-        <ClinicDoctors doctors={data.doctors} specialties={data.specialties} busy={busy}
+        <ClinicDoctors doctors={data.doctors || []} specialties={data.specialties} busy={busy}
           onAdd={(body) => run('add', async () => { const r = await api.post('/doctor/clinic/doctors', body); setData((d) => ({ ...d, doctors: r.doctors })); return true; }, 'Doctor added')}
           onRemove={(x) => run(`rm-${x.id}`, async () => { const r = await api.del(`/doctor/clinic/doctors/${x.id}`); setData((d) => ({ ...d, doctors: r.doctors })); }, 'Removed')} />
       </Card>

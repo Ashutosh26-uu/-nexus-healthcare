@@ -3,6 +3,7 @@ import { Snowflake, MapPin, Package, Navigation, Camera, X, CheckCircle2, Store,
 import { fmtMoney, cx } from '../../components/ui';
 
 /* ---------- money & state helpers ---------- */
+// No rider pay rate is stored in Nexus yet, so this is an ESTIMATE (₹30 + ₹6/km, +₹20 cold chain) and always labelled as one.
 export const payFor = (job) => 30 + Math.round((job.distanceKm || 0) * 6) + (job.coldChain ? 20 : 0);
 export const isToday = (iso) => iso && new Date(iso).toDateString() === new Date().toDateString();
 
@@ -47,8 +48,8 @@ export function JobMeta({ job }) {
     <>
       <div className="dj-meta">
         <span><Package size={14} /> {job.items}</span>
-        <span><MapPin size={14} /> {job.distanceKm} km</span>
-        <span className="dj-pay">{fmtMoney(payFor(job))}</span>
+        {job.distanceKm != null && <span><MapPin size={14} /> {job.distanceKm} km</span>}
+        <span className="dj-pay" title="Estimated pay">~{fmtMoney(payFor(job))}</span>
       </div>
       {job.coldChain && (
         <div className="dj-cold">
@@ -61,27 +62,20 @@ export function JobMeta({ job }) {
 }
 
 /* ---------- stylised route map ---------- */
-function bez(t, p0, p1, p2) {
-  const u = 1 - t;
-  return [u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0], u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1]];
-}
-
-export function RouteMap({ job, progress = 0 }) {
+// A schematic of pickup (A) → drop, not a real map: there is no live GPS, so no rider position is drawn.
+export function RouteMap({ job }) {
   const seed = [...job.id].reduce((s, c) => s + c.charCodeAt(0), 0);
   const p0 = [44, 128];
   const p2 = [282, 50];
   const p1 = [120 + (seed % 70), 24 + (seed % 40)];
-  const [rx, ry] = bez(progress, p0, p1, p2);
   return (
     <div className="dj-map" dir="ltr">
-      <svg viewBox="0 0 320 170" role="img" aria-label={`Route from ${shortPlace(job.pickup)} to ${shortPlace(job.drop)}, ${job.distanceKm} km`}>
+      <svg viewBox="0 0 320 170" role="img" aria-label={`Schematic route from ${shortPlace(job.pickup)} to ${shortPlace(job.drop)}${job.distanceKm != null ? `, ${job.distanceKm} km` : ''}`}>
         <rect width="320" height="170" fill="#f3eee3" />
         {/* blocks */}
         {[[12, 12, 70, 40], [96, 70, 60, 34], [190, 104, 80, 44], [236, 10, 70, 26], [20, 70, 50, 28], [168, 18, 46, 36]].map(([x, y, w, h], i) => (
           <rect key={i} x={x} y={y} width={w} height={h} rx="6" fill="#ebe4d6" />
         ))}
-        {/* river */}
-        <path d="M0 150 C 80 130, 120 168, 200 148 S 300 120, 320 132" fill="none" stroke="#cfe1f1" strokeWidth="10" strokeLinecap="round" />
         {/* roads */}
         <path d="M0 60 H320 M0 112 H320 M88 0 V170 M230 0 V170" stroke="#fffdf9" strokeWidth="7" />
         <path d="M0 60 H320 M0 112 H320 M88 0 V170 M230 0 V170" stroke="#e6dfd3" strokeWidth="1" strokeDasharray="4 6" />
@@ -97,19 +91,12 @@ export function RouteMap({ job, progress = 0 }) {
           <path d="M0 -24 C 10 -24 14 -16 14 -11 C 14 -2 0 8 0 8 C 0 8 -14 -2 -14 -11 C -14 -16 -10 -24 0 -24 Z" fill="#0f5c4d" />
           <circle cy="-11" r="5" fill="#fff" />
         </g>
-        {/* rider */}
-        {progress > 0 && progress < 1 && (
-          <g transform={`translate(${rx} ${ry})`}>
-            <circle r="13" fill="#3d7fb8" opacity="0.18" className="dj-rider-pulse" />
-            <circle r="7" fill="#3d7fb8" stroke="#fff" strokeWidth="2.5" />
-          </g>
-        )}
       </svg>
       <div className="dj-map-labels">
         <span><b className="a">A</b> {shortPlace(job.pickup)}</span>
         <span><b className="b" /> {shortPlace(job.drop)}</span>
       </div>
-      <a className="dj-nav-btn" href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.status === 'in_transit' ? job.drop : job.pickup)}`} target="_blank" rel="noreferrer">
+      <a className="dj-nav-btn" href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.status === 'in_transit' ? String(job.drop || '').split(' · ').slice(-1)[0] : job.pickup)}`} target="_blank" rel="noreferrer">
         <Navigation size={15} /> Navigate
       </a>
     </div>
@@ -171,7 +158,7 @@ export function DeliverSheet({ job, open, onClose, onSubmit }) {
           <div className="dj-done">
             <CheckCircle2 size={56} />
             <h2>Delivered!</h2>
-            <p className="muted">{fmtMoney(payFor(job))} added to today's earnings. Shabaash, keep going.</p>
+            <p className="muted">About {fmtMoney(payFor(job))} added to today&apos;s estimated earnings. Shabaash, keep going.</p>
             <button className="dj-big-btn" onClick={onClose}>Done</button>
           </div>
         ) : (

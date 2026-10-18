@@ -1,11 +1,9 @@
-import { useEffect, useState } from 'react';
-import { Printer, Phone, Droplet, AlertTriangle, HeartPulse, Pill, Smartphone, Pencil, Lock, Copy, WifiOff, ShieldCheck } from 'lucide-react';
+import { Printer, Phone, Droplet, AlertTriangle, HeartPulse, Pill, Smartphone, Pencil, Lock, Copy, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Card, Empty, timeAgo, useToast } from '../../components/ui';
+import { Button, Card, Empty, PreviewBadge, timeAgo, useToast } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { AadhaarBadge } from '../../components/AadhaarVerify';
-import { api } from '../../api';
-import { usePatient, firstName, PassportQR, PageSkeleton } from './shared';
+import { usePatient, usePatientLive, firstName, PassportQR, PageSkeleton } from './shared';
 
 export default function EmergencyCard() {
   const { patient: p, homeLoading, profiles } = usePatient();
@@ -30,7 +28,7 @@ export default function EmergencyCard() {
             <div>
               <div className="pt-ecard-eyebrow">Nexus Healthcare · Emergency health card</div>
               <div className="pt-ecard-name" translate="no">{p.name}</div>
-              <div className="pt-ecard-sub">{p.age != null ? `${p.age} yrs` : ''}{p.gender ? ` · ${p.gender}` : ''} · {p.district}, {p.state}</div>
+              <div className="pt-ecard-sub">{p.age != null ? `${p.age} yrs` : ''}{p.gender ? ` · ${p.gender}` : ''}{p.district || p.state ? ` · ${[p.district, p.state].filter(Boolean).join(', ')}` : ''}</div>
               {p.aadhaarVerification?.verified && <div style={{ marginTop: 6 }}><AadhaarBadge v={p.aadhaarVerification} /></div>}
             </div>
             <div className="pt-ecard-blood" aria-label={`Blood group ${p.bloodGroup}`}>
@@ -81,30 +79,30 @@ export default function EmergencyCard() {
             <span className="pt-ic-tile clay"><Printer size={18} /></span>
             <div className="grow small">
               <strong>Keep a paper copy</strong>
-              <p className="muted mb-0">Print it, fold along the middle and keep it in your wallet or purse. Any E-Clinic kiosk can also print it for you free of cost.</p>
+              <p className="muted mb-0">Print it, fold along the middle and keep it in your wallet or purse.</p>
             </div>
           </div>
         </Card>
       </div>
 
-      <div className="no-print"><Capsule patientId={p.id} /></div>
+      <div className="no-print"><Capsule /></div>
     </div>
   );
 }
 
-function Capsule({ patientId }) {
+function Capsule() {
   const toast = useToast();
-  const [cap, setCap] = useState(null);
-  useEffect(() => { let a = true; api.get('/patient/capsule').then((c) => a && setCap(c)).catch(() => {}); return () => { a = false; }; }, [patientId]);
+  // Live: if anyone opens the capsule, the access history updates here straight away.
+  const { data: cap } = usePatientLive('/patient/capsule', ['audit', 'notifications']);
   if (!cap) return null;
   return (
     <Card className="pt-capsule">
       <div className="card-head">
         <div>
-          <h3 className="mb-0"><Lock size={18} style={{ verticalAlign: '-3px' }} /> Offline Emergency Capsule</h3>
-          <p className="small muted mb-0 mt-1">Your critical details are sealed with strong encryption inside this code. Any verified doctor can open it in an emergency — <strong>even with no internet</strong> — using a time-limited key. Every time it&apos;s opened, you&apos;re told.</p>
+          <h3 className="mb-0"><Lock size={18} style={{ verticalAlign: '-3px' }} /> Emergency Capsule <PreviewBadge /></h3>
+          <p className="small muted mb-0 mt-1">Your critical details are sealed with strong encryption inside this code, opened with a time-limited key. Every time it&apos;s opened, you&apos;re told.</p>
+          <p className="tiny muted mb-0 mt-1">Doctors can&apos;t open capsules from the Nexus app yet — until they can, show the emergency card above.</p>
         </div>
-        <span className="badge green"><WifiOff size={12} /> works offline</span>
       </div>
       <div className="pt-capsule-body">
         <div className="pt-capsule-qr">
@@ -118,7 +116,6 @@ function Capsule({ patientId }) {
         </div>
         <div className="grow">
           <div className="pt-capsule-feat"><ShieldCheck size={16} /> <span className="small">AES-256 encrypted — unreadable without the key</span></div>
-          <div className="pt-capsule-feat"><WifiOff size={16} /> <span className="small">Opens offline at any E-Clinic or hospital device</span></div>
           <div className="pt-capsule-feat"><Lock size={16} /> <span className="small">Key rotates monthly; old screenshots stop working</span></div>
           <div className="pt-capsule-opens">
             <div className="tiny strong">Access history</div>

@@ -4,6 +4,15 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const i18n = require('./i18n');
 
+// The real support contact, only if the operator configured one (SUPPORT_PHONE / SUPPORT_EMAIL) — never a
+// made-up helpline. Read once at start-up: the help texts below are fixed strings (they get translated).
+const SUPPORT_PHONE = String(process.env.SUPPORT_PHONE || '').trim().slice(0, 30);
+const SUPPORT_EMAIL = String(process.env.SUPPORT_EMAIL || '').trim().slice(0, 120);
+const SUPPORT_HOURS = String(process.env.SUPPORT_HOURS || '').trim().slice(0, 60);
+const SUPPORT = SUPPORT_PHONE
+  ? `call our team at **${SUPPORT_PHONE}**${SUPPORT_HOURS ? ` (${SUPPORT_HOURS})` : ''}${SUPPORT_EMAIL ? ` or email ${SUPPORT_EMAIL}` : ''}`
+  : SUPPORT_EMAIL ? `email our team at **${SUPPORT_EMAIL}**` : 'contact the Nexus Healthcare team';
+
 const EMERGENCY_WORDS = ['सीने में दर्द', 'छाती में दर्द', 'सांस नहीं', 'साँस नहीं', 'बेहोश', 'दौरा', 'खून की उल्टी', 'आत्महत्या', 'सांप ने काटा', 'ज़हर', 'dolor de pecho', 'no puedo respirar', 'douleur thoracique', 'ألم في الصدر', 'سینے میں درد', 'chest pain', 'can\'t breathe', 'cannot breathe', 'breathless', 'unconscious', 'seizure', 'fits', 'stroke', 'heavy bleeding', 'vomiting blood', 'suicide', 'kill myself', 'snake bite', 'poison', 'face drooping', 'slurred'];
 
 const EMERGENCY_REPLY =
@@ -19,14 +28,14 @@ How to talk:
 - Use markdown sparingly (bold for key actions, short lists).
 
 What you know about the platform (use it to guide people):
-- Sign up with mobile OTP, link ABHA/Aadhaar, create a Health Passport (ID like OC-XXXX-XXXX) with a QR emergency card.
-- "Check symptoms" runs AI triage → one of 4 levels: Emergency, See a doctor now, Routine, Self-care. A doctor always reviews it.
-- Consult: instant queue or scheduled slot; video, audio or chat. Typical fee ₹150–₹500; kiosk consults in pilot districts are free.
-- E-prescriptions go to the phone and chosen pharmacy; order delivery or pick up; track live.
-- Consent Manager: patients approve/deny who sees records and for how long; every access is in their audit log. Emergency "break-glass" access is time-limited and logged.
-- Family profiles for children and elderly parents.
-- E-Clinic kiosks at PHCs, railway stations and villages; a trained operator helps; works in 10+ Indian languages.
-- Support line: 1800-200-4455 (toll-free, 8am–10pm). Data stays in India, DPDP Act compliant.`;
+- Sign up with an email one-time code, optionally verify Aadhaar, create a Health Passport (ID like OC-XXXX-XXXX) with a QR emergency card.
+- "Check symptoms" runs a rule-based triage → one of 4 levels: Emergency, See a doctor now, Routine, Self-care. It is guidance, not a diagnosis.
+- Consult: book a verified doctor for a video consult or a clinic visit. Each doctor sets their own fee, shown before booking. Never quote typical fees, wait times or numbers of doctors.
+- E-prescriptions appear in the app and can be sent to a chosen chemist; pick up or order delivery where the chemist offers it.
+- Consent Manager: patients approve/deny who sees records and for how long; every access is in their access log. Emergency "break-glass" access is time-limited and logged.
+- Family profiles for children and elderly parents; a Health tracker for home BP, sugar, weight, oxygen and temperature readings; a child vaccination schedule.
+- Nexus E-Clinics are assisted kiosks with a trained operator; don't claim where they are or how many there are.
+- Support: ${SUPPORT}. Never invent a phone number, email, address, price, statistic or certification.`;
 
 // Privacy: nothing from the person's record — no name, passport id, allergies, conditions, medicines,
 // prescriptions or visits — is ever sent to the external model. It gets only generic app context plus what
@@ -37,28 +46,28 @@ function genericContext(ctx) {
 }
 
 // ---------- Offline fallback ----------
-const NO_MATCH = "I'm not completely sure about that one. I can help with booking doctors, your Health Passport, medicines, consent and privacy, kiosks, or general health questions. If it's about symptoms, try **Check symptoms** in your dashboard — or call our team at **1800-200-4455**.";
+const NO_MATCH = `I'm not completely sure about that one. I can help with booking doctors, your Health Passport, medicines, consent and privacy, kiosks, or general health questions. If it's about symptoms, try **Check symptoms** in your dashboard — or ${SUPPORT}.`;
 const ALLERGY_NOTE = '⚠️ Just a reminder: your Health Passport lists an allergy to {0}. Always mention it to the doctor or pharmacist.';
 const FAQ = [
-  { k: ['book', 'appointment', 'consult', 'see a doctor', 'doctor'], a: "You can talk to a doctor in two ways:\n\n- **Instant queue** — go to *Consult → Join now*. Most waits are under 10 minutes.\n- **Book a slot** — pick a doctor and a time that suits you.\n\nTip: run **Check symptoms** first — it helps us match you with the right doctor and shares notes so you don't repeat yourself." },
-  { k: ['passport', 'health id', 'abha', 'aadhaar', 'register', 'sign up', 'signup', 'account'], a: "Your **Health Passport** is one secure ID for all your records. To create one: tap **Get started**, enter your mobile number, verify the OTP, and add basics like blood group and allergies. You can link your ABHA number too. You'll get a QR health card for emergencies." },
-  { k: ['otp', 'login', 'log in', 'password', 'sign in'], a: "Patients can sign in with their **mobile number and a one-time code (OTP)** — no password to remember. Staff (doctors, pharmacies, hospitals) sign in with email and password. If the OTP doesn't arrive in a minute, tap *Resend*." },
+  { k: ['book', 'appointment', 'consult', 'see a doctor', 'doctor'], a: "To talk to a doctor, open **Find a doctor**, pick a verified doctor and choose a **video consult** or a **clinic visit** at a time that suits you. Doctors who are available right now are shown first.\n\nTip: run **Check symptoms** first — it helps match you with the right kind of doctor and shares your notes so you don't repeat yourself." },
+  { k: ['passport', 'health id', 'abha', 'aadhaar', 'register', 'sign up', 'signup', 'account'], a: "Your **Health Passport** is one secure ID for all your records. To create one: tap **Get started**, enter your email, type the one-time code we send there, and add basics like blood group and allergies. You can add your ABHA number too, and verify your Aadhaar if you want to. You'll get a QR health card for emergencies." },
+  { k: ['otp', 'login', 'log in', 'password', 'sign in'], a: "Sign in with your **email and a one-time code** sent to your inbox, or with your password if you set one. If the code doesn't arrive in a minute, check your spam folder and tap *Resend*. Forgot your password? Use *Forgot password* to get a reset code by email." },
   { k: ['consent', 'privacy', 'who can see', 'data', 'share my'], a: "You're in control. In **Consent Manager** you can see every request to view your records, approve or deny it, and choose how long access lasts. Every view is written to your **access log**. Officials only ever see anonymous totals, never your name." },
-  { k: ['medicine', 'pharmacy', 'delivery', 'order', 'prescription'], a: "After a consult your e-prescription appears under **Medicines**. From there you can see which nearby pharmacies have it in stock, and choose **home delivery** or **pick up**. If no nearby store has it, our supply network finds it in another district and sends it over." },
-  { k: ['kiosk', 'e-clinic', 'eclinic', 'village', 'no smartphone'], a: "E-Clinic kiosks are at PHCs, railway stations and villages. A trained health worker helps you check BP, sugar, oxygen and temperature, then connects you to a doctor on video. Your prescription is printed right there. No smartphone needed." },
-  { k: ['fee', 'cost', 'price', 'charge', 'free', 'pay'], a: "Consults usually cost **₹150–₹500** depending on the doctor. Kiosk consults in our pilot districts are **free**. You can pay by UPI, card, or cash at a kiosk." },
-  { k: ['language', 'hindi', 'tamil', 'bengali', 'bhasha'], a: "Nexus Healthcare works in 10+ Indian languages including Hindi, Bengali, Tamil, Telugu, Marathi and Awadhi. Doctors see your notes auto-translated into their language, so you can speak comfortably. Change it anytime in **Settings**." },
+  { k: ['medicine', 'pharmacy', 'delivery', 'order', 'prescription'], a: "After a consult your e-prescription appears under **Medicines**. From there you can see which nearby chemists on Nexus have it in stock, and choose **pick up** or **home delivery** where the chemist offers it. If no single chemist nearby has everything, you can send an open request to chemists near you — the first to accept takes the order." },
+  { k: ['kiosk', 'e-clinic', 'eclinic', 'village', 'no smartphone'], a: "Nexus E-Clinics are assisted kiosks: a trained operator helps you register, records your BP, sugar, oxygen and temperature, and connects you to a doctor on video — no smartphone needed. If there's one near you, it shows up when you book." },
+  { k: ['fee', 'cost', 'price', 'charge', 'free', 'pay'], a: "Each doctor sets their own fee, and you see it before you book. Video consults are paid online; for a clinic visit you pay a small booking amount online and the doctor's fee at the clinic. Medicine and lab test prices are shown before you order." },
+  { k: ['language', 'hindi', 'tamil', 'bengali', 'bhasha'], a: "You can use Nexus Healthcare in many languages, including Hindi, Bengali, Tamil, Telugu and Marathi — change it anytime in **Settings**. Each doctor lists the languages they speak, so you can pick one who speaks yours." },
   { k: ['family', 'child', 'mother', 'father', 'parent', 'elderly'], a: "Add family members under **Family** — children, parents, grandparents. Switch profiles with one tap to book consults or see their records. Each person still has their own Health Passport." },
   { k: ['emergency card', 'qr', 'blood group'], a: "Your **Emergency card** shows blood group, allergies and emergency contacts with a QR code. Any verified doctor can scan it in an emergency, even offline — and you'll be notified every time it's opened." },
-  { k: ['fever', 'temperature', 'bukhar'], a: "For a fever: rest, drink plenty of fluids (ORS is good), and you can take **paracetamol** as per the label. See a doctor if it's above **102°F**, lasts more than **2 days**, or comes with rash, bleeding gums, severe headache or confusion — especially now, as dengue is rising in some districts." },
+  { k: ['fever', 'temperature', 'bukhar'], a: "For a fever: rest, drink plenty of fluids (ORS is good), and you can take **paracetamol** as per the label. See a doctor if it's above **102°F**, lasts more than **2 days**, or comes with rash, bleeding gums, severe headache or confusion (these can be signs of dengue)." },
   { k: ['cough', 'cold', 'throat', 'khansi', 'zukam'], a: "Most coughs and colds settle in a week. Warm fluids, steam, honey with warm water (not for babies under 1), and rest help. See a doctor if you're breathless, the cough has lasted over **2 weeks**, you're coughing blood, or there's a high fever." },
-  { k: ['diabetes', 'sugar', 'bp', 'blood pressure', 'hypertension'], a: "For diabetes and BP, consistency matters most: take medicines at the same time daily, walk 30 minutes, cut sugar and salt, and check readings regularly. You can log readings at any E-Clinic. If sugar is above **300** or BP above **180/120**, see a doctor today." },
+  { k: ['diabetes', 'sugar', 'bp', 'blood pressure', 'hypertension'], a: "For diabetes and BP, consistency matters most: take medicines at the same time daily, walk 30 minutes, cut sugar and salt, and check readings regularly. You can log home readings in the **Health tracker**. If sugar is above **300** or BP above **180/120**, see a doctor today." },
   { k: ['headache', 'sir dard'], a: "Common headaches often ease with rest, water, and paracetamol at label dose. Please seek help urgently if it's the **worst headache of your life**, comes with a stiff neck, fever, weakness on one side, or confusion." },
   { k: ['diarrhoea', 'diarrhea', 'loose motion', 'vomit', 'dast'], a: "Keep drinking — **ORS after every loose stool** is the most important thing. Eat light food like khichdi or banana. See a doctor if there's blood, high fever, signs of dehydration (very little urine, dizziness), or if it's a small child or elderly person." },
   { k: ['dengue', 'malaria', 'mosquito'], a: "To protect against dengue and malaria: empty standing water weekly, use nets and repellents, and wear full sleeves. Get tested if you have high fever with body ache, pain behind the eyes, or rash. **Avoid ibuprofen/aspirin** for suspected dengue — paracetamol is safer." },
   { k: ['hello', 'hi', 'namaste', 'hey'], a: "Namaste! 🙏 I'm **Saathi**, Nexus Healthcare's help assistant. I can help you book a doctor, understand your Health Passport, find medicines, or answer general health questions. What can I do for you?" },
   { k: ['thank', 'dhanyavad', 'shukriya'], a: "You're welcome! Take care, and I'm here whenever you need me. 💚" },
-  { k: ['contact', 'support', 'help line', 'helpline', 'phone number', 'call'], a: "You can reach our support team at **1800-200-4455** (toll-free, 8am–10pm), or email care@nexushealthcare.in. For emergencies always call **108**." },
+  { k: ['contact', 'support', 'help line', 'helpline', 'phone number', 'call'], a: `For help with your account or a booking, ${SUPPORT}. For emergencies always call **108**.` },
 ];
 
 function fallbackAnswer(message, ctx) {
@@ -74,7 +83,7 @@ function fallbackAnswer(message, ctx) {
   const p = ctx?.patient;
   if (p && /next|upcoming|appointment|when/.test(text) && ctx.upcoming?.length) {
     const c = ctx.upcoming[0];
-    return `Your next consult is with **${c.doctorName}** on **${new Date(c.scheduledAt).toLocaleString('en-IN', { weekday: 'long', hour: 'numeric', minute: '2-digit' })}**. You'll get a reminder 15 minutes before. You can join from *Home → Upcoming*.`;
+    return `Your next consult is with **${c.doctorName}** on **${new Date(c.scheduledAt).toLocaleString('en-IN', { weekday: 'long', hour: 'numeric', minute: '2-digit' })}**. You'll get a reminder about an hour before. You can find it on *Home → Upcoming*.`;
   }
   // The allergy reminder is returned separately so the fixed FAQ text can still be served translated and
   // only the catalog string (never the allergy itself) goes to a translation provider.
@@ -173,7 +182,7 @@ The person has chosen ${langName} for the app. Reply in ${langName} unless they 
     }
     const final = await stream.finalMessage();
     if (final.stop_reason === 'refusal') {
-      res.write(`data: ${JSON.stringify({ delta: "\n\nI can't help with that one, but our support team can: **1800-200-4455**." })}\n\n`);
+      res.write(`data: ${JSON.stringify({ delta: `\n\nI can't help with that one — please ${SUPPORT}.` })}\n\n`);
     }
   } catch (err) {
     console.error('[chat] Claude error, using fallback:', err.message);

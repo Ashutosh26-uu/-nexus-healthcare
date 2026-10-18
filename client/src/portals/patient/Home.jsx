@@ -23,8 +23,9 @@ export default function Home() {
   const p = home.patient;
   const me = profiles.find((x) => x.self);
   const isSelf = me?.id === p.id;
-  const activeRx = home.prescriptions.filter((r) => !['delivered', 'collected'].includes(r.status));
-  const pastRx = home.prescriptions.filter((r) => ['delivered', 'collected'].includes(r.status)).slice(0, 2);
+  const rxList = home.prescriptions || [];
+  const activeRx = rxList.filter((r) => !['delivered', 'collected'].includes(r.status));
+  const pastRx = rxList.filter((r) => ['delivered', 'collected'].includes(r.status)).slice(0, 2);
 
   const today = new Date().toLocaleDateString(getLocale(), { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -49,7 +50,7 @@ export default function Home() {
       )}
 
       {isSelf && (() => {
-        const next = [...home.upcoming].filter((c) => c.scheduledAt).sort((a, b) => (a.scheduledAt < b.scheduledAt ? -1 : 1))[0];
+        const next = [...(home.upcoming || [])].filter((c) => c.scheduledAt).sort((a, b) => (a.scheduledAt < b.scheduledAt ? -1 : 1))[0];
         if (!next) return null;
         return (
           <Link to="/patient/follow-ups" className="pt-next-visit fade-in">
@@ -63,13 +64,15 @@ export default function Home() {
         );
       })()}
 
-      {home.alerts.map((a) => (
+      {(home.alerts || []).map((a) => (
         <div key={a.id} className="callout rose pt-alert fade-in" role="status">
           <AlertTriangle />
           <div className="grow">
             <strong>{a.disease} cases are rising in {a.district}.</strong>{' '}
-            Use mosquito nets, empty standing water around the house, and if anyone has a high fever with body ache, check symptoms early.
-            <div className="tiny mt-1" style={{ opacity: 0.8 }}>Health department alert · {timeAgo(a.createdAt)}</div>
+            {/dengue|malaria|chikungunya/i.test(a.disease || '')
+              ? 'Use mosquito nets, empty standing water around the house, and if anyone has a high fever with body ache, check symptoms early.'
+              : 'Take extra care with hygiene and clean water, and if anyone in the family feels unwell, check symptoms early.'}
+            <div className="tiny mt-1" style={{ opacity: 0.8 }}>{a.status === 'confirmed' ? 'Confirmed by the health department' : 'Early warning from local lab results'} · {timeAgo(a.createdAt)}</div>
           </div>
           <Button size="sm" variant="secondary" onClick={() => navigate('/patient/symptoms')}>Check symptoms</Button>
         </div>
@@ -99,7 +102,7 @@ export default function Home() {
       <div className="grid side">
         <div className="stack lg">
           <Card title="Coming up" action={<Link to="/patient/follow-ups" className="small">All follow-ups <ChevronRight size={14} className="inline-ic" /></Link>}>
-            {home.upcoming.length === 0 ? (
+            {!home.upcoming?.length ? (
               <Empty icon={CalendarClock} title="Nothing scheduled">
                 When you book a consult it will show up here, with a button to join.
               </Empty>
@@ -136,7 +139,7 @@ export default function Home() {
           </Card>
 
           <Card title="Medicines" action={<Link to="/patient/medicines" className="small">See all <ChevronRight size={14} className="inline-ic" /></Link>}>
-            {home.prescriptions.length === 0 ? (
+            {rxList.length === 0 ? (
               <Empty icon={Pill} title="No prescriptions yet">After a consult, your doctor&apos;s e-prescription lands here.</Empty>
             ) : (
               <div className="list">

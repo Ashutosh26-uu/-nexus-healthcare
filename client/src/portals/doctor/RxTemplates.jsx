@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { BookmarkPlus, LayoutTemplate, Plus, Trash2, Star, Sparkles, AlertTriangle } from 'lucide-react';
-import { api } from '../../api';
+import { api, subscribe } from '../../api';
 import { Button, Field, Modal, useAction, useToast } from '../../components/ui';
 
 const summary = (t) => [
@@ -25,6 +25,8 @@ export default function RxTemplateTools({ form, onApply, onAddItems }) {
   const toast = useToast();
   const load = useCallback(() => api.get('/doctor/rx-templates').then(setData).catch(() => setData({ templates: [], starters: [], frequent: [] })), []);
   useEffect(() => { load(); }, [load]);
+  // "Most prescribed" chips follow the prescriptions you sign (from any device).
+  useEffect(() => subscribe((topics) => { if (topics.includes('all') || topics.includes('prescriptions')) load(); }), [load]);
 
   const use = (t) => {
     // Confirmation is per template: a pending question about one must not wave another through.

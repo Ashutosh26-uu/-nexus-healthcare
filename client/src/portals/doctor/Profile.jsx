@@ -76,7 +76,7 @@ export default function Profile() {
       setForm({
         age: k.age || '', specialty: doctor.specialty || 'General Medicine', qualification: doctor.qualification || '',
         latestDegree: k.latestDegree || '', degreeNumber: k.degreeNumber || '', degreeFileId: k.degreeFileId || null,
-        regNo: doctor.regNo || '', experience: doctor.experience || '', patientsLifetime: doctor.patientsLifetime || '', fee: doctor.fee || 250,
+        regNo: doctor.regNo || '', experience: doctor.experience || '', patientsLifetime: doctor.patientsLifetime || '', fee: doctor.fee ?? '',
         languages: doctor.languages || ['Hindi', 'English'], district: doctor.district || '', state: doctor.state || '', photoFileId: k.photoFileId || doctor.photoFileId || null,
         address: doctor.address || '', country: doctor.country || 'IN',
         ...(doctor.profileComplete ? {} : draft), aadhaar: '',

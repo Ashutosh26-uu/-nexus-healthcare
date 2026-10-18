@@ -6,8 +6,9 @@ import { LANGS, langOf, hasFullCopy } from './i18n';
 import { KButton } from './KUi';
 
 export default function StepWelcome() {
-  const { lang, setLang, t, say, goto, kiosk, voiceOn } = useKiosk();
+  const { lang, setLang, t, say, goto, kiosk, voiceOn, home } = useKiosk();
   const L = langOf(lang);
+  const docsOnline = (home?.data?.doctors || []).filter((d) => d.online).length;
 
   useEffect(() => {
     const id = setTimeout(() => say('welcome_sub'), 400);
@@ -40,7 +41,7 @@ export default function StepWelcome() {
               <circle cx="40" cy="128" r="5" fill="#3d7fb8" opacity=".6" />
             </svg>
           </div>
-          <p className="k-welcome-facts">{kiosk?.name || 'E-Clinic'} · Doctors online now · Free under the state pilot</p>
+          <p className="k-welcome-facts">{kiosk?.name || 'E-Clinic'}{home?.data ? ` · ${docsOnline ? `${docsOnline} doctor${docsOnline === 1 ? '' : 's'} online now` : 'No doctor online right now'}` : ''}</p>
           {voiceOn && <p className="k-voice-hint"><Volume2 size={18} /> Voice guidance is on</p>}
         </div>
       </div>

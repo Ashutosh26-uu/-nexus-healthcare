@@ -37,7 +37,7 @@ export default function WhereToBuy({ rx, selectable, value, onChange, onLoaded }
         <LocationButton device={device} />
       </div>
       {data.shops.length === 0 && (
-        <div className="callout"><AlertTriangle /><span>No chemist within {data.radiusKm} km has these right now{data.fartherCount ? ` (${data.fartherCount} farther away do)` : ''}. We&apos;ve flagged it — our supply team moves stock from a nearby district, usually within a day.</span></div>
+        <div className="callout"><AlertTriangle /><span>No chemist within {data.radiusKm} km has these right now{data.fartherCount ? ` (${data.fartherCount} farther away do)` : ''}. Ask your doctor about an alternative, or check again later — chemists update their stock through the day.</span></div>
       )}
       {data.shops.length > 0 && <span className="tiny muted">Showing chemists within {data.radiusKm} km of you that have your medicines.</span>}
       <div className="pt-wtb-list" role={selectable ? 'radiogroup' : undefined}>

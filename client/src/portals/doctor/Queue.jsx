@@ -19,7 +19,10 @@ export default function Queue() {
 
   if (home.loading && !home.data) return <Loading />;
   if (home.error && !home.data) return <Empty title="Couldn't load your queue">{home.error}</Empty>;
-  const { doctor, queue, scheduled, stats } = home.data;
+  const { doctor } = home.data;
+  const queue = home.data.queue || [];
+  const scheduled = home.data.scheduled || [];
+  const stats = home.data.stats || {};
   if (!doctor.verified) return <OnboardingHome doctor={doctor} />;
 
   const start = (c) => {
@@ -62,7 +65,7 @@ export default function Queue() {
         <Stat label="Waiting now" value={stats.waiting} icon={Users} sub={inProgress ? '1 consult in progress' : 'in your live queue'} />
         <Stat label="Seen today" value={stats.today} icon={Clock} sub={`max ${doctor.maxPerHour} per hour`} />
         <Stat label="Overflow cases" value={stats.overflow} icon={Route} sub="routed from other regions" />
-        <Stat label="Your rating" value={stats.rating?.toFixed ? stats.rating.toFixed(1) : stats.rating} icon={Star} sub={`${doctor.consultsDone?.toLocaleString(getLocale())} consults so far`} />
+        <Stat label="Your rating" value={doctor.reviewStats?.count && Number(stats.rating) ? Number(stats.rating).toFixed(1) : '—'} icon={Star} sub={doctor.reviewStats?.count ? `${doctor.reviewStats.count} review${doctor.reviewStats.count === 1 ? '' : 's'} · ${(doctor.consultsDone || 0).toLocaleString(getLocale())} consults` : `No reviews yet · ${(doctor.consultsDone || 0).toLocaleString(getLocale())} consults`} />
       </div>
 
       <div className="grid side">
@@ -72,7 +75,7 @@ export default function Queue() {
             <span className="tiny muted row" style={{ gap: 6 }}><span className="dot green pulse" /> Updates in real time</span>
           </div>
           {queue.length === 0 && (
-            <Card><Empty icon={Coffee} title="No one waiting">Good time for a chai. We'll ping you when someone joins.</Empty></Card>
+            <Card><Empty icon={Coffee} title="No one waiting">Good time for a chai. New patients appear here the moment they join.</Empty></Card>
           )}
           {queue.map((c, i) => {
             const r = routeInfo(c);

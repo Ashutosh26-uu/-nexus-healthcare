@@ -19,7 +19,7 @@ export default function Inventory({ home, reload }) {
     const needle = dq.trim().toLowerCase();
     return home.inventory
       .filter((i) => (filter === 'low' ? lowIds.has(i.id) : filter === 'expiring' ? expIds.has(i.id) : true))
-      .filter((i) => !needle || `${i.drug} ${i.batch}`.toLowerCase().includes(needle))
+      .filter((i) => !needle || `${i.drug} ${i.batch || ''}`.toLowerCase().includes(needle))
       .sort((a, b) => (filter === 'expiring' ? new Date(a.expiry) - new Date(b.expiry) : a.drug.localeCompare(b.drug)));
   }, [home.inventory, home.lowStock, home.expiring, filter, dq]);
 

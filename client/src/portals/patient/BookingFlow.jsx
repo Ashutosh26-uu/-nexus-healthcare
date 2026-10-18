@@ -127,7 +127,7 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
       {opts && !paid && (
         <div className="stack">
           <div className="steps">{STEPS.map((s, i) => <span key={s} className={cx(i <= step && 'done')} />)}</div>
-          <div className="pt-bk-doc"><Avatar name={d.name} /><div className="grow"><strong translate="no">{d.name}</strong><div className="tiny muted">{d.qualification} · {d.experience} yrs</div></div><AvailBadge a={d.availability} /></div>
+          <div className="pt-bk-doc"><Avatar name={d.name} /><div className="grow"><strong translate="no">{d.name}</strong><div className="tiny muted">{d.qualification}{d.experience > 0 ? ` · ${d.experience} yrs` : ''}</div></div><AvailBadge a={d.availability} /></div>
 
           {step === 0 && (
             <Field label="Where would you like to see the doctor?">

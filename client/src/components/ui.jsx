@@ -129,6 +129,11 @@ export function Empty({ icon: Icon = Inbox, title, children }) {
   );
 }
 
+// Marks a feature that isn't connected to real data/services yet — never present its output as real.
+export function PreviewBadge({ children = 'Preview' }) {
+  return <span className="soon-badge">{children}</span>;
+}
+
 export function Loading() {
   return <div className="page-loading"><div className="spinner" /></div>;
 }

@@ -55,6 +55,9 @@ app.use(compression({ filter: (req, res) => (req.path === '/api/events' ? false 
 app.use(express.json({ limit: '2mb' }));
 // Per-request context: who acted and whom the request touched (scopes live-update fan-out).
 app.use((req, _res, next) => requestCtx.run({ affected: new Set(), userId: null }, next));
+// Every API answer is computed live from the database — never served from a browser, proxy or CDN cache
+// (routes that want revalidation instead, e.g. the i18n dictionary, override this with no-cache).
+app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
 // Throttle credential and code endpoints against brute force (OTP has its own per-target limits too).
 const loginLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 10, key: (r) => String(r.body?.identifier ?? '').slice(0, 160).toLowerCase(), message: 'Too many sign-in attempts. Please wait a few minutes and try again.' });
@@ -187,6 +190,11 @@ const PUBLIC_TOPICS = new Set(['all', 'advisories']);
 const requestCtx = new AsyncLocalStorage();
 let sseTimer = null;
 function touch(...userIds) { const s = requestCtx.getStore(); if (s) userIds.flat().forEach((u) => u && s.affected.add(u)); }
+// Everyone who works at these facilities (chemists, lab staff, hospital desks are personal portals too).
+function touchFacility(...fids) {
+  const set = new Set(fids.flat().filter(Boolean));
+  if (set.size) touch(db().users.filter((u) => u.facilityId && set.has(u.facilityId)).map((u) => u.id));
+}
 function queueTopics(c, list) { if (!list.length) return; list.forEach((t) => c.pending.add(t)); sseDirty.add(c); }
 function broadcast(...topics) {
   const ctx = requestCtx.getStore();
@@ -437,7 +445,11 @@ const DATA_MODE = require('./seed').dataMode();
 // What the client needs to know about this deployment (no secrets).
 app.get('/api/public/config', (_req, res) => {
   const o = otp.publicConfig();
-  res.json({ appName: 'Nexus Healthcare', demo: DATA_MODE === 'demo', smsLive: o.live, emailLive: o.emailLive, version: require('../package.json').version });
+  res.json({
+    appName: 'Nexus Healthcare', demo: DATA_MODE === 'demo', smsLive: o.live, emailLive: o.emailLive, version: require('../package.json').version,
+    // The real support line / inbox, only when the operator configured them — null means "don't show a number".
+    support: { phone: clean(process.env.SUPPORT_PHONE, 30) || null, email: clean(process.env.SUPPORT_EMAIL, 120) || null, hours: clean(process.env.SUPPORT_HOURS, 60) || null },
+  });
 });
 
 app.get('/api/public/stats', publicLimiter, (_req, res) => {
@@ -567,14 +579,16 @@ app.post('/api/chat', chatLimiter, optionalAuth, (req, res) => {
 });
 
 app.post('/api/dev/reset', auth, role('super_admin'), async (_req, res) => {
-  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_RESET !== 'true') return res.status(403).json({ error: 'Reset is disabled in production.' });
+  // A live network holds real people's records: never wipeable from the app unless the operator opts in.
+  if ((process.env.NODE_ENV === 'production' || DATA_MODE !== 'demo') && process.env.ALLOW_RESET !== 'true') return res.status(403).json({ error: 'Reset is disabled on a live network.' });
   await store.reset();
   broadcast('all');
   res.json({ ok: true });
 });
 // Run the 5-minute reminder sweep now (testing). Same production guard as reset.
 app.post('/api/dev/run-reminders', auth, role('super_admin'), (_req, res) => {
-  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_RESET !== 'true') return res.status(403).json({ error: 'Disabled in production.' });
+  // Pretending it's another moment (refillAt) would send real people early reminders on a live network.
+  if ((process.env.NODE_ENV === 'production' || DATA_MODE !== 'demo') && process.env.ALLOW_RESET !== 'true') return res.status(403).json({ error: 'Disabled on a live network.' });
   // `refillAt` (ISO) runs only the refill sweep as if it were that moment — lets a test reach a run-out date.
   const at = Date.parse(_req.body?.refillAt || '');
   res.json({ ok: true, sent: sweepReminders(), refills: sweepRefills(Number.isFinite(at) ? at : undefined) });
@@ -601,7 +615,7 @@ app.post('/api/auth/login', loginIpLimiter, loginLimiter, async (req, res) => {
     return res.status(401).json({ error: 'That email/phone and password don\'t match. Please try again.' });
   }
   if (user.status === 'suspended') return res.status(403).json({ error: 'This account is suspended. Contact support.' });
-  if (user.status === 'pending') return res.status(403).json({ error: 'Your account is awaiting verification by our team. We\'ll notify you within 24 hours.' });
+  if (user.status === 'pending') return res.status(403).json({ error: 'Your account is awaiting verification by our team. You can sign in as soon as it is approved.' });
   user.lastLoginAt = nowIso();
   store.save();
   res.json({ token: sign(user), user: publicUser(user) });
@@ -878,7 +892,8 @@ app.post('/api/public/join/facility', joinLimiter, async (req, res) => {
   };
   d.facilities.push(f);
   if (kind.type === 'hospital' && beds > 0) {
-    const icu = Math.round(beds * 0.1);
+    // ICU count only as the applicant gave it (never an assumed 10 % split); the hospital edits both later.
+    const icu = Math.max(0, Math.min(beds, parseInt(b.icuBeds, 10) || 0));
     d.beds.push({ facilityId: f.id, type: 'general', total: beds - icu, occupied: 0, updatedAt: nowIso() });
     d.beds.push({ facilityId: f.id, type: 'icu', total: icu, occupied: 0, updatedAt: nowIso() });
   }
@@ -922,7 +937,7 @@ app.post('/api/public/join/doctor', joinLimiter, async (req, res) => {
   const doc = {
     id: store.id('doc'), userId: user.id, name: user.name, specialty: listed?.specialty || 'General Medicine', qualification: '', regNo: '',
     languages: country === 'IN' ? ['Hindi', 'English'] : ['English'], verified: false, online: false, district: '', state: '', country,
-    rating: 0, consultsDone: 0, earnings: 0, fee: 200, maxPerHour: 4, experience: 0,
+    rating: 0, consultsDone: 0, earnings: 0, fee: null, maxPerHour: 4, experience: 0, // fee: proposed by the doctor in their profile
     engagement: 'independent', profileComplete: false, selfApplied: true, applicationRef: ref, appliedAt: nowIso(),
     ...(listed ? { claimRequest: listed.id } : {}),
   };
@@ -1085,6 +1100,8 @@ app.put('/api/patient/profile', auth, role('patient', 'caregiver'), (req, res) =
   }
   audit(req.user, 'updated_profile', p.id, 'passport', 'Self-service edit');
   store.save();
+  touch(patientOwnerUserIds(p)); // the patient and their guardian see the same passport
+  broadcast('patients', 'family');
   res.json(p);
 });
 
@@ -1311,7 +1328,7 @@ app.get('/api/patient/records', auth, role('patient', 'caregiver'), (req, res) =
   res.json({ patient: p, items });
 });
 
-// Simulated OCR: extracts structured hints from the typed/filename text.
+// No OCR: picks numbers like "HbA1c 7.2" out of the text the patient typed (nothing is invented or "verified").
 app.post('/api/patient/records/upload', auth, role('patient', 'caregiver'), async (req, res) => {
   const p = activePatient(req);
   const { title, date, fileName } = req.body || {};
@@ -1326,7 +1343,7 @@ app.post('/api/patient/records/upload', auth, role('patient', 'caregiver'), asyn
   const re = /(hba1c|haemoglobin|hemoglobin|glucose|sugar|cholesterol|tsh|creatinine|platelets?)\D{0,12}(\d+(\.\d+)?)/gi;
   let m;
   while ((m = re.exec(text))) found.push(`${m[1]}: ${m[2]}`);
-  const rec = { id: store.id('rec'), patientId: p.id, title: clean(title, 120) || clean(fileName, 120) || 'Uploaded report', date: /^\d{4}-\d{2}-\d{2}/.test(String(date || '')) ? String(date).slice(0, 10) : nowIso().slice(0, 10), fileName: clean(fileName, 160), summary: found.length ? `Extracted: ${found.join(', ')}` : 'Saved. A health worker will verify the details.', extracted: found, uploadedAt: nowIso(), fileId: fileId || null, fileUrl: fileId ? `/api/files/${fileId}` : null };
+  const rec = { id: store.id('rec'), patientId: p.id, title: clean(title, 120) || clean(fileName, 120) || 'Uploaded report', date: /^\d{4}-\d{2}-\d{2}/.test(String(date || '')) ? String(date).slice(0, 10) : nowIso().slice(0, 10), fileName: clean(fileName, 160), summary: found.length ? `Extracted: ${found.join(', ')}` : 'Saved to your records.', extracted: found, uploadedAt: nowIso(), fileId: fileId || null, fileUrl: fileId ? `/api/files/${fileId}` : null };
   db().records.push(rec);
   audit(req.user, 'uploaded_record', p.id, 'upload', rec.title);
   store.save();
@@ -2161,6 +2178,9 @@ function labQuote(lab, tests, origin) {
     homeCollection: !!lab.homeCollection, reportVia: lab.reportVia || ['App'], distanceKm: geo.km(origin, geo.pointOf(lab)),
     lines, offersAll: offered.length === tests.length, missing: tests.filter((t) => !offered.includes(t)).map((t) => catalog.nameOfTest(t.code, t.name)),
     total: lines.reduce((s, l) => s + (l.price || 0), 0), reportInHours: lines.length ? Math.max(...lines.map((l) => l.tatHours)) : null,
+    // Test prices come from the Nexus reference price list (labs can't enter their own list yet) and report
+    // times are typical turnaround — both indicative, and labelled so on every screen that shows them.
+    indicative: true,
   };
 }
 // 'review' = results entered, waiting for the pathologist's signature — the patient sees progress, never the values.
@@ -2188,6 +2208,8 @@ app.get('/api/patient/tests', auth, role('patient', 'caregiver'), (req, res) => 
 
 // Lab trust signals: rating & reviews, and how many tests it has completed on Nexus (popularity).
 const LAB_ADVANCE_SHARE = 0.2; // paid online to confirm a lab booking (cuts fake bookings); the rest at the lab
+// The flat home sample-collection charge added to a lab booking (one figure for quotes, bookings and public pages).
+const LAB_HOME_FEE = Math.max(0, Number(process.env.LAB_HOME_FEE ?? 50) || 0);
 function labStats(lab, doneCount) {
   const r = lab.reviewStats || { count: 0, sum: 0 };
   return { rating: r.count ? Math.round((r.sum / r.count) * 10) / 10 : (lab.rating || 0), reviewCount: r.count, testsDone: (lab.testsDoneBase || 0) + (doneCount || 0) };
@@ -2255,7 +2277,7 @@ app.post('/api/lab-orders/:id/book', auth, role('patient', 'caregiver'), async (
   if (!q.offersAll) return res.status(400).json({ error: `${lab.name} doesn't do ${q.missing.join(', ')}. Choose another lab.` });
   const home = Boolean(req.body?.homeCollection) && lab.homeCollection;
   const slot = req.body?.slot && !Number.isNaN(Date.parse(req.body.slot)) ? new Date(req.body.slot).toISOString() : null;
-  const price = catalog.round(q.total + (home ? 50 : 0));
+  const price = catalog.round(q.total + (home ? LAB_HOME_FEE : 0));
   const advance = Math.max(1, Math.ceil(price * LAB_ADVANCE_SHARE));
   const p = d.patients.find((x) => x.id === o.patientId);
   d.payments.filter((x) => x.purpose === 'lab_advance' && x.refId === o.id && x.status === 'created').forEach((x) => { x.status = 'void'; });
@@ -2688,6 +2710,8 @@ app.post('/api/lab-orders/:id/review', auth, role('patient', 'caregiver'), (req,
   const lab = d.facilities.find((f) => f.id === o.labId);
   if (lab) { const r = lab.reviewStats || { count: 0, sum: 0 }; lab.reviewStats = { count: r.count + 1, sum: r.sum + stars }; }
   store.save();
+  touchFacility(o.labId); // the lab's rating changed on its own screens
+  broadcast('lab');
   res.json({ ok: true });
 });
 
@@ -2983,6 +3007,7 @@ app.post('/api/patient/vaccines', auth, role('patient', 'caregiver'), async (req
   p.vaccinations = [...list, entry];
   audit(req.user, 'recorded_vaccination', p.id, 'vaccination', name);
   store.save();
+  touch(patientOwnerUserIds(p)); // the patient and their guardian (family hub) both see it
   broadcast('records', 'vaccines');
   res.json(wellness.vaccinePlan(p, today));
 });
@@ -2995,6 +3020,7 @@ app.delete('/api/patient/vaccines/:code', auth, role('patient', 'caregiver'), (r
   if (p.vaccinations.length === before) return res.status(404).json({ error: 'That dose isn\'t marked as given.' });
   audit(req.user, 'removed_vaccination', p.id, 'vaccination', VACCINE_NAMES.get(code) || code);
   store.save();
+  touch(patientOwnerUserIds(p)); // the patient and their guardian (family hub) both see it
   broadcast('records', 'vaccines');
   res.json(wellness.vaccinePlan(p, istDay(Date.now())));
 });
@@ -3012,6 +3038,7 @@ app.put('/api/patient/vaccines/reminders', auth, role('patient', 'caregiver'), (
   }
   p.vaxPrefs = prefs;
   store.save();
+  touch(patientOwnerUserIds(p)); // the patient and their guardian (family hub) both see it
   broadcast('vaccines');
   res.json(wellness.vaccinePlan(p, today));
 });
@@ -3054,6 +3081,7 @@ app.post('/api/patient/vitals-log', auth, role('patient', 'caregiver'), (req, re
   d.vitalsLog.push(rec);
   audit(req.user, 'logged_home_reading', p.id, 'vitals', entry.kind);
   store.save();
+  touch(patientOwnerUserIds(p)); // the patient and their guardian (family hub) both see it
   broadcast('vitals');
   const v = wellness.readingView(rec, vitalsCtx(p));
   res.json({ ...v, text: wellness.readingText(v) });
@@ -3067,6 +3095,7 @@ app.delete('/api/patient/vitals-log/:id', auth, role('patient', 'caregiver'), (r
   const [gone] = list.splice(i, 1);
   audit(req.user, 'deleted_home_reading', gone.patientId, 'vitals', gone.kind);
   store.save();
+  { const owner = patientById(gone.patientId); if (owner) touch(patientOwnerUserIds(owner)); }
   broadcast('vitals');
   res.json({ ok: true });
 });
@@ -3082,6 +3111,7 @@ app.put('/api/patient/vitals-log/reminder', auth, role('patient', 'caregiver'), 
   if (!wellness.KINDS.includes(kind)) return res.status(400).json({ error: 'Choose what to be reminded about.' });
   p.vitalsReminder = { on, time, kind, lastDay: p.vitalsReminder?.lastDay || null };
   store.save();
+  touch(patientOwnerUserIds(p)); // the patient and their guardian (family hub) both see it
   broadcast('vitals');
   res.json(p.vitalsReminder);
 });
@@ -3303,6 +3333,9 @@ app.put('/api/doctor/profile', auth, role('doctor'), async (req, res) => {
   const experience = parseInt(b.experience, 10);
   if (!Number.isInteger(experience) || experience < 0 || experience > age - 20) return res.status(400).json({ error: 'Please check your years of experience.' });
   const patientsLifetime = Math.max(0, Math.min(2000000, parseInt(String(b.patientsLifetime).replace(/\D/g, ''), 10) || 0));
+  // The fee comes from the doctor — never a default the doctor didn't choose.
+  const proposedFee = parseInt(b.fee, 10);
+  if (!doc.verified && !(proposedFee >= 100 && proposedFee <= 5000) && !(doc.fee > 0)) return res.status(400).json({ error: 'Please enter your consultation fee (₹100 – ₹5,000).' });
 
   Object.assign(doc, {
     specialty: b.specialty, qualification: clean(b.qualification), regNo: clean(b.regNo, 30).toUpperCase(), experience, patientsLifetime,
@@ -3313,7 +3346,7 @@ app.put('/api/doctor/profile', auth, role('doctor'), async (req, res) => {
     profileComplete: true, profileSubmittedAt: nowIso(), verificationNote: null,
   });
   // Fee is the doctor's to propose while they're under review; after verification only an admin changes it.
-  if (!doc.verified) doc.fee = Math.max(100, Math.min(5000, parseInt(b.fee, 10) || doc.fee || 200));
+  if (!doc.verified && proposedFee >= 100 && proposedFee <= 5000) doc.fee = proposedFee;
   // Identity: we keep only the last 4 Aadhaar digits (full number is never stored).
   // A QR verification survives re-submitting the form — unless a different Aadhaar number was typed.
   const last4 = aadhaar ? aadhaar.slice(-4) : (doc.kyc?.aadhaarLast4 || null);
@@ -3521,10 +3554,14 @@ function listDoctorAt(d, f, b, by) {
   const existing = d.users.find((u) => u.role === 'doctor' && ((email && u.email === email) || (phone && samePhone(u.phone, phone))));
   // Already on Nexus with their own account: we never attach a doctor to a clinic without their consent.
   if (existing) return { error: `${existing.name} already has a Nexus account. Ask them to add ${f.name} from their own portal.` };
+  // The fee patients see is the one the clinic entered (or its OPD fee) — never a made-up default.
+  const typedFee = parseInt(b.fee, 10);
+  const fee = typedFee >= 0 && typedFee <= 5000 && String(b.fee ?? '').trim() !== '' ? typedFee : (f.opdFee ?? null);
+  if (fee === null) return { error: 'Add the doctor\'s consultation fee (or set your OPD fee first).' };
   const doc = {
     id: store.id('doc'), userId: null, name: `Dr. ${name}`, specialty: b.specialty, qualification: clean(b.qualification, 80), regNo,
-    languages: cleanList(b.languages, 8).length ? cleanList(b.languages, 8) : ['Hindi', 'English'], verified: false, online: false,
-    district: f.district, state: f.state, country: countryOf(f), rating: 0, consultsDone: 0, earnings: 0, fee: Math.max(0, Math.min(5000, parseInt(b.fee, 10) || f.opdFee || 300)), maxPerHour: 4,
+    languages: cleanList(b.languages, 8), verified: false, online: false, // only what the clinic told us
+    district: f.district, state: f.state, country: countryOf(f), rating: 0, consultsDone: 0, earnings: 0, fee, maxPerHour: 4,
     experience: Math.max(0, Math.min(60, parseInt(b.experience, 10) || 0)), patientsLifetime: 0, facilityId: f.id, engagement: 'clinic',
     listedBy: by, listedAt: nowIso(), invite: { email: email || null, phone }, profileComplete: true,
     slots: b.slots && typeof b.slots === 'object' ? Object.fromEntries(WEEK_DAYS.map((day) => [day, (Array.isArray(b.slots[day]) ? b.slots[day] : []).map(Number).filter((h) => Number.isInteger(h) && h >= 0 && h <= 23)])) : undefined,
@@ -3554,6 +3591,7 @@ app.post('/api/doctor/clinic', auth, role('doctor'), (req, res) => {
   d.facilities.push(f);
   Object.assign(doc, { ownsFacilityId: f.id, facilityId: doc.facilityId || f.id, engagement: doc.facilityId ? doc.engagement : 'own_clinic' });
   store.save();
+  broadcast('admin', 'doctors'); // appears on the admin Onboarding queue
   res.json({ clinic: f, doctors: [] });
 });
 
@@ -4090,7 +4128,7 @@ app.post('/api/consults/:id/complete', auth, role('doctor'), (req, res) => {
   const refTo = referral && typeof referral === 'object' ? d.facilities.find((f) => f.id === referral.facilityId && f.type === 'hospital' && f.verified) : null;
   if (refTo) {
     const bedType = clean(referral.bedType, 20);
-    d.referrals.unshift({ id: store.id('ref'), patientId: p.id, patientName: p.name, age: ageOf(p.dob), fromDoctorId: doc.id, fromName: `${doc.name} (teleconsult)`, toFacilityId: refTo.id, bedType: bedType && d.beds.some((x) => x.facilityId === refTo.id && x.type === bedType) ? bedType : 'general', reason: clean(referral.reason, 300) || c.diagnosis, urgency: c.triage.level, status: 'pending', eta: '45 min', createdAt: nowIso() });
+    d.referrals.unshift({ id: store.id('ref'), patientId: p.id, patientName: p.name, age: ageOf(p.dob), fromDoctorId: doc.id, fromName: `${doc.name} (teleconsult)`, toFacilityId: refTo.id, bedType: bedType && d.beds.some((x) => x.facilityId === refTo.id && x.type === bedType) ? bedType : 'general', reason: clean(referral.reason, 300) || c.diagnosis, urgency: c.triage.level, status: 'pending', eta: null, createdAt: nowIso() });
     d.users.filter((u) => u.role === 'hospital_admin' && u.facilityId === refTo.id).forEach((u) => touch(u.id));
   }
   if (followUpDays) {
@@ -4191,8 +4229,10 @@ app.post('/api/kiosk/register', auth, role('kiosk_operator'), (req, res) => {
   res.json({ ...p, age: ageOf(p.dob) });
 });
 
-// Simulated connected devices.
+// Connected devices: no kiosk hardware bridge exists yet. On a live network the operator types the readings
+// from the machines; random "readings" exist only on the demo network (tests / investor demo).
 app.post('/api/kiosk/vitals/read', auth, role('kiosk_operator'), (req, res) => {
+  if (DATA_MODE !== 'demo') return res.status(409).json({ error: 'No reading devices are connected to this kiosk yet.', code: 'no_devices' });
   const r = (a, b, dec = 0) => +(a + Math.random() * (b - a)).toFixed(dec);
   const kiosk = db().facilities.find((f) => f.id === req.user.facilityId);
   const devices = kiosk.devices || {};
@@ -4456,6 +4496,8 @@ app.put('/api/hospital/reception/rooms', auth, role('hospital_admin'), (req, res
   f.rooms = { ...(f.rooms || {}), [doc.id]: room };
   if (!room) delete f.rooms[doc.id];
   store.save();
+  touchFacility(f.id); // other desk staff at this hospital / clinic
+  broadcast('queue');
   res.json(deskView(d, f));
 });
 
@@ -4601,6 +4643,7 @@ app.put('/api/hospital/beds', auth, role('hospital_admin'), (req, res) => {
   if (occupied !== undefined) { const n = num(occupied); if (n === null || n < 0) return res.status(400).json({ error: 'Enter a valid occupied count.' }); b.occupied = Math.min(b.total, Math.round(n)); }
   b.updatedAt = nowIso();
   store.save();
+  touchFacility(req.user.facilityId); // co-workers at this facility see it live too
   broadcast('beds', 'gov');
   res.json(b);
 });
@@ -4612,6 +4655,7 @@ app.put('/api/hospital/roster/:id', auth, role('hospital_admin'), (req, res) => 
   for (const k of ['onDuty', 'teleconsult']) if (b[k] !== undefined) r[k] = Boolean(b[k]);
   if (b.shift !== undefined) r.shift = clean(b.shift, 40);
   store.save();
+  touchFacility(req.user.facilityId); // co-workers at this facility see it live too
   broadcast('hospital', 'roster');
   res.json(r);
 });
@@ -4623,6 +4667,7 @@ app.post('/api/hospital/roster', auth, role('hospital_admin'), (req, res) => {
   const r = { id: store.id('ros'), facilityId: req.user.facilityId, name, department, shift: clean(b.shift, 40) || '09:00 – 17:00', onDuty: true, teleconsult: false };
   db().roster.push(r);
   store.save();
+  touchFacility(req.user.facilityId); // co-workers at this facility see it live too
   broadcast('hospital', 'roster');
   res.json(r);
 });
@@ -4639,6 +4684,7 @@ app.post('/api/hospital/doctors', auth, role('hospital_admin'), (req, res) => {
   if (r.error) return res.status(400).json({ error: r.error });
   audit(req.user, 'listed_doctor', null, 'doctor', `${r.doc.name} at ${f.name}`);
   store.save();
+  touchFacility(req.user.facilityId); // co-workers at this facility see it live too
   broadcast('doctors', 'hospital');
   res.json({ ok: true, linked: !!r.linked, doctors: clinicDoctorsOf(d, f.id) });
 });
@@ -4648,6 +4694,7 @@ app.delete('/api/hospital/doctors/:id', auth, role('hospital_admin'), (req, res)
   if (!x) return res.status(404).json({ error: 'Doctor not found at your hospital.' });
   if (x.userId) { x.facilityId = null; x.engagement = 'independent'; } else d.doctors.splice(d.doctors.indexOf(x), 1);
   store.save();
+  touchFacility(req.user.facilityId); // co-workers at this facility see it live too
   broadcast('doctors', 'hospital');
   res.json({ ok: true, doctors: clinicDoctorsOf(d, req.user.facilityId) });
 });
@@ -4733,6 +4780,7 @@ app.put('/api/hospital/opd/:id', auth, role('hospital_admin'), (req, res) => {
     o.capacity = Math.round(n);
   }
   store.save();
+  touchFacility(req.user.facilityId); // co-workers at this facility see it live too
   broadcast('hospital', 'roster');
   res.json(o);
 });
@@ -4744,6 +4792,7 @@ app.post('/api/hospital/opd', auth, role('hospital_admin'), (req, res) => {
   const o = { id: store.id('opd'), facilityId: req.user.facilityId, department, date, time, capacity: Math.max(1, Math.min(10000, parseInt(b.capacity, 10) || 20)), booked: 0 };
   db().opdSlots.push(o);
   store.save();
+  touchFacility(req.user.facilityId); // co-workers at this facility see it live too
   broadcast('hospital', 'roster');
   res.json(o);
 });
@@ -4857,7 +4906,7 @@ function approveLabReport(d, o, signedBy, user) {
   o.nextSteps = catalog.nextSteps(results, { doctorName: doc?.name });
   if (o.critical) {
     notify(doc?.userId, '🚨 Critical lab value', `${p.name}: ${results.filter((r) => r.flag === 'critical').map((r) => `${r.name} ${r.value} ${r.unit || ''}`).join(', ')}`, 'alert');
-    patientOwnerUserIds(p).forEach((u) => notify(u, 'Important lab result', `One of your results needs attention. ${doc ? 'Your doctor has been informed and will contact you shortly.' : 'Please see a doctor today — book one from the app.'}`, 'alert'));
+    patientOwnerUserIds(p).forEach((u) => notify(u, 'Important lab result', `One of your results needs attention. ${doc?.userId ? `${doc.name} has been sent this result too. ` : ''}Please see a doctor today — book one from the app if you haven't heard from them.`, 'alert'));
   } else {
     patientOwnerUserIds(p).forEach((u) => notify(u, 'Lab report ready 📄', `Your ${o.tests.map((t) => t.name).join(', ')} report is ready in Tests & reports — view it online or download the PDF, with suggestions on what to do next.`));
     notify(doc?.userId, 'Lab report ready', `${p.name}: ${o.tests.map((t) => t.name).join(', ')}`);
@@ -5142,7 +5191,7 @@ app.get('/api/patient/packages', auth, role('patient', 'caregiver'), (req, res) 
     }
   }
   list.sort((a, b) => (a.lab.distanceKm ?? 1e9) - (b.lab.distanceKm ?? 1e9) || a.price - b.price);
-  res.json({ packages: list, advanceShare: LAB_ADVANCE_SHARE, homeFee: 50 });
+  res.json({ packages: list, advanceShare: LAB_ADVANCE_SHARE, homeFee: LAB_HOME_FEE });
 });
 // Book a package: a lab order with those tests (packageId), then the same 20% advance as any lab booking.
 app.post('/api/patient/packages/book', auth, role('patient', 'caregiver'), async (req, res) => {
@@ -5161,7 +5210,7 @@ app.post('/api/patient/packages/book', auth, role('patient', 'caregiver'), async
   const q = labQuote(lab, tests, null);
   const home = Boolean(req.body?.homeCollection) && lab.homeCollection;
   const slot = req.body?.slot && !Number.isNaN(Date.parse(req.body.slot)) ? new Date(req.body.slot).toISOString() : null;
-  const price = catalog.round(pkg.price + (home ? 50 : 0));
+  const price = catalog.round(pkg.price + (home ? LAB_HOME_FEE : 0));
   const advance = Math.max(1, Math.ceil(price * LAB_ADVANCE_SHARE));
   const orderId = o?.id || store.id('lab');
   const pay = { id: store.id('pay'), purpose: 'lab_advance', refId: orderId, amount: advance, status: 'created', provider: payments.provider(), label: `20% advance · ${pkg.name} at ${lab.name}`, userId: req.user.id, patientId: p.id, createdAt: nowIso(), meta: { labId: lab.id, price, packageId: pkg.id } };
@@ -5199,13 +5248,13 @@ app.get('/api/pharmacy/home', auth, role('pharmacist'), (req, res) => {
     inbox: d.prescriptions.filter((r) => r.pharmacyId === fid).map(enrichRx).reverse(),
     inventory,
     lowStock: inventory.filter((i) => i.qty <= i.safetyStock),
-    expiring: inventory.filter((i) => new Date(i.expiry) < soon && i.qty > 0),
+    expiring: inventory.filter((i) => i.expiry && new Date(i.expiry) < soon && i.qty > 0), // no expiry on record → unknown, not "expiring"
     returns: (d.pharmacyReturns || []).filter((r) => r.facilityId === fid).slice(0, 30),
     transfersIn: d.transfers.filter((t) => t.toId === fid).map((t) => ({ ...t, fromName: facilityName(t.fromId) })),
     transfersOut: d.transfers.filter((t) => t.fromId === fid).map((t) => ({ ...t, toName: facilityName(t.toId) })),
     advisories: d.alerts.filter((a) => a.type === 'outbreak' && a.district === fac.district && a.status !== 'dismissed').map((a) => ({
       id: a.id, disease: a.disease, status: a.status,
-      message: `${a.disease} rising in your area (${a.multiplier}× normal). Suggested: stock up on ${a.disease === 'Dengue' ? 'ORS, Paracetamol, Dengue NS1 kits and platelet kits' : 'ORS, Paracetamol and Cetirizine'}.`,
+      message: `${a.disease} alert in your area (${a.cases || 1} positive test${(a.cases || 1) === 1 ? '' : 's'} in the last 7 days${a.multiplier ? `, ${a.multiplier}× the recent weekly average` : ''}). Suggested: stock up on ${a.disease === 'Dengue' ? 'ORS, Paracetamol, Dengue NS1 kits and platelet kits' : 'ORS, Paracetamol and Cetirizine'}.`,
     })),
   });
 });
@@ -5230,7 +5279,8 @@ app.post('/api/pharmacy/returns', auth, role('pharmacist'), (req, res) => {
   d.pharmacyReturns.unshift(r);
   audit(req.user, 'stock_return', null, 'inventory', `${inv.drug} ${inv.batch || ''} ×${qty} (${reason})`);
   store.save();
-  broadcast('pharmacy');
+  touchFacility(req.user.facilityId); // co-workers at this facility see it live too
+  broadcast('pharmacy', 'supply');
   res.json(r);
 });
 
@@ -5306,6 +5356,7 @@ app.put('/api/inventory/:id', auth, role('pharmacist', 'distributor'), (req, res
   }
   i.updatedAt = nowIso();
   store.save();
+  touchFacility(req.user.facilityId); // co-workers at this facility see it live too
   broadcast('pharmacy', 'supply');
   res.json(i);
 });
@@ -5316,11 +5367,15 @@ app.post('/api/inventory', auth, role('pharmacist', 'distributor'), (req, res) =
   const qty = parseInt(b.qty, 10);
   if (drug.length < 2 || b.qty === undefined) return res.status(400).json({ error: 'Drug and quantity are required.' });
   if (!Number.isInteger(qty) || qty < 0 || qty > 10000000) return res.status(400).json({ error: 'Enter a valid quantity.' });
-  const expiry = /^\d{4}-\d{2}-\d{2}$/.test(String(b.expiry || '')) ? b.expiry : new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10);
-  const i = { id: store.id('inv'), facilityId: req.user.facilityId, drug, batch: clean(b.batch, 30) || `B${crypto.randomInt(1000, 10000)}`, expiry, qty, safetyStock: Math.max(0, Math.min(1e6, parseInt(b.safetyStock, 10) || 10)), updatedAt: nowIso() };
+  // Batch and expiry are what's printed on the pack — never invented (a made-up expiry would let expired
+  // stock be sold, and a made-up batch would "verify" in the medicine authenticity check).
+  const expiry = /^\d{4}-\d{2}-\d{2}$/.test(String(b.expiry || '')) && Number.isFinite(Date.parse(b.expiry)) ? b.expiry : null;
+  if (!expiry) return res.status(400).json({ error: 'Add the expiry date printed on the pack.' });
+  const i = { id: store.id('inv'), facilityId: req.user.facilityId, drug, batch: clean(b.batch, 30) || null, expiry, qty, safetyStock: Math.max(0, Math.min(1e6, parseInt(b.safetyStock, 10) || 10)), updatedAt: nowIso() };
   db().inventory.push(i);
   if (!db().drugMaster.includes(drug)) db().drugMaster.push(drug);
   store.save();
+  touchFacility(req.user.facilityId); // co-workers at this facility see it live too
   broadcast('pharmacy', 'supply');
   res.json(i);
 });
@@ -5340,7 +5395,7 @@ app.post('/api/transfers/request', auth, role('pharmacist'), (req, res) => {
   // Shortage flag: many open requests for the same drug in a district.
   const open = d.transfers.filter((x) => x.drug === t.drug && ['requested'].includes(x.status)).length;
   if (open >= 3 && !d.alerts.some((a) => a.type === 'shortage' && a.drug === t.drug && a.status === 'open')) {
-    d.alerts.unshift({ id: store.id('al'), type: 'shortage', drug: t.drug, district: fac.district, state: fac.state, pincode: fac.pincode, confidence: 0.8, status: 'open', message: `${open} open transfer requests for ${t.drug} — possible regional shortage.`, createdAt: nowIso(), actions: [] });
+    d.alerts.unshift({ id: store.id('al'), type: 'shortage', drug: t.drug, district: fac.district, state: fac.state, pincode: fac.pincode, confidence: null, requests: open, status: 'open', message: `${open} open transfer requests for ${t.drug} across the network — possible shortage.`, createdAt: nowIso(), actions: [] });
   }
   store.save();
   broadcast('supply', 'pharmacy', 'gov');
@@ -5363,6 +5418,7 @@ app.post('/api/transfers/:id/:action', auth, role('pharmacist', 'distributor'), 
     if (inv) {
       if (inv.qty - t.qty < (inv.safetyStock || 0)) return res.status(400).json({ error: 'This would take you below safety stock. Reduce the quantity or decline.' });
       inv.qty -= t.qty;
+      t.batch = inv.batch || null; t.expiry = inv.expiry || null; // what was actually sent, for the receiving shelf
     }
     t.status = 'dispatched';
     const from = d.facilities.find((f) => f.id === t.fromId);
@@ -5379,7 +5435,7 @@ app.post('/api/transfers/:id/:action', auth, role('pharmacist', 'distributor'), 
     if (del) { del.status = 'delivered'; del.deliveredAt = nowIso(); }
     const inv = d.inventory.find((i) => i.facilityId === t.toId && i.drug === t.drug);
     if (inv) inv.qty += t.qty;
-    else d.inventory.push({ id: store.id('inv'), facilityId: t.toId, drug: t.drug, batch: 'TRF', expiry: new Date(Date.now() + 300 * 86400000).toISOString().slice(0, 10), qty: t.qty, safetyStock: 10, updatedAt: nowIso() });
+    else d.inventory.push({ id: store.id('inv'), facilityId: t.toId, drug: t.drug, batch: t.batch || null, expiry: t.expiry || null, qty: t.qty, safetyStock: 10, updatedAt: nowIso() });
   } else return res.status(400).json({ error: 'Unknown action.' });
   t.updatedAt = nowIso();
   store.save();
@@ -5507,7 +5563,11 @@ app.post('/api/dispatch/jobs/:id/accept', auth, role('delivery'), (req, res) => 
     if (del.kind === 'med_order') { const o = d.medOrders.find((x) => x.id === del.refId); if (o) o.riderId = req.user.id; }
     audit(req.user, 'accepted_delivery', null, 'delivery', del.id);
     store.save();
-    broadcast('dispatch', 'pharmacy');
+    // The sending chemist / warehouse and the patient tracking this delivery see the rider's name live.
+    if (del.kind === 'transfer') { const t = d.transfers.find((x) => x.id === del.refId); if (t) touchFacility(t.fromId, t.toId); }
+    if (del.kind === 'med_order') { const o = d.medOrders.find((x) => x.id === del.refId); if (o) { touchFacility(o.pharmacyId); const p = patientById(o.patientId); if (p) touch(patientOwnerUserIds(p)); } }
+    if (del.kind === 'prescription') { const r = d.prescriptions.find((x) => x.id === del.refId); if (r) { touchFacility(r.pharmacyId); const p = patientById(r.patientId); if (p) touch(patientOwnerUserIds(p)); } }
+    broadcast('dispatch', 'pharmacy', 'medorders', 'prescriptions', 'supply');
   }
   const { otp: _c, otpAttempts: _a, ...job } = del;
   res.json(job);
@@ -5573,7 +5633,7 @@ app.get('/api/gov/overview', auth, role('official'), (req, res) => {
   const capacity = hospitals.map((h) => {
     const beds = d.beds.filter((b) => b.facilityId === h.id);
     const sum = (t, k) => beds.filter((b) => !t || b.type === t).reduce((s, b) => s + b[k], 0);
-    return { id: h.id, name: h.name, district: h.district, state: h.state, totalBeds: sum(null, 'total'), freeBeds: sum(null, 'total') - sum(null, 'occupied'), icuTotal: sum('icu', 'total'), icuFree: sum('icu', 'total') - sum('icu', 'occupied'), oxygenFree: sum('oxygen', 'total') - sum('oxygen', 'occupied') };
+    return { id: h.id, name: h.name, district: h.district, state: h.state, pincode: h.pincode || null, lat: h.lat ?? null, lng: h.lng ?? null, totalBeds: sum(null, 'total'), freeBeds: sum(null, 'total') - sum(null, 'occupied'), icuTotal: sum('icu', 'total'), icuFree: sum('icu', 'total') - sum('icu', 'occupied'), oxygenFree: sum('oxygen', 'total') - sum('oxygen', 'occupied') };
   });
   const pharmaciesInScope = new Set(d.facilities.filter((f) => f.type === 'pharmacy' && inScope(f)).map((f) => f.id));
   const stockDays = d.inventory.filter((i) => pharmaciesInScope.has(i.facilityId)).map((i) => ({ drug: i.drug, facility: facilityName(i.facilityId), qty: i.qty, daysLeft: Math.round(i.qty / Math.max(1, i.safetyStock / 7)) })).filter((s) => s.daysLeft < 14).sort((a, b) => a.daysLeft - b.daysLeft);
@@ -5582,10 +5642,10 @@ app.get('/api/gov/overview', auth, role('official'), (req, res) => {
     totals: {
       freeBeds: capacity.reduce((s, c) => s + c.freeBeds, 0),
       icuFree: capacity.reduce((s, c) => s + c.icuFree, 0),
-      doctorsOnline: DATA_MODE !== 'demo' ? d.doctors.filter((x) => x.verified && availabilityOf(x, { facilities: d.facilities }).available && (!scoped || x.state === req.user.region.state)).length
-        : scoped ? d.doctors.filter((x) => x.online && x.state === req.user.region.state).length + 38 : d.regions.reduce((s, r) => s + r.doctorsOnline, 0),
-      kiosksOnline: d.facilities.filter((f) => f.type === 'kiosk' && f.status === 'online' && inScope(f)).length + (DATA_MODE !== 'demo' || scoped ? 0 : Math.max(0, d.regions.reduce((s, r) => s + r.kiosks, 0) - 4)),
-      consultsToday: DATA_MODE !== 'demo' ? d.consults.filter((c) => istDay(c.createdAt) === istDay(nowIso()) && (!scoped || inScope(patientById(c.patientId) || {}))).length : scoped ? 412 : 18640,
+      // Real counts in every mode (the demo used to pad these with regional illustration figures).
+      doctorsOnline: d.doctors.filter((x) => x.verified && availabilityOf(x, { facilities: d.facilities }).available && (!scoped || x.state === req.user.region.state)).length,
+      kiosksOnline: d.facilities.filter((f) => f.type === 'kiosk' && f.status === 'online' && inScope(f)).length,
+      consultsToday: d.consults.filter((c) => istDay(c.createdAt) === istDay(nowIso()) && (!scoped || inScope(patientById(c.patientId) || {}))).length,
       openAlerts: d.alerts.filter((a) => a.status === 'open' && inScope(a)).length,
     },
     regions: scoped ? null : d.regions,
@@ -5618,19 +5678,28 @@ app.post('/api/alerts/:id/:action', auth, role('official'), (req, res) => {
   // Confirming twice re-sent every clinical/stock notice and queued another pre-positioning transfer.
   if (action === 'confirm' && a.status === 'confirmed') return res.status(409).json({ error: 'This alert is already confirmed.' });
   a.status = map[action];
-  const note = { confirm: 'Confirmed — pharmacies advised, stock pre-positioning started, doctors notified', dismiss: 'Dismissed as false signal', resolve: 'Marked resolved', acknowledge: 'Acknowledged, under review' }[action];
-  a.actions = a.actions || [];
-  a.actions.push({ at: nowIso(), by: req.user.name, action: clean(req.body?.note, 300) || note });
+  // The log line says only what this request really did (no "pharmacies advised" when there were none).
+  const did = [];
   if (action === 'confirm' && a.type === 'outbreak') {
     // Flow E step 5: stock advisory + pre-position + clinical heads-up.
     // Only clinicians and chemists in the affected district — not the whole country.
-    d.doctors.filter((doc) => doc.district === a.district).forEach((doc) => notify(doc.userId, `Clinical heads-up: ${a.disease}`, `${a.disease} confirmed in ${a.district} (pin ${a.pincode}). Consider testing patients with matching symptoms.`, 'alert'));
+    const docs = d.doctors.filter((doc) => doc.district === a.district && doc.userId);
+    docs.forEach((doc) => notify(doc.userId, `Clinical heads-up: ${a.disease}`, `${a.disease} confirmed in ${a.district} (pin ${a.pincode}). Consider testing patients with matching symptoms.`, 'alert'));
     const localPharmacies = d.facilities.filter((f) => f.type === 'pharmacy' && f.verified && f.district === a.district);
-    d.users.filter((u) => u.role === 'pharmacist' && localPharmacies.some((f) => f.id === u.facilityId)).forEach((u) => notify(u.id, 'Stock advisory', `${a.disease} confirmed in ${a.district}. Please review stock of related medicines.`, 'alert'));
+    const chemists = d.users.filter((u) => u.role === 'pharmacist' && localPharmacies.some((f) => f.id === u.facilityId));
+    chemists.forEach((u) => notify(u.id, 'Stock advisory', `${a.disease} confirmed in ${a.district}. Please review stock of related medicines.`, 'alert'));
     const wh = d.facilities.find((f) => f.type === 'warehouse' && f.state === a.state);
     const target = localPharmacies.find((f) => f.generic) || localPharmacies[0];
-    if (wh && target && a.disease === 'Dengue') d.transfers.unshift({ id: store.id('tr'), drug: 'Dengue NS1 rapid kit', qty: 150, fromId: wh.id, toId: target.id, status: 'requested', reason: `Pre-positioning for confirmed alert ${a.id}`, createdAt: nowIso() });
+    if (docs.length) did.push(`${docs.length} doctor${docs.length === 1 ? '' : 's'} notified`);
+    if (chemists.length) did.push(`${chemists.length} chemist${chemists.length === 1 ? '' : 's'} sent a stock advisory`);
+    if (wh && target && a.disease === 'Dengue') {
+      d.transfers.unshift({ id: store.id('tr'), drug: 'Dengue NS1 rapid kit', qty: 150, fromId: wh.id, toId: target.id, status: 'requested', reason: `Suggested pre-positioning for confirmed alert ${a.id} — the warehouse reviews the quantity`, createdAt: nowIso() });
+      did.push(`stock transfer requested from ${wh.name} to ${target.name}`);
+    }
   }
+  const note = { confirm: a.type !== 'outbreak' ? 'Confirmed' : `Confirmed${did.length ? ` — ${did.join(', ')}` : ' — no doctors, chemists or warehouse on Nexus in this district to notify yet'}`, dismiss: 'Dismissed as false signal', resolve: 'Marked resolved', acknowledge: 'Acknowledged, under review' }[action];
+  a.actions = a.actions || [];
+  a.actions.push({ at: nowIso(), by: req.user.name, action: clean(req.body?.note, 300) || note });
   store.save();
   broadcast('alerts', 'gov', 'supply');
   res.json(a);
@@ -5658,13 +5727,26 @@ app.post('/api/corridors/:id/close', auth, role('official'), (req, res) => {
   res.json(c);
 });
 
+// Who hears about a published advisory: everyone for a national one ("All"), otherwise only the people
+// (patients and their guardians) whose passport is in that district or state — not every patient in the country.
+const NATIONAL_REGIONS = new Set(['', 'all', 'national', 'india', 'all india', 'nationwide']);
+function advisoryAudience(a) {
+  const region = String(a.region || '').trim().toLowerCase();
+  const all = NATIONAL_REGIONS.has(region);
+  const ids = new Set();
+  for (const p of db().patients) {
+    if (!all && String(p.district || '').toLowerCase() !== region && String(p.state || '').toLowerCase() !== region) continue;
+    patientOwnerUserIds(p).forEach((u) => ids.add(u));
+  }
+  return [...ids];
+}
 app.post('/api/advisories', auth, role('official', 'super_admin'), (req, res) => {
   const b = req.body || {};
   const title = clean(b.title, 120); const body = clean(b.body, 2000); const publish = Boolean(b.publish);
   if (!title || !body) return res.status(400).json({ error: 'Title and message are required.' });
   const a = { id: store.id('adv'), title, body, region: clean(b.region, 80) || 'All', languages: b.languages === undefined ? ['Hindi', 'English'] : cleanList(b.languages, 12), status: publish ? 'published' : 'draft', createdAt: nowIso(), by: req.user.name };
   db().advisories.unshift(a);
-  if (publish) db().users.filter((u) => u.role === 'patient').forEach((u) => notify(u.id, `Health advisory: ${title}`, body, 'alert'));
+  if (publish) advisoryAudience(a).forEach((uid) => notify(uid, `Health advisory: ${title}`, body, 'alert'));
   store.save();
   broadcast('gov', 'admin', 'advisories');
   res.json(a);
@@ -5683,7 +5765,7 @@ app.put('/api/advisories/:id', auth, role('official', 'super_admin'), (req, res)
     a.status = b.status;
   }
   // Patients are told when it goes live — not again every time an already-published advisory is edited.
-  if (a.status === 'published' && !wasPublished) { a.publishedAt = nowIso(); db().users.filter((u) => u.role === 'patient').forEach((u) => notify(u.id, `Health advisory: ${a.title}`, a.body, 'alert')); }
+  if (a.status === 'published' && !wasPublished) { a.publishedAt = nowIso(); advisoryAudience(a).forEach((uid) => notify(uid, `Health advisory: ${a.title}`, a.body, 'alert')); }
   store.save();
   broadcast('gov', 'admin', 'advisories');
   res.json(a);
@@ -5700,10 +5782,8 @@ app.get('/api/admin/home', auth, role('super_admin'), (_req, res) => {
       pendingVerification: d.doctors.filter((x) => !x.verified).length + d.facilities.filter((f) => !f.verified).length,
       breakGlassUnreviewed: d.audit.filter((a) => a.action === 'break_glass' && !a.reviewed).length,
     },
-    // Demo shows illustrative monitoring; a live network shows only what the server actually knows.
-    monitoring: DATA_MODE === 'demo'
-      ? { uptime: 99.94, apiErrorRate: 0.21, p95LatencyMs: 312, videoQuality: 4.4, activeCalls: d.consults.filter((c) => c.status === 'in_progress').length + 37, uptimeSeries: [99.9, 99.95, 100, 99.8, 99.97, 99.99, 99.94] }
-      : { uptime: null, apiErrorRate: null, p95LatencyMs: null, videoQuality: null, activeCalls: d.consults.filter((c) => c.status === 'in_progress').length, uptimeSeries: [], processUptimeHours: Math.round(process.uptime() / 360) / 10 },
+    // Only what the server actually knows, in every mode — no uptime / latency / call-quality monitoring exists yet.
+    monitoring: { uptime: null, apiErrorRate: null, p95LatencyMs: null, videoQuality: null, activeCalls: d.consults.filter((c) => c.status === 'in_progress').length, uptimeSeries: [], processUptimeHours: Math.round(process.uptime() / 360) / 10 },
   });
 });
 
@@ -5791,6 +5871,7 @@ app.post('/api/admin/users', auth, role('super_admin'), async (req, res) => {
   db().users.push(u);
   audit(req.user, 'created_user', null, 'user', `${name} (${r})`);
   store.save();
+  broadcast('admin');
   res.json(publicUser(u));
 });
 
@@ -5804,6 +5885,7 @@ app.put('/api/admin/users/:id/status', auth, role('super_admin'), (req, res) => 
   if (status === 'suspended') u.tokenVersion = (u.tokenVersion || 0) + 1; // ends their open sessions on every device
   audit(req.user, `user_${status}`, null, 'user', u.name);
   store.save();
+  broadcast('admin', 'audit');
   res.json(publicUser(u));
 });
 
@@ -5820,6 +5902,7 @@ app.put('/api/admin/ai-config', auth, role('super_admin'), (req, res) => {
   c.history.push({ version: c.version, at: nowIso(), by: req.user.name, note: note || 'Updated configuration', snapshot: { triage: c.triage, routing: c.routing, outbreak: c.outbreak } });
   audit(req.user, 'ai_config_changed', null, 'config', `v${c.version}`);
   store.save();
+  broadcast('admin');
   res.json(c);
 });
 
@@ -5833,6 +5916,7 @@ app.post('/api/admin/ai-config/rollback/:version', auth, role('super_admin'), (r
   c.history.push({ version: c.version, at: nowIso(), by: req.user.name, note: `Rolled back to v${v}`, snapshot: snap.snapshot });
   audit(req.user, 'ai_config_rollback', null, 'config', `v${v}`);
   store.save();
+  broadcast('admin');
   res.json(c);
 });
 
@@ -5851,7 +5935,8 @@ app.post('/api/admin/facilities', auth, role('super_admin'), (req, res) => {
     id: store.id(type === 'kiosk' ? 'fac_k' : 'fac'), type, name: type === 'kiosk' && !/^E-Clinic/i.test(name) ? `E-Clinic · ${name}` : name, verified: true,
     district: clean(b.district), state: clean(b.state), pincode: clean(b.pincode, 12), address: clean(b.address, 240), phone: clean(b.phone, 20),
     ...(geo.validCoord(lat, lng) && b.lat != null ? { lat, lng } : {}),
-    ...(type === 'kiosk' ? { status: 'offline', uptime: 100, version: '1.4.2', visitsToday: 0, devices: { bp: 'ok', spo2: 'ok', thermometer: 'ok', scale: 'ok', glucometer: 'ok', printer: 'ok', camera: 'ok' } } : {}),
+    // No hardware telemetry exists: a new E-Clinic starts offline with no uptime, version or device health on record.
+    ...(type === 'kiosk' ? { status: 'offline', devices: {} } : {}),
     createdAt: nowIso(),
   };
   d.facilities.push(f);
@@ -5864,9 +5949,12 @@ app.post('/api/admin/facilities', auth, role('super_admin'), (req, res) => {
 app.post('/api/admin/kiosks/:id/:action', auth, role('super_admin'), (req, res) => {
   const k = db().facilities.find((f) => f.id === req.params.id && f.type === 'kiosk');
   if (!k) return res.status(404).json({ error: 'Kiosk not found.' });
+  if (!['update', 'restart'].includes(req.params.action)) return res.status(400).json({ error: 'Unknown action.' });
+  // There is no remote-management link to kiosk hardware yet. Pretending ("version 1.4.3", "all devices OK")
+  // would show the admin a state that never happened — so these are refused until a real agent exists.
+  if (DATA_MODE !== 'demo') return res.status(501).json({ error: 'Remote kiosk updates and restarts aren\'t connected yet. Ask the operator to restart the kiosk on site.', code: 'not_connected' });
   if (req.params.action === 'update') k.version = '1.4.3';
-  else if (req.params.action === 'restart') { k.status = 'online'; k.devices = Object.fromEntries(Object.keys(k.devices || {}).map((x) => [x, 'ok'])); }
-  else return res.status(400).json({ error: 'Unknown action.' });
+  else { k.status = 'online'; k.devices = Object.fromEntries(Object.keys(k.devices || {}).map((x) => [x, 'ok'])); }
   store.save();
   broadcast('kiosks', 'admin');
   res.json(k);
@@ -5885,6 +5973,7 @@ app.post('/api/admin/audit/:id/review', auth, role('super_admin'), (req, res) =>
   a.reviewNote = clean(req.body?.note, 300) || 'Reviewed — justified';
   a.reviewedBy = req.user.name;
   store.save();
+  broadcast('audit', 'admin'); // the "unreviewed break-glass" count on every admin's home
   res.json(a);
 });
 
@@ -5913,18 +6002,29 @@ app.get('/api/patient/twin', auth, role('patient', 'caregiver'), (req, res) => {
 });
 
 // 4 ★ Consent Wallet + Data Dividend.
+// The research studies and rewards in innovations.js are illustrations (no real study, ethics approval or
+// partner exists). A live network lists none, gives no "welcome bonus" and creates no ledger: the screen shows
+// an honest empty, preview state until real studies are signed up.
+const walletPreview = () => DATA_MODE !== 'demo';
+const walletStudies = () => (walletPreview() ? [] : innovations.STUDIES);
+const walletRewards = () => (walletPreview() ? [] : innovations.REWARDS);
 app.get('/api/patient/wallet', auth, role('patient', 'caregiver'), (req, res) => {
   const p = activePatient(req);
+  const existing = db().wallets?.[p.id];
+  if (walletPreview()) {
+    const w = existing || { credits: 0, donations: [], ledger: [] };
+    return res.json({ credits: w.credits, donations: w.donations, ledger: [...w.ledger].reverse(), verified: innovations.verifyLedger(w), studies: [], rewards: [], preview: true });
+  }
   const w = innovations.walletFor(db(), p);
   store.save();
-  res.json({ credits: w.credits, donations: w.donations, ledger: [...w.ledger].reverse(), verified: innovations.verifyLedger(w), studies: innovations.STUDIES, rewards: innovations.REWARDS });
+  res.json({ credits: w.credits, donations: w.donations, ledger: [...w.ledger].reverse(), verified: innovations.verifyLedger(w), studies: walletStudies(), rewards: walletRewards(), preview: false });
 });
 
 app.post('/api/patient/wallet/donate', auth, role('patient', 'caregiver'), (req, res) => {
   const p = activePatient(req);
+  const study = walletStudies().find((s) => s.id === req.body?.studyId);
+  if (!study) return res.status(404).json({ error: walletPreview() ? 'No research studies are open on Nexus yet.' : 'Study not found.' });
   const w = innovations.walletFor(db(), p);
-  const study = innovations.STUDIES.find((s) => s.id === req.body?.studyId);
-  if (!study) return res.status(404).json({ error: 'Study not found.' });
   if (w.donations.includes(study.id)) return res.status(409).json({ error: 'You have already joined this study.' });
   w.donations.push(study.id);
   innovations.addLedger(w, 'donation', study.credits, `Joined research: ${study.title}`);
@@ -5935,9 +6035,9 @@ app.post('/api/patient/wallet/donate', auth, role('patient', 'caregiver'), (req,
 
 app.post('/api/patient/wallet/redeem', auth, role('patient', 'caregiver'), (req, res) => {
   const p = activePatient(req);
+  const reward = walletRewards().find((r) => r.id === req.body?.rewardId);
+  if (!reward) return res.status(404).json({ error: walletPreview() ? 'No rewards are available on Nexus yet.' : 'Reward not found.' });
   const w = innovations.walletFor(db(), p);
-  const reward = innovations.REWARDS.find((r) => r.id === req.body?.rewardId);
-  if (!reward) return res.status(404).json({ error: 'Reward not found.' });
   if (w.credits < reward.cost) return res.status(400).json({ error: 'Not enough health credits yet.' });
   innovations.addLedger(w, 'redeem', -reward.cost, `Redeemed: ${reward.title}`);
   const code = `OC-RW-${Math.floor(1000 + Math.random() * 8999)}`;
@@ -5976,8 +6076,11 @@ app.get('/api/gov/forecast', auth, role('official'), (req, res) => {
 });
 
 // 8 ★ Kiosk Diagnostic Suite.
-app.get('/api/kiosk/screenings', auth, role('kiosk_operator'), (_req, res) => res.json(innovations.SCREENINGS));
+// No screening device or validated model is connected: runScreening() returns RANDOM findings, which must never
+// reach a real patient's record or doctor. A live network lists no screenings (the kiosk hides the section).
+app.get('/api/kiosk/screenings', auth, role('kiosk_operator'), (_req, res) => res.json(DATA_MODE === 'demo' ? innovations.SCREENINGS : []));
 app.post('/api/kiosk/screening', auth, role('kiosk_operator'), (req, res) => {
+  if (DATA_MODE !== 'demo') return res.status(501).json({ error: 'AI screenings aren\'t connected at this kiosk yet.', code: 'not_connected' });
   const { key, patientId } = req.body || {};
   if (!innovations.SCREENINGS.some((s) => s.key === key)) return res.status(400).json({ error: 'Unknown screening.' });
   const p = db().patients.find((x) => x.id === patientId);
@@ -6028,7 +6131,7 @@ app.post('/api/consults/:id/scribe', auth, role('doctor'), (req, res) => {
 // Registered before the SPA catch-all so /sitemap.xml, /robots.txt and the meta-filled public pages win.
 require('./publicPages')(app, {
   db, catalog, geo, security, clean, own, publicDoctor, doctorStats, practiceOf, bookingOptions, labQuote, testInfo, stockRow,
-  MEDICINE_RADIUS_KM, LAB_ADVANCE_SHARE, auth, role, activePatient, store, audit, broadcast, dist: path.join(__dirname, '..', 'client', 'dist'),
+  MEDICINE_RADIUS_KM, LAB_ADVANCE_SHARE, LAB_HOME_FEE, auth, role, activePatient, store, audit, broadcast, dist: path.join(__dirname, '..', 'client', 'dist'),
 });
 
 // ---------- static client (production) ----------
@@ -6320,8 +6423,33 @@ function pruneNotifications() {
   store.save();
 }
 
+// A live database created by an older build kept a few invented values: the demo's AI-rule change history and
+// made-up kiosk telemetry (uptime 100 %, version 1.4.2, every device "ok") stamped on admin-created E-Clinics.
+// Remove them once at start-up; nothing real is touched.
+function scrubLiveArtifacts() {
+  if (DATA_MODE === 'demo') return;
+  const d = db();
+  let changed = false;
+  const c = d.aiConfig;
+  if (c && Array.isArray(c.history)) {
+    const before = c.history.length;
+    c.history = c.history.filter((h) => !(h.by === 'Ops Team · Reasonate' && !h.snapshot));
+    if (c.history.length !== before) {
+      changed = true;
+      if (!c.history.length) c.history.push({ version: c.version, at: nowIso(), by: 'System', note: 'Rule set in use — not yet reviewed by a medical advisor', snapshot: { triage: c.triage, routing: c.routing, outbreak: c.outbreak } });
+    }
+  }
+  for (const k of d.facilities) {
+    if (k.type !== 'kiosk') continue;
+    if (k.uptime === 100 && k.version === '1.4.2') { delete k.uptime; delete k.version; delete k.visitsToday; changed = true; }
+    if (k.devices && Object.keys(k.devices).length && Object.values(k.devices).every((s) => s === 'ok')) { k.devices = {}; changed = true; }
+  }
+  if (changed) { store.save(); console.log('[live] removed invented demo values from the database'); }
+}
+
 (async () => {
   await store.init();
+  scrubLiveArtifacts();
   automation.init({ dataMode: DATA_MODE });
   expireUnpaid();
   expireConsents();

@@ -31,11 +31,13 @@ const rupees = (n) => `₹${Number(n).toLocaleString('en-IN', { maximumFractionD
 // City / state only (never a street address) for JSON-LD.
 const placeLd = (district, state) => (district ? { areaServed: { '@type': 'City', name: district, ...(state ? { containedInPlace: { '@type': 'State', name: state } } : {}) } } : {});
 const DISCLAIMER ='Prices are indicative, not live MRPs. Ask your doctor or pharmacist before switching medicines, and never switch if your doctor wrote "no substitution".';
+// Lab test prices are the Nexus reference list (labs can't enter their own yet); report times are typical turnaround.
+const LAB_DISCLAIMER = 'Test prices are indicative (the Nexus reference price list, not each lab\'s own rate card) and report times are typical. Package prices are set by each lab.';
 
 module.exports = function registerPublicPages(app, deps) {
   const {
     db, catalog, geo, security, clean, own, publicDoctor, doctorStats, practiceOf, bookingOptions, labQuote, testInfo, stockRow,
-    MEDICINE_RADIUS_KM, LAB_ADVANCE_SHARE, auth, role, activePatient, store, audit, broadcast, dist,
+    MEDICINE_RADIUS_KM, LAB_ADVANCE_SHARE, LAB_HOME_FEE, auth, role, activePatient, store, audit, broadcast, dist,
   } = deps;
 
   const limiter = security.rateLimit({ windowMs: 60000, max: 120, message: 'Too many requests. Please wait a moment.' });
@@ -195,11 +197,11 @@ module.exports = function registerPublicPages(app, deps) {
     const from = prices.length ? Math.min(...prices) : null;
     const seo = {
       title: `${t.name} test price${labs.length ? ` from ${rupees(from)}` : ''} — compare labs | Nexus Healthcare`,
-      description: `${t.name}: compare prices at ${labs.length} verified lab${labs.length === 1 ? '' : 's'}${from !== null ? ` from ${rupees(from)}` : ''}. Sample: ${t.sample}. Preparation: ${t.prep}. NABL, home collection and report time shown.`,
+      description: `${t.name}: compare indicative prices at ${labs.length} verified lab${labs.length === 1 ? '' : 's'}${from !== null ? ` from ${rupees(from)}` : ''}. Sample: ${t.sample}. Preparation: ${t.prep}. NABL, home collection and report time shown.`,
     };
     return {
       test: t, labs, priceRange: prices.length ? { min: from, max: Math.max(...prices) } : null,
-      packages: packagesOf(verifiedLabs(d), origin, { code }), advanceShare: LAB_ADVANCE_SHARE, homeFee: 50, seo,
+      packages: packagesOf(verifiedLabs(d), origin, { code }), advanceShare: LAB_ADVANCE_SHARE, homeFee: LAB_HOME_FEE, indicative: true, disclaimer: LAB_DISCLAIMER, seo,
       jsonLd: {
         '@context': 'https://schema.org', '@type': 'MedicalTest', name: t.name, url: `${base}/lab-tests/${t.slug}`,
         description: `Sample: ${t.sample}. Preparation: ${t.prep}. Typical report time: about ${t.tatHours} hours.`,
@@ -215,7 +217,7 @@ module.exports = function registerPublicPages(app, deps) {
       const prices = labs.filter((f) => offers(f, code)).map((f) => labQuote(f, [{ code }], origin).lines[0]?.price).filter((x) => x != null);
       return { ...testCard(code), labs: prices.length, fromPrice: prices.length ? Math.min(...prices) : null };
     });
-    res.json({ tests, packages: packagesOf(labs, origin).slice(0, 12), advanceShare: LAB_ADVANCE_SHARE });
+    res.json({ tests, packages: packagesOf(labs, origin).slice(0, 12), advanceShare: LAB_ADVANCE_SHARE, indicative: true, disclaimer: LAB_DISCLAIMER });
   });
 
   app.get('/api/public/lab-tests/:code', pub, (req, res) => {
@@ -226,7 +228,7 @@ module.exports = function registerPublicPages(app, deps) {
   });
 
   app.get('/api/public/packages', pub, (req, res) => {
-    res.json({ packages: packagesOf(verifiedLabs(db()), originOf(req)), advanceShare: LAB_ADVANCE_SHARE, homeFee: 50 });
+    res.json({ packages: packagesOf(verifiedLabs(db()), originOf(req)), advanceShare: LAB_ADVANCE_SHARE, homeFee: LAB_HOME_FEE });
   });
 
   function labView(lab, origin, base) {
@@ -238,10 +240,10 @@ module.exports = function registerPublicPages(app, deps) {
     const where = [lab.district, lab.state].filter(Boolean).join(', ');
     const seo = {
       title: `${lab.name}${lab.district ? `, ${lab.district}` : ''} — test prices & reviews | Nexus Healthcare`,
-      description: `${lab.name}${where ? ` in ${where}` : ''}: ${tests.length} tests with prices${card.nabl ? ', NABL accredited' : ''}${card.homeCollection ? ', home sample collection' : ''}. ${card.rating ? `Rated ${card.rating}/5 by ${card.reviewCount} patients.` : 'New on Nexus.'} Book online with a 20% advance.`,
+      description: `${lab.name}${where ? ` in ${where}` : ''}: ${tests.length} tests with prices${card.nabl ? ', NABL accredited' : ''}${card.homeCollection ? ', home sample collection' : ''}. ${card.rating ? `Rated ${card.rating}/5 by ${card.reviewCount} patients.` : 'New on Nexus.'} Book online with a ${Math.round(LAB_ADVANCE_SHARE * 100)}% advance.`,
     };
     return {
-      lab: card, tests, packages: packagesOf([lab], origin), advanceShare: LAB_ADVANCE_SHARE, homeFee: 50, seo,
+      lab: card, tests, packages: packagesOf([lab], origin), advanceShare: LAB_ADVANCE_SHARE, homeFee: LAB_HOME_FEE, indicative: true, disclaimer: LAB_DISCLAIMER, seo,
       jsonLd: {
         '@context': 'https://schema.org', '@type': ['MedicalClinic', 'DiagnosticLab'], name: lab.name, url: `${base}/find/labs/${card.slug}`,
         ...placeLd(lab.district, lab.state),
@@ -301,7 +303,7 @@ module.exports = function registerPublicPages(app, deps) {
     const where = [card.place?.name, card.district].filter(Boolean).join(', ');
     const seo = {
       title: `${card.name} — ${card.specialty || 'Doctor'}${card.district ? ` in ${card.district}` : ''} | Book online · Nexus Healthcare`,
-      description: `${card.name}, ${[card.qualification, card.specialty].filter(Boolean).join(' · ')}${card.experience ? `, ${card.experience} years' experience` : ''}${where ? ` at ${where}` : ''}. ${card.rating ? `Rated ${card.rating}/5 by ${card.reviewCount} patients. ` : ''}Video consult ${rupees(card.fees.video)}. Speaks ${card.languages.join(', ') || 'English'}.`,
+      description: `${card.name}, ${[card.qualification, card.specialty].filter(Boolean).join(' · ')}${card.experience ? `, ${card.experience} years' experience` : ''}${where ? ` at ${where}` : ''}. ${card.rating ? `Rated ${card.rating}/5 by ${card.reviewCount} patients. ` : ''}Video consult ${rupees(card.fees.video)}.${card.languages.length ? ` Speaks ${card.languages.join(', ')}.` : ''}`,
     };
     return {
       // `id` (from the publicDoctor allowlist) lets the signed-in app open booking for this doctor.

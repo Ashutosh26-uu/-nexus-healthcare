@@ -3,7 +3,6 @@ import { LayoutDashboard, BedDouble, Ambulance, Users, CalendarClock, Building2,
 import PortalLayout from '../../components/PortalLayout';
 import { Loading, Empty } from '../../components/ui';
 import { useLive } from '../../live';
-import { HmisChip, useHmis } from './shared';
 import Overview from './Overview';
 import BedBoard from './BedBoard';
 import Referrals from './Referrals';
@@ -17,10 +16,9 @@ import Reports from './Reports';
 import './hospital.css';
 
 export default function HospitalApp() {
-  const live = useLive('/hospital/home', ['beds', 'referrals', 'gov', 'hospital', 'roster']);
-  const hmis = useHmis();
+  const live = useLive('/hospital/home', ['beds', 'referrals', 'gov', 'hospital', 'roster', 'doctors']);
   const home = live.data;
-  const pending = home?.referrals.filter((r) => r.status === 'pending').length || 0;
+  const pending = (home?.referrals || []).filter((r) => r.status === 'pending').length || 0;
 
   const nav = [
     { to: '/hospital', label: 'Overview', icon: LayoutDashboard, end: true },
@@ -39,7 +37,7 @@ export default function HospitalApp() {
   if (live.loading && !home) body = <Loading />;
   else if (!home) body = <Empty title="Couldn't load the hospital dashboard">{live.error || 'Please refresh the page in a moment.'}</Empty>;
   else {
-    const props = { home, reload: live.reload, setData: live.setData, hmis };
+    const props = { home, reload: live.reload, setData: live.setData };
     body = (
       <Routes>
         <Route index element={<Overview {...props} />} />
@@ -58,7 +56,7 @@ export default function HospitalApp() {
   }
 
   return (
-    <PortalLayout portal="Hospital Portal" nav={nav} headerExtra={<HmisChip hmis={hmis} compact />}>
+    <PortalLayout portal="Hospital Portal" nav={nav}>
       {body}
     </PortalLayout>
   );

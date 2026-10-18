@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Clock, BedDouble, Stethoscope, Check, X, Ambulance, IdCard } from 'lucide-react';
+import { BedDouble, Stethoscope, Check, X, Ambulance, IdCard } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Card, Button, TriageBadge, StatusBadge, Empty, Tabs, timeAgo, fmtDateTime, useAction } from '../../components/ui';
 import { api } from '../../api';
@@ -9,8 +9,9 @@ const QUICK_REJECT = ['No ICU bed free', 'Specialist not on duty', 'Equipment un
 
 export default function Referrals({ home, reload }) {
   const [tab, setTab] = useState('pending');
-  const pending = home.referrals.filter((r) => r.status === 'pending');
-  const history = home.referrals.filter((r) => r.status !== 'pending').sort((a, b) => new Date(b.decidedAt || b.createdAt) - new Date(a.decidedAt || a.createdAt));
+  const all = home.referrals || [];
+  const pending = all.filter((r) => r.status === 'pending');
+  const history = all.filter((r) => r.status !== 'pending').sort((a, b) => new Date(b.decidedAt || b.createdAt) - new Date(a.decidedAt || a.createdAt));
 
   return (
     <>
@@ -19,7 +20,7 @@ export default function Referrals({ home, reload }) {
 
       {tab === 'pending' ? (
         pending.length === 0 ? (
-          <Card><Empty icon={Ambulance} title="All caught up">No referrals are waiting. We'll ping you the moment one comes in.</Empty></Card>
+          <Card><Empty icon={Ambulance} title="All caught up">No referrals are waiting. New ones appear here as soon as a doctor sends them.</Empty></Card>
         ) : (
           <div className="stack lg">
             {pending.map((r) => <ReferralCard key={r.id} r={r} beds={home.beds} reload={reload} />)}
@@ -80,10 +81,6 @@ function ReferralCard({ r, beds, reload }) {
             <span>Sent {timeAgo(r.createdAt)}</span>
           </div>
         </div>
-        <div className="ref-eta">
-          <Clock size={16} />
-          <div><strong>{r.eta}</strong><span className="tiny">ETA</span></div>
-        </div>
       </div>
 
       <p className="ref-reason">{r.reason}</p>
@@ -95,7 +92,7 @@ function ReferralCard({ r, beds, reload }) {
 
       {mode ? (
         <div className="ref-decide fade-in">
-          <label className="small" style={{ fontWeight: 600 }}>{mode === 'accept' ? 'Note for the ambulance crew (optional)' : 'Why can\'t you take this patient?'}</label>
+          <label className="small" style={{ fontWeight: 600 }}>{mode === 'accept' ? 'Note to keep with this referral (optional)' : 'Why can\'t you take this patient?'}</label>
           {mode === 'reject' && (
             <div className="chip-select">
               {QUICK_REJECT.map((q) => <button key={q} type="button" className={`chip ${note === q ? 'on' : ''}`} onClick={() => setNote(q)}>{q}</button>)}

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Gauge, HeartPulse, Activity, Thermometer, Scale, Droplet, Pencil, Check, Play, RotateCcw, ArrowRight, AlertTriangle } from 'lucide-react';
 import { api } from '../../api';
-import { cx } from '../../components/ui';
+import { cx, PreviewBadge } from '../../components/ui';
+import { usePublicConfig } from '../../config';
 import { useKiosk } from './context';
 import { KButton, KError, StepFrame } from './KUi';
 
@@ -26,10 +27,16 @@ export default function StepVitals() {
   const [editing, setEditing] = useState(null);
   const [err, setErr] = useState('');
   const cancelled = useRef(false);
+  // Connected devices are only simulated on the demo network. On a live kiosk the operator measures with
+  // the clinic's own devices and types each reading in — nothing is made up.
+  const demo = usePublicConfig()?.demo === true;
+  // The server answers 409 `no_devices` when no reading devices are connected — then it's manual entry too.
+  const [noDevices, setNoDevices] = useState(false);
+  const manual = !demo || noDevices;
 
   useEffect(() => {
     cancelled.current = false;
-    if (!flow.vitals) say('vitals_sub');
+    if (!flow.vitals && demo) say('vitals_sub');
     return () => { cancelled.current = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -37,6 +44,7 @@ export default function StepVitals() {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
   const startReading = async () => {
+    if (manual) return;
     setErr('');
     setPhase('reading');
     setValues({});
@@ -44,6 +52,7 @@ export default function StepVitals() {
     try {
       reading = await api.post('/kiosk/vitals/read');
     } catch (e) {
+      if (e.code === 'no_devices' || e.status === 409) { setNoDevices(true); setPhase('idle'); return; }
       setErr(`${e.message} You can type the readings in by hand.`);
       setPhase('done');
       return;
@@ -64,12 +73,14 @@ export default function StepVitals() {
   };
 
   const promptKey = current >= 0 ? DEVICES[current].prompt : phase === 'done' ? 'v_done' : 'vitals_sub';
+  const typing = (key) => editing === key || (manual && phase !== 'reading');
 
   const proceed = () => {
     const clean = {};
     DEVICES.forEach((d) => {
       const v = values[d.key];
       if (v === null || v === undefined || v === '') return;
+      if (d.key !== 'bp' && !Number.isFinite(Number(v))) return; // a half-typed number is left out, not sent as NaN
       clean[d.key] = d.key === 'bp' ? String(v) : Number(v);
     });
     setFlow({ vitals: { ...clean, deviceWarnings: warnings }, step: 3 });
@@ -78,22 +89,29 @@ export default function StepVitals() {
   return (
     <StepFrame
       title={t('vitals_title')}
-      sub={t('vitals_sub')}
+      sub={manual ? "Measure with the clinic's devices and type each reading below. Leave blank anything you didn't measure." : t('vitals_sub')}
       onBack={() => goto(1)}
       wide
       actions={(
         <>
-          {phase === 'idle' && <KButton icon={Play} className="xl" onClick={startReading}>{t('start_reading')}</KButton>}
-          {phase === 'done' && <KButton variant="ghost" icon={RotateCcw} onClick={startReading}>{t('reading_again')}</KButton>}
-          {phase === 'done' && <KButton icon={ArrowRight} className="xl" onClick={proceed}>{t('next')}</KButton>}
+          {!manual && phase === 'idle' && <KButton icon={Play} className="xl" onClick={startReading}>{t('start_reading')}</KButton>}
+          {!manual && phase === 'done' && <KButton variant="ghost" icon={RotateCcw} onClick={startReading}>{t('reading_again')}</KButton>}
+          {(phase === 'done' || (manual && phase === 'idle')) && <KButton icon={ArrowRight} className="xl" onClick={proceed}>{t('next')}</KButton>}
           {phase === 'reading' && <KButton variant="ghost" loading>{DEVICES[current]?.device || '…'}</KButton>}
         </>
       )}
     >
-      <div className={cx('k-guide', phase)}>
-        <span className="k-guide-icon">{current >= 0 ? (() => { const I = DEVICES[current].icon; return <I />; })() : phase === 'done' ? <Check /> : <HeartPulse />}</span>
-        <span className="k-guide-text" key={promptKey}>{t(promptKey)}</span>
-      </div>
+      {manual ? (
+        <div className="k-guide idle">
+          <span className="k-guide-icon"><Pencil /></span>
+          <span className="k-guide-text">Operator: type the readings from the clinic&apos;s BP cuff, oximeter, thermometer, scale and glucometer. <PreviewBadge>Automatic device reading · coming soon</PreviewBadge></span>
+        </div>
+      ) : (
+        <div className={cx('k-guide', phase)}>
+          <span className="k-guide-icon">{current >= 0 ? (() => { const I = DEVICES[current].icon; return <I />; })() : phase === 'done' ? <Check /> : <HeartPulse />}</span>
+          <span className="k-guide-text" key={promptKey}>{t(promptKey)}</span>
+        </div>
+      )}
 
       <KError>{err}</KError>
       {warnings.length > 0 && (
@@ -112,27 +130,28 @@ export default function StepVitals() {
               <div className="k-vital-top">
                 <span className="k-vital-icon"><d.icon /></span>
                 <span className="k-vital-label">{t(`vl_${d.key}`)}</span>
-                {phase === 'done' && editing !== d.key && (
+                {phase === 'done' && !typing(d.key) && (
                   <button type="button" className="k-vital-edit" onClick={() => setEditing(d.key)} aria-label={`Edit ${d.label}`}><Pencil /></button>
                 )}
               </div>
-              {editing === d.key ? (
+              {typing(d.key) ? (
                 <div className="k-vital-editrow">
-                  <input className="k-input" dir="ltr" autoFocus inputMode={d.key === 'bp' ? 'text' : 'decimal'} value={v ?? ''} placeholder={d.key === 'bp' ? '120/80' : ''} onChange={(e) => setValues({ ...values, [d.key]: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && setEditing(null)} />
-                  <button type="button" className="k-vital-ok" onClick={() => setEditing(null)} aria-label="Done"><Check /></button>
+                  <input className="k-input" dir="ltr" autoFocus={editing === d.key} aria-label={`${d.label} (${d.unit})`} inputMode={d.key === 'bp' ? 'text' : 'decimal'} value={v ?? ''} placeholder={d.key === 'bp' ? '120/80' : ''} onChange={(e) => setValues({ ...values, [d.key]: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && setEditing(null)} />
+                  {editing === d.key && <button type="button" className="k-vital-ok" onClick={() => setEditing(null)} aria-label="Done"><Check /></button>}
                 </div>
               ) : (
                 <div className="k-vital-value" dir="ltr">
                   {reading ? <span className="k-reading"><i /><i /><i /></span> : has ? <>{v}<small>{d.unit}</small></> : unavailable ? <span className="k-na">Not available</span> : <span className="k-dash">—</span>}
                 </div>
               )}
-              <div className="k-vital-foot">{reading ? `Reading from ${d.device}…` : f ? flagWord(d.key, f) : has ? 'Normal range' : d.device}</div>
+              <div className="k-vital-foot">{reading ? `Reading from ${d.device}…` : f ? flagWord(d.key, f) : has ? 'Normal range' : manual ? d.unit : d.device}</div>
             </div>
           );
         })}
       </div>
-      {phase === 'done' && <Screenings patientId={flow.patient?.id} onResults={(scr) => setFlow({ screenings: scr })} saved={flow.screenings} />}
-      {phase === 'done' && <p className="k-fine">Operator: tap the pencil to correct any reading. Values are shared live with the doctor.</p>}
+      {!manual && phase === 'done' && <Screenings patientId={flow.patient?.id} onResults={(scr) => setFlow({ screenings: scr })} saved={flow.screenings} />}
+      {manual && <p className="k-fine"><PreviewBadge>Coming soon</PreviewBadge> Optional AI screenings (anaemia, eye, cough, ECG) aren&apos;t connected at this kiosk yet.</p>}
+      {!manual && phase === 'done' && <p className="k-fine">Operator: tap the pencil to correct any reading. Values go to the doctor when you connect.</p>}
     </StepFrame>
   );
 }

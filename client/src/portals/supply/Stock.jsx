@@ -16,7 +16,7 @@ export default function Stock({ home, reload }) {
     const needle = dq.trim().toLowerCase();
     return inv
       .filter((i) => (filter === 'watch' ? stockLevel(i).key !== 'ok' : filter === 'cold' ? isColdChain(i.drug) : true))
-      .filter((i) => !needle || `${i.drug} ${i.batch}`.toLowerCase().includes(needle))
+      .filter((i) => !needle || `${i.drug} ${i.batch || ''}`.toLowerCase().includes(needle))
       .sort((a, b) => a.drug.localeCompare(b.drug));
   }, [inv, filter, dq]);
   const units = inv.reduce((s, i) => s + i.qty, 0);

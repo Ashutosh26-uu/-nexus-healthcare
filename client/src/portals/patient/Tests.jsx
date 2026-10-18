@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSupport, telHref } from '../../config';
 import { FlaskConical, MapPin, Home as HomeIcon, BadgeCheck, Check, Droplet, Utensils, FileText, Building2, Phone, Smartphone, CalendarClock, ArrowRight, ArrowLeft, Download, Stethoscope, Star, Users, LocateFixed, ShieldCheck, Ambulance, Repeat, Search, Hourglass, CreditCard, Bike, Gift, Stamp, HeartPulse } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
@@ -37,7 +38,7 @@ function ReportingInfo({ quote, booking }) {
       <FileText size={15} />
       <span>
         Report in about <strong>{hrs(booking?.reportInHours ?? quote.reportInHours)}</strong> after the sample is collected.
-        {' '}You&apos;ll get it on {quote.reportVia.join(', ')} — and it&apos;s saved to <strong>My records</strong> automatically. Your doctor is told the moment it&apos;s ready; critical values are flagged straight away.
+        {' '}{quote.reportVia?.length > 0 ? <>You&apos;ll get it on {quote.reportVia.join(', ')} — and it&apos;s saved to</> : <>It&apos;s saved to</>} <strong>My records</strong> automatically. Your doctor is told the moment it&apos;s ready; critical values are flagged straight away.
       </span>
     </div>
   );
@@ -50,6 +51,7 @@ const PLACE_TITLE = { doctor: 'Near the clinic where I saw the doctor', home: 'N
 // Book a lab in three steps: where to test → choose a lab that does every test (sort by distance, cost,
 // rating or popularity) → collection & 20% advance. The tests come straight from the doctor's prescription.
 function LabChooser({ order, onClose, onBooked }) {
+  const support = useSupport();
   const device = useDeviceLocation();
   const [step, setStep] = useState(0);
   const [near, setNear] = useState(null);
@@ -133,7 +135,7 @@ function LabChooser({ order, onClose, onBooked }) {
                 {SORTS.map((x) => <button key={x.value} type="button" role="radio" aria-checked={sort === x.value} className={cx('chip', sort === x.value && 'on')} onClick={() => setSort(x.value)}>{x.label}</button>)}
               </div>
               <span className="tiny muted">Only labs that do all {order.tests.length} of your tests · {PLACE_TITLE[near]?.toLowerCase()}</span>
-              {data.labs.length === 0 && <Empty icon={FlaskConical} title="No lab does all these tests yet">Try another place, ask your doctor, or call 1800-200-4455 — we&apos;ll arrange it.</Empty>}
+              {data.labs.length === 0 && <Empty icon={FlaskConical} title="No lab does all these tests yet">Try another place or ask your doctor{support.phone ? <> — or call <a href={telHref(support.phone)} translate="no">{support.phone}</a> and we&apos;ll arrange it</> : null}.</Empty>}
               <div className="pt-lab-list" role="radiogroup">
                 {data.labs.map((l) => (
                   <button key={l.id} type="button" role="radio" aria-checked={labId === l.id} className={cx('pt-lab-opt', labId === l.id && 'on')} onClick={() => setLabId(l.id)}>
@@ -141,8 +143,8 @@ function LabChooser({ order, onClose, onBooked }) {
                     <span className="grow" style={{ minWidth: 0 }}>
                       <span className="strong block" translate="no">{l.name}</span>
                       <span className="tiny pt-wtb-meta">
-                        <span><Star size={12} className="pt-sun" /> <strong>{l.rating ? l.rating.toFixed(1) : 'New'}</strong>{l.reviewCount ? <span className="muted"> ({l.reviewCount})</span> : null}</span>
-                        <span className="muted"><Users size={12} /> {Number(l.testsDone).toLocaleString(getLocale())} tests done</span>
+                        <span><Star size={12} className="pt-sun" /> <strong>{l.rating && l.reviewCount ? Number(l.rating).toFixed(1) : 'New'}</strong>{l.reviewCount ? <span className="muted"> ({l.reviewCount})</span> : null}</span>
+                        {l.testsDone > 0 && <span className="muted"><Users size={12} /> {Number(l.testsDone).toLocaleString(getLocale())} tests done</span>}
                         {l.distanceKm !== null && <span className="muted"><MapPin size={12} /> {l.distanceKm} km</span>}
                         <span className="muted"><FileText size={12} /> Report in {hrs(l.reportInHours)}</span>
                       </span>
@@ -198,7 +200,7 @@ export default function Tests() {
   const { patient, profiles } = usePatient();
   const navigate = useNavigate();
   // Live: the lab's "sample collected" / "report ready" updates land here without a refresh.
-  const { data, error, reload } = usePatientLive('/patient/tests', ['lab']);
+  const { data, error, reload } = usePatientLive('/patient/tests', ['lab', 'payments', 'records']);
   const [choosing, setChoosing] = useState(null);
   const [rebook, setRebook] = useState(null);
   const [packages, setPackages] = useState(false);
@@ -461,7 +463,7 @@ function PackagePicker({ resume, preselect, onClose }) {
                     <span className="strong block">{k.name}</span>
                     <span className="tiny muted block" translate="no">{k.lab.name}{k.lab.distanceKm != null ? ` · ${k.lab.distanceKm} km` : ''}</span>
                     <span className="tiny pt-wtb-meta">
-                      <span><Star size={12} className="pt-sun" /> <strong>{k.lab.rating ? k.lab.rating.toFixed(1) : 'New'}</strong></span>
+                      <span><Star size={12} className="pt-sun" /> <strong>{k.lab.rating && k.lab.reviewCount ? Number(k.lab.rating).toFixed(1) : 'New'}</strong></span>
                       <span className="muted">{k.tests.length} tests · report in {hrs(k.reportInHours)}</span>
                       {k.lab.homeCollection && <span className="muted"><HomeIcon size={12} /> Home collection</span>}
                       {k.lab.nabl && <span className="muted"><BadgeCheck size={12} /> NABL</span>}

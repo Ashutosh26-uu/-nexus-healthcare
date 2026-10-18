@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Printer, Smartphone, Banknote, BadgeIndianRupee, ArrowRight, Check } from 'lucide-react';
 import { useLive } from '../../live';
-import { cx, fmtMoney } from '../../components/ui';
+import { cx, PreviewBadge } from '../../components/ui';
+import { usePublicConfig } from '../../config';
 import { useKiosk } from './context';
 import { KButton, StepFrame } from './KUi';
 import Slip from './Slip';
 
-/* Deterministic QR-looking pattern (mock — real UPI intent comes from the payment gateway). */
+/* Demo network only: a QR-looking pattern that is NOT a payable code. A live kiosk never shows it. */
 function MockQR({ seed = 'omnicare', size = 29 }) {
   const cells = useMemo(() => {
     let h = [...seed].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
@@ -33,7 +34,9 @@ function MockQR({ seed = 'omnicare', size = 29 }) {
 
 export default function StepPay() {
   const { t, say, flow, setFlow, kiosk } = useKiosk();
-  const { data: c } = useLive(flow.consultId ? `/consults/${flow.consultId}` : null, ['prescriptions', `consult:${flow.consultId}`]);
+  const { data: c } = useLive(flow.consultId ? `/consults/${flow.consultId}` : null, ['prescriptions', 'consults', `consult:${flow.consultId}`]);
+  // Kiosk payments aren't wired to a gateway yet: on a live kiosk there is no UPI QR and nothing is "recorded".
+  const demo = usePublicConfig()?.demo === true;
   const [method, setMethod] = useState(flow.payment?.method || 'pilot');
   const [paid, setPaid] = useState(Boolean(flow.payment?.done));
   const [printed, setPrinted] = useState(false);
@@ -42,7 +45,6 @@ export default function StepPay() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const fee = 0; // Kiosk visits are free under the state pilot; doctor is reimbursed by NHM.
   const doPrint = () => { setPrinted(true); setTimeout(() => window.print(), 50); };
   const confirm = () => { setPaid(true); setFlow({ payment: { method, done: true } }); };
 
@@ -63,35 +65,35 @@ export default function StepPay() {
           <div className="k-pilot">
             <BadgeIndianRupee />
             <div>
-              <strong>Free under pilot</strong>
-              <span>Consultation {fmtMoney(fee)} · covered by the UP Health Mission E-Clinic pilot. Medicines at Jan Aushadhi rates.</span>
+              <strong>No charge at the kiosk</strong>
+              <span>There is no consultation fee to collect here. Medicines are paid for at the pharmacy.</span>
             </div>
           </div>
           <span className="k-field-l">How will you pay for anything extra?</span>
           <div className="k-paymethods">
             {[
-              { id: 'pilot', icon: BadgeIndianRupee, label: 'Nothing to pay', sub: 'Pilot visit' },
-              { id: 'upi', icon: Smartphone, label: 'UPI', sub: 'Any UPI app' },
+              { id: 'pilot', icon: BadgeIndianRupee, label: 'Nothing to pay', sub: 'No fee today' },
+              { id: 'upi', icon: Smartphone, label: 'UPI', sub: demo ? 'Any UPI app' : 'Coming soon', off: !demo },
               { id: 'cash', icon: Banknote, label: 'Cash', sub: 'Give to operator' },
             ].map((m) => (
-              <button key={m.id} type="button" className={cx('k-paym', method === m.id && 'on')} onClick={() => { setMethod(m.id); setPaid(false); }}>
+              <button key={m.id} type="button" className={cx('k-paym', method === m.id && 'on')} disabled={m.off} aria-disabled={m.off || undefined} onClick={() => { if (m.off) return; setMethod(m.id); setPaid(false); }}>
                 <m.icon /><strong>{m.label}</strong><span>{m.sub}</span>
               </button>
             ))}
           </div>
-          {method === 'upi' && (
+          {!demo && <p className="k-fine"><PreviewBadge>Coming soon</PreviewBadge> UPI payment at the kiosk isn&apos;t connected yet.</p>}
+          {demo && method === 'upi' && (
             <div className="k-upi fade-in">
               <MockQR seed={flow.consultId || 'oc'} />
               <div>
-                <strong>Scan with any UPI app</strong>
-                <span className="mono">nexushealth.dewaphc@sbi</span>
-                <span className="k-fine">Amount is filled in automatically. Show the success screen to the operator.</span>
+                <strong>Demo QR — not a real payment code</strong>
+                <span className="k-fine">On the demo network nothing is charged.</span>
               </div>
             </div>
           )}
-          {method === 'cash' && <p className="k-fine">Operator: collect cash, then tap confirm. A receipt is printed with the slip.</p>}
+          {method === 'cash' && <p className="k-fine">Operator: collect the cash and give your own receipt — kiosk cash isn&apos;t recorded in Nexus Healthcare yet.</p>}
           {paid ? (
-            <div className="k-paid fade-in"><Check />{method === 'pilot' ? 'All set — nothing to pay today.' : 'Payment recorded. Thank you!'}</div>
+            <div className="k-paid fade-in"><Check />{method === 'pilot' ? 'All set — nothing to pay today.' : 'Noted. Thank you!'}</div>
           ) : (
             <KButton icon={Check} onClick={confirm}>{method === 'pilot' ? 'Confirm' : method === 'upi' ? 'Payment received' : 'Cash collected'}</KButton>
           )}

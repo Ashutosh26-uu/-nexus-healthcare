@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { CloudRain, FlaskConical, MessageSquareWarning, Pill, CloudSun, Megaphone, RefreshCw, Info } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, Empty, Loading, Pills, cx, fmtDateTime } from '../../components/ui';
+import { Card, Button, Empty, Loading, Pills, PreviewBadge, cx, fmtDateTime } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
-import { api } from '../../api';
+import { useLive } from '../../live';
 
 const LEVEL = { high: { c: 'var(--rose)', label: 'High risk', badge: 'rose' }, watch: { c: 'var(--sun)', label: 'Watch', badge: 'sun' }, low: { c: 'var(--green-2)', label: 'Low', badge: 'green' } };
 const DRIVER_ICON = { labs: FlaskConical, symptoms: MessageSquareWarning, pharmacy: Pill, weather: CloudSun };
@@ -26,26 +26,23 @@ function Curve({ points, color, peakWeek }) {
 
 export default function Forecast() {
   const navigate = useNavigate();
-  const [data, setData] = useState(null);
-  const [error, setError] = useState('');
+  // Recomputed by the server from live lab results, consults, stock and alerts — refetch when any of them change.
+  const { data, error: liveError, reload: load } = useLive('/gov/forecast', ['gov', 'alerts', 'lab', 'supply', 'pharmacy', 'consults']);
+  const error = !data && liveError;
   const [level, setLevel] = useState('all');
-
-  const alive = useRef(true);
-  const load = () => { setError(''); api.get('/gov/forecast').then((d) => alive.current && setData(d)).catch((e) => alive.current && setError(e.message)); };
-  useEffect(() => { alive.current = true; load(); return () => { alive.current = false; }; }, []);
 
   const list = useMemo(() => (data?.forecasts || []).filter((f) => level === 'all' || f.level === level), [data, level]);
   if (error) return <Empty title="Couldn't load the forecast">{error}</Empty>;
 
   const highs = (data?.forecasts || []).filter((f) => f.level === 'high');
   const watches = (data?.forecasts || []).filter((f) => f.level === 'watch');
-  const topPeak = Math.max(0, ...(data?.forecasts || []).map((f) => Math.max(...f.forecast)));
+  const topPeak = Math.max(0, ...(data?.forecasts || []).map((f) => (Array.isArray(f.forecast) && f.forecast.length ? Math.max(...f.forecast) : 0)));
   const topDisease = highs[0]?.disease || watches[0]?.disease || '—';
 
   return (
     <div className="stack lg">
-      <PageHeader eyebrow="Health Weather" title="Health Weather Forecast"
-        subtitle="Disease, forecast 2–3 weeks ahead for every pin code — by fusing lab results, pharmacy sell-through, kiosk symptoms and weather. Data no single lab, pharmacy or department has on its own.">
+      <PageHeader eyebrow="Health Weather" title={<>Health Weather Forecast <PreviewBadge /></>}
+        subtitle="An experimental estimate per pin code from lab positives, consult symptoms, pharmacy stock and open alerts. The model isn't validated yet — treat it as a pointer, not a prediction.">
         <Button variant="secondary" icon={RefreshCw} onClick={load}>Refresh</Button>
       </PageHeader>
 
@@ -53,7 +50,7 @@ export default function Forecast() {
         <Card className="stat"><span className="label">High-risk hotspots</span><span className="value" style={{ color: 'var(--rose)' }}>{highs.length}</span></Card>
         <Card className="stat"><span className="label">On watch</span><span className="value" style={{ color: '#b47d12' }}>{watches.length}</span></Card>
         <Card className="stat"><span className="label">Top threat</span><span className="value" style={{ fontSize: '1.3rem' }}>{topDisease}</span></Card>
-        <Card className="stat"><span className="label">Highest predicted peak</span><span className="value" translate="no">{topPeak}</span><span className="tiny muted">cases / wk in 3 wks</span></Card>
+        <Card className="stat"><span className="label">Highest estimated peak</span><span className="value" translate="no">{topPeak || '—'}</span><span className="tiny muted">cases / wk in 3 wks (estimate)</span></Card>
       </div>
 
       <div className="row between wrap">
@@ -64,7 +61,7 @@ export default function Forecast() {
       {!data ? <Loading /> : list.length === 0 ? <Empty icon={CloudSun} title="Clear skies">No active disease signals at this risk level.</Empty> : (
         <div className="grid two">
           {list.map((f) => {
-            const lv = LEVEL[f.level];
+            const lv = LEVEL[f.level] || LEVEL.low;
             return (
               <Card key={`${f.pincode}-${f.diseaseKey}`} className={cx('cc-fc', f.level === 'high' && 'high')}>
                 <div className="row between top">
@@ -79,17 +76,17 @@ export default function Forecast() {
                 </div>
 
                 <div className="cc-fc-main">
-                  <Curve points={f.forecast} color={lv.c} peakWeek={f.peakWeek} />
+                  {Array.isArray(f.forecast) && f.forecast.length > 1 ? <Curve points={f.forecast} color={lv.c} peakWeek={f.peakWeek} /> : <span className="tiny muted">No projection yet</span>}
                   <div className="cc-fc-nums">
-                    <div><span className="tiny muted">now</span><div className="strong" translate="no">{f.current}</div></div>
-                    <div><span className="tiny muted">in 3 weeks</span><div className="strong" style={{ color: lv.c }} translate="no">{f.forecast[3]}</div></div>
-                    <div><span className="tiny muted">confidence</span><div className="strong" translate="no">{Math.round(f.confidence * 100)}%</div></div>
+                    <div><span className="tiny muted">now</span><div className="strong" translate="no">{f.current ?? '—'}</div></div>
+                    <div><span className="tiny muted">in 3 weeks</span><div className="strong" style={{ color: lv.c }} translate="no">{f.forecast?.[3] ?? '—'}</div></div>
+                    <div><span className="tiny muted">confidence</span><div className="strong" translate="no">{f.confidence != null ? `${Math.round(f.confidence * 100)}%` : '—'}</div></div>
                   </div>
                 </div>
 
                 <div className="cc-fc-drivers">
                   <div className="tiny strong muted">Signals driving this</div>
-                  {f.drivers.map((d) => {
+                  {(f.drivers || []).map((d) => {
                     const Icon = DRIVER_ICON[d.key] || Info;
                     return (
                       <div key={d.key} className="cc-fc-driver">
@@ -102,10 +99,12 @@ export default function Forecast() {
                   })}
                 </div>
 
+                {f.recommendation && (
                 <div className="cc-fc-rec">
                   <Info size={14} />
                   <span className="small">{f.recommendation}</span>
                 </div>
+                )}
                 {/* Opens the real advisory composer, pre-filled for this forecast — nothing is sent until an official publishes it. */}
                 <Button size="sm" icon={Megaphone} onClick={() => navigate(`/command/actions?${new URLSearchParams({ disease: f.disease, district: f.district || '', pin: f.pincode || '' })}`)}>Draft an advisory</Button>
               </Card>
@@ -114,7 +113,7 @@ export default function Forecast() {
         </div>
       )}
 
-      <div className="callout sky"><Info /><span>Forecasts combine four independent signals; confidence rises when more of them agree. Every public advisory still needs a human official to confirm.</span></div>
+      <div className="callout sky"><Info /><span>Preview: estimates combine the signals above with a simple growth rule and the time of year; confidence rises when more of them agree. Every public advisory still needs a human official to confirm.</span></div>
     </div>
   );
 }

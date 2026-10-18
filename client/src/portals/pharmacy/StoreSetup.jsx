@@ -66,7 +66,7 @@ export default function StoreSetup({ home, reload }) {
   return (
     <div className="stack lg">
       <PageHeader eyebrow="Store setup" title={`Welcome, ${(user?.name || '').split(' ')[0]} 👋`} subtitle="Complete your store profile so patients within 50 km can find you and send orders. Takes about 3 minutes." />
-      {submitted && <div className="callout"><Hourglass /><div><strong>Submitted — under review.</strong> We usually verify the drug licence within 48 hours. You&apos;ll get a notification the moment orders are switched on.</div></div>}
+      {submitted && <div className="callout"><Hourglass /><div><strong>Submitted — under review.</strong> Our team checks the drug licence by hand. You&apos;ll get a notification the moment orders are switched on.</div></div>}
       {p.verificationNote && !p.verified && <div className="callout rose"><AlertTriangle /><div><strong>Needs changes:</strong> {p.verificationNote}. Update the details below and resubmit.</div></div>}
       <Card><div className="row between"><strong>Store profile {pct}% complete</strong><span className="tiny muted">{checks.filter((c) => !c).length ? `${checks.filter((c) => !c).length} things left` : 'Ready to submit'}</span></div><Progress value={pct} tone="ok" /></Card>
 

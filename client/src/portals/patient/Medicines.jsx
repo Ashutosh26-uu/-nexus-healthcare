@@ -3,10 +3,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Pill, Truck, Store, ScanLine, BadgeCheck, AlertTriangle, PenLine, Package, Download, BadgeIndianRupee, FileText, ShoppingBag, Info, Receipt, RefreshCw } from 'lucide-react';
 import WhereToBuy from './WhereToBuy';
 import { api } from '../../api';
-import { Button, Card, Empty, StatusBadge, cx, fmtDate, fmtMoney, useAction } from '../../components/ui';
+import { Button, Card, Empty, PreviewBadge, StatusBadge, cx, fmtDate, fmtMoney, useAction } from '../../components/ui';
 import BarcodeScanner, { canScan, packCodeFrom } from '../../components/BarcodeScanner';
 import { PageHeader } from '../../components/PortalLayout';
-import { usePatient, usePatientLive, firstName, RxTracker, PageSkeleton } from './shared';
+import { usePatient, usePatientLive, firstName, RxTracker, PageSkeleton, scanVerdict } from './shared';
 import { rxStatusLabel } from './Home';
 
 export default function Medicines() {
@@ -110,7 +110,7 @@ function RxCard({ rx, onOrder, past }) {
         <div className="callout green mt-2"><Package /><span>Packed and waiting for you at <strong translate="no">{rx.pharmacyName}</strong>. Show your passport QR at the counter.</span></div>
       )}
       {rx.status === 'out_for_delivery' && (
-        <div className="callout sky mt-2"><Truck /><span>On the way! The rider will ask for a 4-digit code from your SMS to hand it over.</span></div>
+        <div className="callout sky mt-2"><Truck /><span>On the way! The rider will ask for your delivery code to hand it over{rx.deliveryOtp ? <>: <strong className="mono" translate="no">{rx.deliveryOtp}</strong></> : '.'}</span></div>
       )}
 
       {showShops && <div className="mt-2"><WhereToBuy rx={rx} /></div>}
@@ -158,7 +158,7 @@ const ORDER_STEPS = { pickup: ['requested', 'accepted', 'packed', 'collected'], 
 const ORDER_LABEL = { awaiting_payment: 'Waiting for advance payment', requested: 'Waiting for the chemist', accepted: 'Accepted', packed: 'Packed', out_for_delivery: 'On the way', delivered: 'Delivered', collected: 'Collected', declined: 'Not accepted', cancelled: 'Cancelled' };
 function MyOrders() {
   const { patient } = usePatient();
-  const { data, reload } = usePatientLive('/patient/medicine-orders', ['medorders', 'pharmacy', 'dispatch']);
+  const { data, reload } = usePatientLive('/patient/medicine-orders', ['medorders', 'pharmacy', 'dispatch', 'payments']);
   const [run, busy] = useAction();
   const navigate = useNavigate();
   const list = (data || []).filter((o) => o.status !== 'cancelled').slice(0, 6);
@@ -219,7 +219,7 @@ function AuthenticityCard() {
     setBusy(true); setResult(null);
     try {
       const r = await api.post('/medicine/scan', { code: c });
-      if (id === seq.current) setResult(r);
+      if (id === seq.current) setResult(scanVerdict(r));
     } catch (err) {
       if (id === seq.current) setResult({ status: 'error', message: err.message });
     } finally { setBusy(false); }
@@ -230,7 +230,7 @@ function AuthenticityCard() {
       <div className="row top">
         <span className="pt-ic-tile green"><ScanLine size={18} /></span>
         <div className="grow">
-          <strong>Is this medicine genuine?</strong>
+          <strong>Check a medicine batch</strong>
           <p className="small muted mb-1">{canScan() ? 'Scan the barcode on the strip or box, or type the code printed under it.' : 'Type the code printed under the barcode on the strip or box.'}</p>
         </div>
       </div>
@@ -246,16 +246,21 @@ function AuthenticityCard() {
         <div className="pt-genuine fade-in" role="status">
           <BadgeCheck size={22} />
           <div>
-            <strong>Genuine</strong>
+            <strong>Batch found in chemist stock</strong>
             <div className="tiny"><span translate="no">{result.drug}</span>{result.batch ? <> · Batch <span translate="no">{result.batch}</span></> : null}{result.expiry ? <> · Expires {fmtDate(result.expiry)}</> : null}</div>
           </div>
         </div>
       ) : (
-        <div className={cx('callout mt-1 fade-in', ['fake', 'recall', 'expired'].includes(result.status) && 'rose')} role="status">
-          <AlertTriangle /><span className="small">{result.message || 'We couldn’t check that code right now. Please try again.'}</span>
+        <div className={cx('callout mt-1 fade-in', result.status === 'expired' && 'rose')} role="status">
+          <AlertTriangle />
+          <span className="small">
+            {result.status === 'expired' && <>This batch expired on {fmtDate(result.expiry)}. Please don&apos;t use it — take it back to the chemist.</>}
+            {result.status === 'unknown' && <>We couldn&apos;t find this batch in the stock listed by chemists on Nexus Healthcare. That doesn&apos;t mean it&apos;s fake — check the code, or ask your pharmacist.</>}
+            {!['expired', 'unknown'].includes(result.status) && (result.message || 'We couldn’t check that code right now. Please try again.')}
+          </span>
         </div>
       ))}
-      <p className="tiny muted mb-0 mt-1">Preview · live checks against the national drug registry are coming soon.</p>
+      <p className="tiny muted mb-0 mt-1"><PreviewBadge /> Checks only the stock chemists on Nexus have listed — live checks against the national drug registry are coming soon.</p>
     </Card>
   );
 }

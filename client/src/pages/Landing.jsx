@@ -10,7 +10,7 @@ import LanguagePicker from '../components/LanguagePicker';
 import { useAuth, ROLE_HOME } from '../auth';
 import { cx, fmtNum } from '../components/ui';
 import './landing.css';
-import { usePublicConfig } from '../config';
+import { usePublicConfig, useSupport, telHref } from '../config';
 
 const FAQS = [
   { q: 'I live in a village and don\'t have a smartphone. Can I still use Nexus Healthcare?', a: 'Yes. A family member can book for you from their phone, and you can speak your symptoms instead of typing. Nexus Healthcare E-Clinics — at your PHC, railway station or panchayat bhawan, with a health worker who checks your BP, sugar and oxygen — are coming soon.' },
@@ -39,6 +39,7 @@ const FREE_TOOLS = [
 export default function Landing() {
   const { user } = useAuth();
   const config = usePublicConfig();
+  const support = useSupport();
   const [stats, setStats] = useState(null); // null = loading, false = failed (row hidden)
   const [faq, setFaq] = useState(0);
   const [menu, setMenu] = useState(false);
@@ -317,7 +318,7 @@ export default function Landing() {
           <div>
             <span className="eyebrow">Questions</span>
             <h2>Things people ask us</h2>
-            <p className="muted">Can&apos;t find your answer? Tap <strong>Ask Saathi</strong> at the bottom right — or call us free on 1800-200-4455.</p>
+            <p className="muted">Can&apos;t find your answer? Tap <strong>Ask Saathi</strong> at the bottom right{support.phone ? <> — or call us on <a href={telHref(support.phone)} translate="no">{support.phone}</a></> : null}.</p>
           </div>
           <div className="l-faq">
             {FAQS.map((f, i) => (
@@ -343,7 +344,7 @@ export default function Landing() {
             </div>
             <div className="row wrap" style={{ gap: 12 }}>
               <Link to="/signup" className="btn lg clay">Get started <ArrowRight /></Link>
-              {config?.demo !== false ? <Link to="/login" className="btn lg l-cta-ghost">Try the demo accounts</Link> : <Link to="/join" className="btn lg l-cta-ghost">Join as a doctor or clinic</Link>}
+              {config?.demo === true ? <Link to="/login" className="btn lg l-cta-ghost">Try the demo accounts</Link> : <Link to="/join" className="btn lg l-cta-ghost">Join as a doctor or clinic</Link>}
             </div>
           </div>
         </div>
@@ -373,7 +374,7 @@ export default function Landing() {
           </div>
           <div>
             <h4>Help</h4>
-            <a href="tel:18002004455">1800-200-4455</a><a href="mailto:care@nexushealthcare.in">care@nexushealthcare.in</a><a href="tel:108">Emergency: 108</a>
+            {support.phone && <a href={telHref(support.phone)} translate="no">{support.phone}</a>}{support.email && <a href={`mailto:${support.email}`} translate="no">{support.email}</a>}{support.hours && <span className="muted small">{support.hours}</span>}<a href="tel:108">Emergency: 108</a>
           </div>
         </div>
         <div className="l-container l-footer-bottom">

@@ -4,6 +4,7 @@ import { streamChat } from '../api';
 import { useAuth } from '../auth';
 import { useI18n, tr } from '../i18n';
 import { cx } from './ui';
+import { useSupport } from '../config';
 import './chat.css';
 
 const STORE_KEY = 'oc_chat';
@@ -77,6 +78,7 @@ function loadStored() {
 export default function ChatWidget() {
   const { user, loading: authLoading } = useAuth() || {};
   const { lang } = useI18n();
+  const support = useSupport();
   const [open, setOpen] = useState(false);
   const [stored] = useState(loadStored);
   const [messages, setMessages] = useState(stored.messages);
@@ -151,7 +153,7 @@ export default function ChatWidget() {
       if (e.name !== 'AbortError') {
         setMessages((cur) => {
           const copy = cur.slice();
-          copy[copy.length - 1] = { role: 'assistant', content: "Sorry, I couldn't connect just now. Please try again in a moment, or call **1800-200-4455**.", error: true };
+          copy[copy.length - 1] = { role: 'assistant', content: support.phone ? `Sorry, I couldn't connect just now. Please try again in a moment, or call **${support.phone}**.` : "Sorry, I couldn't connect just now. Please try again in a moment.", error: true };
           return copy;
         });
       }

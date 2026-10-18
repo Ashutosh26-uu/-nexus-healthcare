@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Activity, PackageX, Gauge, Route as RouteIcon, Truck, Megaphone, Check, Eye, X, ArrowRight, Send, Save, Inbox, Users, ShieldCheck } from 'lucide-react';
 import { api } from '../../api';
 import { PageHeader } from '../../components/PortalLayout';
-import { Card, Pills, Empty, StatusBadge, Button, Modal, Field, useAction, cx, fmtNum, timeAgo, fmtDateTime } from '../../components/ui';
+import { Card, Pills, Empty, StatusBadge, Button, Modal, Field, PreviewBadge, useAction, cx, fmtNum, timeAgo, fmtDateTime } from '../../components/ui';
 import { useGov, regionOptions, ALERT_KIND, alertTitle, isOpen } from './shared';
 import AlertAction from './AlertAction';
 import { StockMoveModal } from './Supply';
@@ -12,17 +12,6 @@ const KIND_ICON = { outbreak: Activity, shortage: PackageX, overload: Gauge };
 const LANGS = ['Hindi', 'English', 'Awadhi', 'Bhojpuri', 'Bengali', 'Tamil', 'Telugu', 'Marathi', 'Kannada', 'Urdu'];
 
 /* ---------- corridor ---------- */
-function predictRelief(fromOpt, toOpt, alerts) {
-  if (!fromOpt || !toOpt) return null;
-  const overload = alerts.find((a) => a.type === 'overload' && a.district === fromOpt.district);
-  const m = overload?.message?.match(/wait (\d+) min/);
-  const wait = m ? Number(m[1]) : 38;
-  const spare = Math.max(4, Math.round(toOpt.doctors * 0.22));
-  const perHour = spare * 4;
-  const share = Math.min(0.65, spare / (spare + 18));
-  return { wait, newWait: Math.max(8, Math.round(wait * (1 - share))), perHour, spare };
-}
-
 function CorridorModal({ initialFrom, onClose, onDone }) {
   const { data } = useGov();
   const opts = regionOptions(data);
@@ -30,9 +19,9 @@ function CorridorModal({ initialFrom, onClose, onDone }) {
   const [form, setForm] = useState({ from: defFrom, to: '', reason: initialFrom ? 'Overflow load balancing — wait above threshold' : '' });
   const [run, busy] = useAction();
   const fromOpt = opts.find((o) => o.label === form.from);
-  const toOpt = opts.find((o) => o.label === form.to);
-  const relief = predictRelief(fromOpt, toOpt, data.alerts);
-  const sorted = [...opts].filter((o) => o.label !== form.from).sort((a, b) => b.doctors - a.doctors);
+  // The real teleconsult wait at the origin, when an overload alert reported one — never an estimate.
+  const overload = fromOpt && (data.alerts || []).find((a) => a.type === 'overload' && a.district === fromOpt.district && isOpen(a));
+  const sorted = opts.filter((o) => o.label !== form.from);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -41,7 +30,7 @@ function CorridorModal({ initialFrom, onClose, onDone }) {
   };
 
   return (
-    <Modal open onClose={onClose} title="Open a virtual triage corridor" subtitle="Route new teleconsults from an overloaded region to doctors with spare time elsewhere.">
+    <Modal open onClose={onClose} title={<>Open a virtual triage corridor <PreviewBadge /></>} subtitle="Records a decision to route teleconsults from an overloaded region to doctors elsewhere.">
       <form className="stack" onSubmit={submit}>
         <div className="cc-corridor-pick">
           <Field label="From (overloaded)">
@@ -54,7 +43,7 @@ function CorridorModal({ initialFrom, onClose, onDone }) {
           <Field label="To (spare doctors)">
             <select className="select" value={form.to} onChange={(e) => setForm({ ...form, to: e.target.value })} required>
               <option value="" disabled>Choose region…</option>
-              {sorted.map((o) => <option key={o.label} value={o.label}>{o.label} · ~{o.doctors} online</option>)}
+              {sorted.map((o) => <option key={o.label} value={o.label}>{o.label}</option>)}
             </select>
           </Field>
         </div>
@@ -62,17 +51,8 @@ function CorridorModal({ initialFrom, onClose, onDone }) {
           <input className="input" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} placeholder="e.g. Dengue surge — teleconsult wait 46 min" />
         </Field>
 
-        {relief ? (
-          <div className="cc-relief">
-            <div className="cc-relief-title small">Predicted load relief</div>
-            <div className="cc-relief-grid">
-              <div><span className="tiny muted">Wait at origin</span><strong>{relief.wait} → {relief.newWait} min</strong></div>
-              <div><span className="tiny muted">Absorbed per hour</span><strong>~{relief.perHour} consults</strong></div>
-              <div><span className="tiny muted">Doctors lending time</span><strong>~{relief.spare}</strong></div>
-            </div>
-            <p className="tiny muted mb-0">Only patients who need a bed are sent to physical hospitals with space. The corridor closes automatically when the origin wait drops back under 30 minutes.</p>
-          </div>
-        ) : <p className="tiny muted mb-0">Pick both regions to see the predicted relief.</p>}
+        {overload?.message && <div className="callout small"><Gauge /><span>Latest report from {fromOpt.district}: {overload.message}</span></div>}
+        <div className="callout small"><RouteIcon /><span>Preview: the corridor is recorded and shown to every official in scope, but patient routing doesn&apos;t use it yet — no consults are moved automatically. Close it by hand when the pressure eases.</span></div>
 
         <div className="row" style={{ justifyContent: 'flex-end', gap: 10 }}>
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
@@ -90,8 +70,8 @@ function draftFromAlert(a, scope) {
     return {
       title: `${a.disease} cases rising around pin ${a.pincode}`,
       body: a.disease === 'Dengue'
-        ? 'Empty coolers, pots and tyres every week. Sleep under a net and wear full sleeves. If fever lasts more than 2 days, visit your nearest E-Clinic — testing is free.'
-        : 'Wash hands often, cover coughs and rest at home if you have fever. Elders and children with breathlessness should visit an E-Clinic straight away.',
+        ? 'Empty coolers, pots and tyres every week. Sleep under a net and wear full sleeves. If fever lasts more than 2 days, see a doctor and get tested.'
+        : 'Wash hands often, cover coughs and rest at home if you have fever. Elders and children with breathlessness should see a doctor straight away.',
       region: a.district,
     };
   }
@@ -213,7 +193,7 @@ export default function Actions() {
   const closed = corridors.filter((c) => c.status !== 'active');
 
   const closeCorridor = async (c) => {
-    const r = await run(c.id, () => api.post(`/corridors/${c.id}/close`), 'Corridor closed — routing back to local doctors');
+    const r = await run(c.id, () => api.post(`/corridors/${c.id}/close`), 'Corridor closed');
     if (r) reload();
   };
 
@@ -237,7 +217,7 @@ export default function Actions() {
                     <div className="row wrap" style={{ gap: 8 }}>
                       <strong className="small">{alertTitle(a)}</strong>
                       <StatusBadge status={a.status} />
-                      <span className="tiny muted">{Math.round(a.confidence * 100)}% confidence</span>
+                      {a.confidence != null && <span className="tiny muted">{Math.round(a.confidence * 100)}% confidence</span>}
                     </div>
                     <div className="tiny muted">{a.message}</div>
                     <div className="tiny muted">{k.label} · {a.district}, {a.state} · {timeAgo(a.createdAt)}{a.actions?.length ? ` · last: ${a.actions.at(-1).action} (${a.actions.at(-1).by})` : ''}</div>
@@ -260,7 +240,7 @@ export default function Actions() {
         )}
       </Card>
 
-      <Card className="mb-2" title={<div><h3>Virtual triage corridors</h3><p className="tiny muted mb-0">New patients from the origin are seen by doctors in the destination region over video.</p></div>} action={<Button size="sm" variant="secondary" icon={RouteIcon} onClick={() => setCorridor({})}>New corridor</Button>}>
+      <Card className="mb-2" title={<div><h3>Virtual triage corridors <PreviewBadge /></h3><p className="tiny muted mb-0">Recorded decisions to route an overloaded region&apos;s teleconsults elsewhere. Patient routing doesn&apos;t use them yet.</p></div>} action={<Button size="sm" variant="secondary" icon={RouteIcon} onClick={() => setCorridor({})}>New corridor</Button>}>
         {active.length === 0 ? <Empty icon={RouteIcon} title="No active corridors">Open one when a region's teleconsult wait crosses its threshold.</Empty> : (
           <div className="cc-corridors">
             {active.map((c) => (

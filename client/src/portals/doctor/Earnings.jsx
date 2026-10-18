@@ -27,31 +27,35 @@ export default function Earnings() {
   }, [data]);
 
   if (!data) return <Loading />;
-  const { doctor, completed } = data;
+  const { doctor } = data;
+  const completed = data.completed || [];
   const weekTotal = week.values.reduce((a, b) => a + b, 0);
   const weekEarn = week.earned;
-  const nextMonday = new Date();
-  nextMonday.setDate(nextMonday.getDate() + ((8 - nextMonday.getDay()) % 7 || 7));
+  // Only real patient reviews count — a doctor with none shows "no reviews yet", not a number.
+  const reviews = doctor.reviewStats?.count || 0;
+  const rating = reviews && Number(doctor.rating) ? Number(doctor.rating) : null;
 
   return (
     <div className="stack lg">
-      <PageHeader eyebrow="Earnings & reports" title="Your practice at a glance" subtitle="Payouts are settled every Monday. Kiosk pilot consults are reimbursed by the state health mission." />
+      <PageHeader eyebrow="Earnings & reports" title="Your practice at a glance" subtitle="What patients paid for the consults you completed, straight from your visit records." />
 
       <div className="grid four">
         <Stat label="Consults done" value={fmtNum(doctor.consultsDone)} icon={Stethoscope} sub="since you joined" />
         <Stat label="Total earnings" value={fmtMoney(doctor.earnings)} icon={Wallet} sub={`${fmtMoney(doctor.fee)} per consult`} />
-        <Stat label="This week" value={fmtMoney(weekEarn)} icon={TrendingUp} delta={`${weekTotal} consults`} deltaDir="up" />
-        <Stat label="Patient rating" value={`${doctor.rating?.toFixed ? doctor.rating.toFixed(1) : doctor.rating} ★`} icon={Star} sub="from post-visit feedback" />
+        <Stat label="Last 7 days" value={fmtMoney(weekEarn)} icon={TrendingUp} sub={`${weekTotal} consult${weekTotal === 1 ? '' : 's'}`} />
+        <Stat label="Patient rating" value={rating ? `${rating.toFixed(1)} ★` : '—'} icon={Star} sub={rating ? `from ${reviews} patient review${reviews === 1 ? '' : 's'}` : 'No reviews yet'} />
       </div>
 
       <div className="grid side">
         <Card title="Consults · last 7 days" action={<span className="tiny muted">{weekTotal} total</span>}>
-          <BarChart data={week.values} labels={week.labels} height={180} />
+          {weekTotal > 0
+            ? <BarChart data={week.values} labels={week.labels} height={180} />
+            : <Empty icon={Stethoscope} title="No consults in the last 7 days">Each day fills in as you complete visits.</Empty>}
         </Card>
         <Card className="green">
-          <div className="row" style={{ gap: 10 }}><Landmark size={20} /><h3 className="mb-0">Next payout</h3></div>
+          <div className="row" style={{ gap: 10 }}><Landmark size={20} /><h3 className="mb-0">Your share, last 7 days</h3></div>
           <div className="dr-payout">{fmtMoney(Math.round(weekEarn * 0.9))}</div>
-          <p className="small mb-1" style={{ opacity: 0.85 }}>On {nextMonday.toLocaleDateString(getLocale(), { weekday: 'long', day: 'numeric', month: 'short' })} to your registered payout account, after the 10% platform fee. Questions about your payout account? Contact the Nexus Healthcare team.</p>
+          <p className="small mb-1" style={{ opacity: 0.85 }}>Fees from the last 7 days after the 10% platform fee — an estimate, not a payout statement. The Nexus Healthcare team settles payouts to your registered account; contact them with any questions.</p>
           <p className="tiny mb-0" style={{ opacity: 0.7 }}>Amounts shown are before TDS (section 194J), which is deducted at payout where applicable.</p>
         </Card>
       </div>
@@ -79,7 +83,7 @@ export default function Earnings() {
                     <td><TriageBadge level={c.triage?.level} /></td>
                     <td className="small muted">{c.kioskName || 'App'}</td>
                     <td className="small muted nowrap">{fmtDateTime(c.completedAt)}</td>
-                    <td className="right">{c.kioskName ? <span className="badge sky">Pilot</span> : fmtMoney(doctor.fee)}</td>
+                    <td className="right">{c.kioskId ? fmtMoney(doctor.fee) : Number(c.fee) > 0 ? fmtMoney(c.fee) : <span className="muted">Free</span>}</td>
                   </tr>
                 ))}
               </tbody>

@@ -1,49 +1,60 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Activity, Heart, Droplet, Wind, RotateCcw, Sparkles, TrendingDown, TrendingUp, Info } from 'lucide-react';
-import { Card, Donut, Button, Empty, cx } from '../../components/ui';
+import { Card, Donut, Button, Empty, PreviewBadge, cx } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
-import { api } from '../../api';
-import { usePatient, firstName, PageSkeleton } from './shared';
+import { usePatient, usePatientLive, firstName, PageSkeleton } from './shared';
 
 const RISK_ICON = { heart: Heart, droplet: Droplet, activity: Activity, wind: Wind };
 const BAND_COLOR = { low: 'var(--green-2)', moderate: 'var(--sun)', high: 'var(--rose)' };
 const clamp = (n, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, n));
+const bandOf = (n) => (n >= 60 ? 'high' : n >= 30 ? 'moderate' : 'low');
 
-// Same linear model the server uses, so the what-if simulation is instant and honest.
+// Same linear model the server uses, so the what-if simulation is instant. Only inputs with a real reading
+// count — a missing reading adds nothing rather than a guessed value.
 const scoreOf = (risk, vals, inputs) =>
-  Math.round(clamp(risk.base + Object.entries(risk.coef).reduce((s, [k, c]) => s + c * (vals[k] - inputs[k].ideal), 0)));
+  Math.round(clamp(Number(risk.base) + Object.entries(risk.coef || {}).reduce((s, [k, c]) => (vals[k] == null || !inputs[k] ? s : s + c * (vals[k] - inputs[k].ideal)), 0)));
 
 export default function Twin() {
   const { patient, profileKey } = usePatient();
-  const [data, setData] = useState(null);
-  const [error, setError] = useState('');
+  // Live: a new home reading, visit vitals or lab result reshapes the twin without a refresh.
+  const { data, error } = usePatientLive('/patient/twin', ['vitals', 'consults', 'lab', 'records', 'patients']);
   const [vals, setVals] = useState(null);
 
-  useEffect(() => {
-    let alive = true;
-    setData(null); setError('');
-    api.get('/patient/twin').then((d) => { if (alive) { setData(d); setVals(Object.fromEntries(Object.entries(d.inputs).map(([k, v]) => [k, v.value]))); } }).catch((e) => alive && setError(e.message));
-    return () => { alive = false; };
-  }, [profileKey]);
-
-  const baseline = useMemo(() => (data ? Object.fromEntries(Object.entries(data.inputs).map(([k, v]) => [k, v.value])) : {}), [data]);
+  // Only the readings we actually have on file — never a filled-in default.
+  const inputs = useMemo(() => Object.fromEntries(Object.entries(data?.inputs || {}).filter(([, v]) => v && v.measured !== false && v.value != null && Number.isFinite(Number(v.value)))), [data]);
+  const baseline = useMemo(() => Object.fromEntries(Object.entries(inputs).map(([k, v]) => [k, Number(v.value)])), [inputs]);
+  useEffect(() => { setVals(baseline); }, [baseline]);
   const dirty = useMemo(() => vals && Object.keys(vals).some((k) => vals[k] !== baseline[k]), [vals, baseline]);
 
-  if (error) return <Empty title="Couldn't load your Health Twin">{error}</Empty>;
+  if (error && !data) return <Empty title="Couldn't load your Health Twin">{error}</Empty>;
   if (!data || !vals) return <PageSkeleton />;
 
-  const live = data.risks.map((r) => ({ ...r, liveScore: scoreOf(r, vals, data.inputs), baseScore: scoreOf(r, baseline, data.inputs) }));
-  const overall = Math.round(live.reduce((s, r) => s + r.liveScore, 0) / live.length);
-  const overallBand = overall >= 60 ? 'high' : overall >= 30 ? 'moderate' : 'low';
+  const hasReadings = Object.keys(inputs).length > 0;
+  const risks = hasReadings && Array.isArray(data.risks) ? data.risks.filter((r) => r && r.base != null && r.coef) : [];
+  const live = risks.map((r) => { const liveScore = scoreOf(r, vals, inputs); return { ...r, liveScore, band: bandOf(liveScore), baseScore: scoreOf(r, baseline, inputs) }; });
+  const overall = live.length ? Math.round(live.reduce((s, r) => s + r.liveScore, 0) / live.length) : null;
+  const overallBand = overall != null ? bandOf(overall) : 'low';
+  const tips = Array.isArray(data.tips) ? data.tips.filter((t) => t?.text) : [];
+  const missing = Object.entries(data.inputs || {}).filter(([k]) => !inputs[k]).map(([, v]) => v?.label).filter(Boolean);
 
   return (
     <div className="stack lg">
       <PageHeader eyebrow="Swasthya Twin" title={profileKey === 'self' ? 'Your Health Twin' : `${firstName(patient?.name)}’s Health Twin`}
-        subtitle="A living model of your health, built from your records. See where you’re headed — and how small changes shift it.">
+        subtitle="A simple model built from your own readings and records. See where you’re headed — and how small changes shift it.">
         {dirty && <Button variant="secondary" icon={RotateCcw} onClick={() => setVals(baseline)}>Reset to my readings</Button>}
       </PageHeader>
 
+      <div className="callout"><Info /><span><PreviewBadge /> This is an early, experimental estimate from a simple formula — not a validated medical risk score or a diagnosis. Please talk to your doctor before acting on it.</span></div>
+
+      {!hasReadings || live.length === 0 ? (
+        <Card>
+          <Empty icon={Activity} title="Not enough readings yet">
+            Your Health Twin uses only real numbers from your passport — blood pressure, sugar (HbA1c), weight, cholesterol and oxygen. Log a reading in the <Link to="/patient/tracker">Health tracker</Link>, or add a lab report, and it will appear here.
+          </Empty>
+        </Card>
+      ) : (
+      <>
       {/* hero */}
       <div className="pt-twin-hero">
         <div className="pt-twin-ring">
@@ -51,7 +62,7 @@ export default function Twin() {
         </div>
         <div className="grow">
           {/* Without a date of birth the server's age is null and its health age is meaningless — skip both. */}
-          {data.patient.age != null ? (
+          {data.patient?.age != null && data.healthAge != null ? (
             <>
               <div className="pt-twin-age">
                 <div>
@@ -70,10 +81,11 @@ export default function Twin() {
                   : <>Your body is behaving <strong>younger</strong> than your age. Keep it up!</>}
               </p>
             </>
-          ) : (
+          ) : data.patient?.age == null ? (
             <p className="mb-0 small muted">Add a date of birth in <Link to="/patient/settings">Settings</Link> to see your health age.</p>
-          )}
-          <div className="pt-twin-trust"><Sparkles size={14} /> Built from {data.dataPoints} data points in your Health Passport</div>
+          ) : null}
+          {data.dataPoints > 0 && <div className="pt-twin-trust"><Sparkles size={14} /> Built from {data.dataPoints} visits, reports and prescriptions in your Health Passport</div>}
+          {missing.length > 0 && <div className="tiny muted mt-1">Not measured yet: {missing.join(', ')} — left out rather than guessed.</div>}
         </div>
       </div>
 
@@ -102,9 +114,9 @@ export default function Twin() {
                   <div className="small strong">{r.label}</div>
                   <div className="tiny muted">estimated risk over {r.horizon} years</div>
                   <div className="pt-twin-bar"><span style={{ width: `${r.liveScore}%`, background: BAND_COLOR[r.band] }} /></div>
-                  {r.drivers?.length > 0 && (
+                  {(r.drivers || []).some((d) => inputs[d.key]) && (
                     <div className="pt-twin-drivers">
-                      {r.drivers.slice(0, 2).map((d) => (
+                      {r.drivers.filter((d) => inputs[d.key]).slice(0, 2).map((d) => (
                         <span key={d.key} className="tiny muted">{d.contribution > 0 ? '↑' : '↓'} {d.label}</span>
                       ))}
                     </div>
@@ -120,17 +132,17 @@ export default function Twin() {
           <div className="card-head"><h3 className="mb-0">What if…?</h3><Sparkles size={18} className="pt-green" /></div>
           <p className="small muted mt-0">Drag the sliders to see how your health could change. Nothing here is saved — it’s your private sandbox.</p>
           <div className="stack">
-            {Object.entries(data.inputs).map(([k, inp]) => {
-              const improved = Math.abs(vals[k] - inp.ideal) < Math.abs(inp.value - inp.ideal);
+            {Object.entries(inputs).map(([k, inp]) => {
+              const improved = Math.abs(vals[k] - inp.ideal) < Math.abs(baseline[k] - inp.ideal);
               return (
                 <div key={k} className="pt-sim-row">
                   <div className="row between">
                     <span className="small strong">{inp.label}</span>
-                    <span className={cx('pt-sim-val', vals[k] !== inp.value && (improved ? 'better' : 'worse'))} translate="no">
+                    <span className={cx('pt-sim-val', vals[k] !== baseline[k] && (improved ? 'better' : 'worse'))} translate="no">
                       {vals[k]}{inp.unit ? ` ${inp.unit}` : ''}
                     </span>
                   </div>
-                  <input type="range" className="pt-sim-slider" min={inp.min} max={inp.max} step={inp.step} value={vals[k]}
+                  <input type="range" className="pt-sim-slider" min={inp.min} max={inp.max} step={inp.step} value={vals[k] ?? baseline[k] ?? inp.ideal}
                     onChange={(e) => setVals((v) => ({ ...v, [k]: Number(e.target.value) }))}
                     aria-label={inp.label} />
                   <div className="row between tiny muted">
@@ -156,16 +168,20 @@ export default function Twin() {
       </div>
 
       {/* tips */}
-      <Card title="What would help most">
-        <div className="pt-twin-tips">
-          {data.tips.map((t, i) => {
-            const Icon = RISK_ICON[t.icon] || Heart;
-            return <div key={i} className="pt-twin-tip"><span className="pt-twin-tip-ic"><Icon size={16} /></span><span className="small">{t.text}</span></div>;
-          })}
-        </div>
-      </Card>
+      {tips.length > 0 && (
+        <Card title="What would help most">
+          <div className="pt-twin-tips">
+            {tips.map((t, i) => {
+              const Icon = RISK_ICON[t.icon] || Heart;
+              return <div key={i} className="pt-twin-tip"><span className="pt-twin-tip-ic"><Icon size={16} /></span><span className="small">{t.text}</span></div>;
+            })}
+          </div>
+        </Card>
+      )}
+      </>
+      )}
 
-      <div className="callout"><Info /><span>{data.note}</span></div>
+      {data.note && <div className="callout"><Info /><span>{data.note}</span></div>}
     </div>
   );
 }

@@ -18,7 +18,8 @@ function HBar({ label, value, max, sub, tone = 'green' }) {
 }
 
 export default function Capacity() {
-  const { data } = useGov();
+  const { data: raw } = useGov();
+  const data = { ...raw, capacity: raw.capacity || [] };
   const national = data.scope.level === 'national';
   const [q, setQ] = useState('');
   const [state, setState] = useState('');
@@ -39,8 +40,8 @@ export default function Capacity() {
   const oxyMax = Math.max(...data.capacity.map((h) => h.oxygenFree), 1);
 
   const regions = data.regions || [];
-  const maxDocs = Math.max(...regions.map((r) => r.doctorsOnline), 1);
-  const maxKiosk = Math.max(...regions.map((r) => r.kiosks), 1);
+  const maxDocs = Math.max(...regions.map((r) => r.doctorsOnline || 0), 1);
+  const maxKiosk = Math.max(...regions.map((r) => r.kiosks || 0), 1);
 
   return (
     <>
@@ -50,7 +51,7 @@ export default function Capacity() {
         <Stat label="Beds free" icon={BedDouble} value={fmtNum(freeBeds)} sub={`of ${fmtNum(totalBeds)} · ${Math.round((1 - freeBeds / (totalBeds || 1)) * 100)}% occupied`} />
         <Stat label="ICU free" icon={HeartPulse} value={fmtNum(icuFree)} sub={`of ${fmtNum(icuTotal)} ICU beds`} />
         <Stat label="Oxygen beds free" icon={Wind} value={fmtNum(sum('oxygenFree'))} sub="across reporting hospitals" />
-        <Stat label="Hospitals reporting" icon={Building2} value={data.capacity.length} sub="updates every 15 min" />
+        <Stat label="Hospitals reporting" icon={Building2} value={data.capacity.length} sub="live from each hospital's bed board" />
       </div>
 
       <Card className="mb-2">
@@ -105,10 +106,14 @@ export default function Capacity() {
       {national ? (
         <div className="grid two">
           <Card title="Doctors online by state">
-            <div className="stack">{[...regions].sort((a, b) => b.doctorsOnline - a.doctorsOnline).map((r) => <HBar key={r.state} label={r.state} value={r.doctorsOnline} max={maxDocs} sub={`${fmtNum(r.doctorsOnline)} online`} tone="sky" />)}</div>
+            {regions.length === 0 ? <Empty title="No states reporting yet">Doctors appear here by state as they join and go online.</Empty> : (
+            <div className="stack">{[...regions].sort((a, b) => (b.doctorsOnline || 0) - (a.doctorsOnline || 0)).map((r) => <HBar key={r.state} label={r.state} value={r.doctorsOnline || 0} max={maxDocs} sub={`${fmtNum(r.doctorsOnline)} online`} tone="sky" />)}</div>
+            )}
           </Card>
-          <Card title="Kiosk coverage by state" action={<span className="tiny muted">kiosks per 10M people</span>}>
-            <div className="stack">{[...regions].sort((a, b) => b.kiosks - a.kiosks).map((r) => <HBar key={r.state} label={r.state} value={r.kiosks} max={maxKiosk} sub={`${r.kiosks} kiosks · ${((r.kiosks / r.population) * 10).toFixed(1)}`} tone={r.kiosks / r.population < 0.05 ? 'clay' : 'green'} />)}</div>
+          <Card title="Kiosk coverage by state" action={<span className="tiny muted">E-Clinic kiosks</span>}>
+            {regions.length === 0 ? <Empty title="No states reporting yet">E-Clinics appear here by state once they open.</Empty> : (
+            <div className="stack">{[...regions].sort((a, b) => (b.kiosks || 0) - (a.kiosks || 0)).map((r) => <HBar key={r.state} label={r.state} value={r.kiosks || 0} max={maxKiosk} sub={r.population ? `${r.kiosks || 0} kiosks · ${(((r.kiosks || 0) / r.population) * 10).toFixed(1)} per 10M people` : `${r.kiosks || 0} kiosks`} tone={r.population && (r.kiosks || 0) / r.population < 0.05 ? 'clay' : 'green'} />)}</div>
+            )}
           </Card>
         </div>
       ) : (
@@ -118,9 +123,9 @@ export default function Capacity() {
           </Card>
           <Card title={`Coverage in ${data.scope.district}`}>
             <div className="stack">
-              <HBar label="Kiosks online" value={data.totals.kiosksOnline} max={Math.max(4, data.totals.kiosksOnline)} sub={`${data.totals.kiosksOnline} online`} />
-              <HBar label="Doctors available to the district" value={data.totals.doctorsOnline} max={Math.max(60, data.totals.doctorsOnline)} sub={`${data.totals.doctorsOnline} online (state pool)`} tone="sky" />
-              <HBar label="ICU beds free" value={data.totals.icuFree} max={Math.max(12, icuTotal)} sub={`${data.totals.icuFree} of ${icuTotal}`} tone={data.totals.icuFree <= 2 ? 'clay' : 'green'} />
+              <HBar label="Kiosks online" value={data.totals?.kiosksOnline || 0} max={Math.max(1, data.totals?.kiosksOnline || 0)} sub={`${data.totals?.kiosksOnline ?? 0} online`} />
+              <HBar label="Doctors available to the district" value={data.totals?.doctorsOnline || 0} max={Math.max(1, data.totals?.doctorsOnline || 0)} sub={`${data.totals?.doctorsOnline ?? 0} online (state pool)`} tone="sky" />
+              <HBar label="ICU beds free" value={data.totals?.icuFree || 0} max={Math.max(1, icuTotal)} sub={`${data.totals?.icuFree ?? 0} of ${icuTotal}`} tone={(data.totals?.icuFree || 0) <= 2 ? 'clay' : 'green'} />
               <p className="tiny muted mb-0">District patients can still be routed to state and national doctors when local queues are long.</p>
             </div>
           </Card>

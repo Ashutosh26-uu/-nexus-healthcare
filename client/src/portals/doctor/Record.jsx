@@ -8,7 +8,7 @@ import HomeReadings from './HomeReadings';
 
 /* Fetches a patient's record with consent gating. Refreshes when consents change. */
 export function useRecord(patientId) {
-  return useLive(patientId ? `/doctor/patient/${encodeURIComponent(patientId)}` : null, ['consents', 'audit', 'records', 'lab', 'prescriptions']);
+  return useLive(patientId ? `/doctor/patient/${encodeURIComponent(patientId)}` : null, ['consents', 'audit', 'records', 'lab', 'prescriptions', 'vitals', 'vaccines']);
 }
 
 const REASONS = [

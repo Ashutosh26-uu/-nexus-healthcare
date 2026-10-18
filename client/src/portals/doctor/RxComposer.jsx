@@ -429,7 +429,7 @@ function AmbientScribe({ consultId, onDraft }) {
     <div className="dr-scribe">
       <div className="row" style={{ gap: 8 }}>
         <Sparkles size={16} className="dr-scribe-ic" />
-        <span className="small"><strong>AI ambient scribe</strong> — draft a structured SOAP note from the triage and vitals.</span>
+        <span className="small"><strong>Note starter</strong> — fill a SOAP outline from the triage and vitals, then complete it yourself.</span>
       </div>
       <Button size="sm" variant="secondary" loading={busy === 'scribe'} onClick={draftIt}>Draft note</Button>
     </div>

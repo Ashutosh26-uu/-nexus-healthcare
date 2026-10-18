@@ -60,7 +60,7 @@ export default function Insights({ home, reload }) {
                 <div key={i.id} className="list-item">
                   <div className="grow" style={{ minWidth: 0 }}>
                     <strong className="small" translate="no">{i.drug}</strong>
-                    <div className="tiny muted">Batch <span className="mono">{i.batch}</span> · {fmtNum(i.qty)} units · {i.daysLeft < 0 ? 'expired' : `expires ${fmtDate(i.expiry)}`}</div>
+                    <div className="tiny muted">Batch <span className="mono">{i.batch || '—'}</span> · {fmtNum(i.qty)} units · {i.daysLeft < 0 ? 'expired' : `expires ${fmtDate(i.expiry)}`}</div>
                   </div>
                   <span className={cx('badge', i.daysLeft <= 30 ? 'rose' : 'sun')}>{i.value === null ? 'No price' : fmtMoney(i.value)}</span>
                 </div>

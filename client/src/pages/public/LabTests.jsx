@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { FlaskConical, Droplet, Utensils, FileText, MapPin, Home as HomeIcon, BadgeCheck, Landmark, Gift, ArrowRight, Clock } from 'lucide-react';
 import { useSeo } from '../../seo';
 import { cx } from '../../components/ui';
+import { useSupport, telHref } from '../../config';
 import { PublicPage, ShareBar, NearMeButton, Note, SkeletonList, Stars } from './PublicShell';
 import { useContinue, useNearMe, usePublicJson, money, hours, qs } from './kit';
 
@@ -81,6 +82,7 @@ function TestList() {
 }
 
 function TestDetail({ code }) {
+  const support = useSupport();
   const near = useNearMe();
   const go = useContinue();
   const [sort, setSort] = useState('');
@@ -116,7 +118,7 @@ function TestDetail({ code }) {
               <button key={s.v} type="button" className={cx('chip', current === s.v && 'on')} onClick={() => setSort(s.v)}>{s.label}</button>
             ))}
           </div>
-          {data.labs.length === 0 ? <div className="pb-card pb-empty">No lab offers this test yet. Ask your doctor, or call 1800-200-4455 — we&apos;ll help arrange it.</div> : (
+          {data.labs.length === 0 ? <div className="pb-card pb-empty">No lab offers this test yet. Ask your doctor{support.phone ? <>, or call <a href={telHref(support.phone)} translate="no">{support.phone}</a> — we&apos;ll help arrange it</> : null}.</div> : (
             <div className="stack">
               {data.labs.map((l) => (
                 <div key={l.slug} className="pb-card">

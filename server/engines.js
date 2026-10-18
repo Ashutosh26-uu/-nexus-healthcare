@@ -111,7 +111,7 @@ function triage({ symptoms = '', age, duration, severity, vitals = {} }, config)
   else if (score >= 28) level = 'routine';
 
   const adviceMap = {
-    doctor_now: 'We recommend speaking to a doctor now. You can join the live queue — the average wait right now is under 10 minutes.',
+    doctor_now: 'We recommend speaking to a doctor now. Choose a doctor who is available now, or the next free slot.',
     routine: 'This does not look urgent, but a doctor should take a look. Book a slot later today or tomorrow at a time that suits you.',
     self_care: 'This looks manageable at home: rest, fluids and simple care. If it gets worse or doesn\'t improve in 2–3 days, book a consult.',
   };
@@ -198,28 +198,45 @@ function checkPrescription(patient, items) {
   return warnings;
 }
 
-// 6.4 Outbreak — compare last-7-day positives in a pin code with a seasonal baseline.
+// 6.4 Outbreak — compare last-7-day positives in a pin code with that pin's own recent history.
+// Baseline = average weekly positives over the 4 weeks before (counted from real reported lab orders); with no
+// earlier positives there is no baseline, so multiplier is null and the alert just reports the real count.
+// No statistical model exists yet, so `confidence` is null (never an invented percentage).
 const NOTIFIABLE = { 'dengue': 'Dengue', 'malaria': 'Malaria', 'typhoid': 'Typhoid', 'widal': 'Typhoid', 'influenza': 'Influenza' };
+const diseaseOf = (name) => { const k = Object.keys(NOTIFIABLE).find((x) => String(name || '').toLowerCase().includes(x)); return k ? NOTIFIABLE[k] : null; };
+function positivesIn(db, disease, pincode, fromMs, toMs, exceptId) {
+  let n = 0;
+  for (const o of db.labOrders) {
+    if (o.id === exceptId || o.pincode !== pincode || !o.reportedAt) continue;
+    const t = Date.parse(o.reportedAt);
+    if (!(t >= fromMs && t < toMs)) continue;
+    if ((o.results || []).some((r) => r.flag === 'positive' && diseaseOf(r.name) === disease)) n += 1;
+  }
+  return n;
+}
 function outbreakCheck(db, labOrder) {
-  const positives = (labOrder.results || []).filter((r) => r.flag === 'positive');
   const created = [];
-  for (const r of positives) {
-    const key = Object.keys(NOTIFIABLE).find((k) => String(r.name || '').toLowerCase().includes(k));
-    if (!key) continue;
-    const disease = NOTIFIABLE[key];
+  const DAY = 86400000;
+  const now = Date.now();
+  const diseases = [...new Set((labOrder.results || []).filter((r) => r.flag === 'positive').map((r) => diseaseOf(r.name)).filter(Boolean))];
+  for (const disease of diseases) {
+    const cases = positivesIn(db, disease, labOrder.pincode, now - 7 * DAY, now + 1, labOrder.id) + 1; // + this report
+    const prior = positivesIn(db, disease, labOrder.pincode, now - 35 * DAY, now - 7 * DAY, labOrder.id);
+    const baseline = prior ? Math.round((prior / 4) * 10) / 10 : null;
+    const multiplier = baseline ? Math.round((cases / baseline) * 10) / 10 : null;
+    const message = baseline
+      ? `${disease}: ${cases} positive test${cases === 1 ? '' : 's'} in pin ${labOrder.pincode} in the last 7 days — ${multiplier}× the weekly average of the 4 weeks before (${baseline}).`
+      : `${disease}: ${cases} positive test${cases === 1 ? '' : 's'} in pin ${labOrder.pincode} in the last 7 days. No earlier positives on record here to compare against yet.`;
     const existing = db.alerts.find((a) => a.type === 'outbreak' && a.disease === disease && a.pincode === labOrder.pincode && a.status !== 'dismissed' && a.status !== 'resolved');
     if (existing) {
-      existing.cases = (existing.cases || 0) + 1;
-      existing.multiplier = +(existing.cases / (existing.baseline || 10)).toFixed(1);
-      existing.message = `${disease} positives ${existing.multiplier}× seasonal baseline in pin ${existing.pincode} over the last 7 days.`;
+      Object.assign(existing, { cases, baseline, multiplier, confidence: null, message, updatedAt: new Date().toISOString() });
       continue;
     }
-    // In the POC each pin code has a synthetic baseline; a fresh spike creates a low-confidence watch alert.
     const fac = db.facilities.find((f) => f.id === labOrder.labId) || {};
     const alert = {
       id: `al_${Date.now().toString(36)}${crypto.randomBytes(3).toString('hex')}`, type: 'outbreak', disease, district: fac.district, state: fac.state, pincode: labOrder.pincode,
-      confidence: 0.52, multiplier: 1.4, cases: 1, baseline: 5, status: 'open',
-      message: `New ${disease} positive reported in pin ${labOrder.pincode}. Watching for a cluster.`, createdAt: new Date().toISOString(), actions: [],
+      confidence: null, multiplier, cases, baseline, status: 'open', basis: 'reported lab positives in this pin code',
+      message, createdAt: new Date().toISOString(), actions: [],
     };
     db.alerts.unshift(alert);
     created.push(alert);

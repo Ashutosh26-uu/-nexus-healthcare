@@ -5,7 +5,7 @@ import { Button, Empty, timeAgo, fmtNum } from '../../components/ui';
 // No server endpoint lets a warehouse push stock unprompted (transfers start from the chemist's request,
 // which then shows under Dispatch approvals) — so "Offer" is marked as coming soon rather than faked.
 export default function Shortages({ home }) {
-  const list = home.regionalShortages;
+  const list = home.regionalShortages || [];
 
   return (
     <>
@@ -25,7 +25,7 @@ export default function Shortages({ home }) {
                   <div className="row wrap" style={{ gap: 8 }}>
                     <strong translate="no">{a.drug}</strong>
                     <span className="badge rose">Shortage</span>
-                    <span className="tiny muted">{Math.round((a.confidence || 0) * 100)}% confidence · {timeAgo(a.createdAt)}</span>
+                    <span className="tiny muted">{a.confidence != null ? `${Math.round(a.confidence * 100)}% confidence · ` : ''}{timeAgo(a.createdAt)}</span>
                   </div>
                   <div className="small muted row" style={{ gap: 6 }}><MapPin size={13} /> {a.district}, {a.state} · pin {a.pincode}</div>
                   <p className="small mb-0 mt-1">{a.message}</p>

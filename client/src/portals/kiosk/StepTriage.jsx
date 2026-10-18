@@ -67,7 +67,9 @@ function useSpeechInput(lang, onText) {
 function Outcome({ result, onConnect, connecting, onBook, booking, booked, onFinish, kiosk, patient, vitals, t }) {
   const level = result.level;
   // Nearest verified hospital to this kiosk, from the server (GET /kiosk/home → nearestHospital); none → just "Call 108".
-  const hospital = useKiosk().home?.data?.nearestHospital || null;
+  const { home } = useKiosk();
+  const hospital = home?.data?.nearestHospital || null;
+  const docsOnline = (home?.data?.doctors || []).filter((d) => d.online).length;
   const [slot, setSlot] = useState(null);
   const slots = useState(nextSlots)[0];
   const localAdvice = t(`adv_${level}`);
@@ -121,7 +123,7 @@ function Outcome({ result, onConnect, connecting, onBook, booking, booked, onFin
 
       {level === 'doctor_now' && (
         <div className="k-confirm-actions">
-          <span className="k-fine">Average wait right now is under 10 minutes. A doctor who speaks {patient?.language || 'your language'} is preferred.</span>
+          <span className="k-fine">{docsOnline ? `${docsOnline} E-Clinic doctor${docsOnline === 1 ? ' is' : 's are'} online now.` : "You'll join the queue for the next free doctor."} A doctor who speaks {patient?.language || 'your language'} is preferred.</span>
           <KButton icon={Video} className="xl" loading={connecting} onClick={onConnect}>{t('connect')}</KButton>
         </div>
       )}
@@ -141,7 +143,7 @@ function Outcome({ result, onConnect, connecting, onBook, booking, booked, onFin
 
       {level === 'routine' && booked && (
         <div className="k-booked fade-in">
-          <div className="k-booked-row"><Check /><div><strong>Booked with {booked.doctorName}</strong><span>{slotLabel(new Date(booked.scheduledAt))} · an SMS reminder goes to the patient's phone</span></div></div>
+          <div className="k-booked-row"><Check /><div><strong>Booked with {booked.doctorName}</strong><span>{slotLabel(new Date(booked.scheduledAt))} · keep the printed slip as a reminder</span></div></div>
           <Slip kind="advice" kiosk={kiosk} patient={patient} triage={result} vitals={vitals} booking={booked} />
           <div className="k-confirm-actions">
             <KButton variant="ghost" icon={Printer} onClick={() => window.print()}>Print slip</KButton>
@@ -153,7 +155,7 @@ function Outcome({ result, onConnect, connecting, onBook, booking, booked, onFin
       {level === 'self_care' && (
         <div className="k-booked">
           <Slip kind="advice" kiosk={kiosk} patient={patient} triage={result} vitals={vitals} />
-          <p className="k-fine">We'll send a follow-up reminder by SMS in 3 days. If things get worse, come back any time.</p>
+          <p className="k-fine">If things get worse, come back any time.</p>
           <div className="k-confirm-actions">
             <KButton variant="ghost" icon={Video} loading={connecting} onClick={onConnect}>Talk to a doctor anyway</KButton>
             <KButton variant="secondary" icon={Printer} onClick={() => window.print()}>Print advice</KButton>

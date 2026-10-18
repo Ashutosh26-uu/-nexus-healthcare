@@ -88,7 +88,7 @@ function PresenceControl({ home }) {
 }
 
 export default function DoctorApp() {
-  const home = useLive('/doctor/home', ['queue', 'consults', 'doctors']);
+  const home = useLive('/doctor/home', ['queue', 'consults', 'doctors', 'lab', 'payments', 'referrals', 'notifications']);
   const waiting = home.data?.stats?.waiting || 0;
   const doctor = home.data?.doctor;
   const verified = doctor ? doctor.verified : true;

@@ -113,14 +113,14 @@ function ExpiryRow({ item, reload }) {
   const [run, busy] = useAction();
   const ex = expiryInfo(item.expiry);
   const setAside = async () => {
-    const r = await run('ret', () => api.post('/pharmacy/returns', { inventoryId: item.id, qty: item.qty, reason: ex.days < 0 ? 'expired' : 'near_expiry' }), `${item.drug} (${item.batch}) set aside for return — ${item.qty} units taken off the shelf`);
+    const r = await run('ret', () => api.post('/pharmacy/returns', { inventoryId: item.id, qty: item.qty, reason: ex.days < 0 ? 'expired' : 'near_expiry' }), `${item.drug}${item.batch ? ` (${item.batch})` : ''} set aside for return — ${item.qty} units taken off the shelf`);
     if (r) reload();
   };
   return (
     <div className="list-item">
       <div className="grow">
         <strong className="small" translate="no">{item.drug}</strong>
-        <div className="tiny muted">Batch <span className="mono">{item.batch}</span> · {fmtNum(item.qty)} units</div>
+        <div className="tiny muted">Batch <span className="mono">{item.batch || '—'}</span> · {fmtNum(item.qty)} units</div>
         <div className="tiny muted mt-1">{ex.days <= 30 ? 'Return to the distributor for credit before it lapses.' : 'Move to the front shelf and dispense first.'}</div>
       </div>
       <span className={`badge ${ex.tone}`}>{ex.label}</span>

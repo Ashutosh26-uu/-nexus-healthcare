@@ -13,7 +13,7 @@ export default function PatientSummary({ consultId }) {
   const [open, setOpen] = useState(true);
   // Live, like the record tabs: when the patient approves access mid-consult (or a report lands), the
   // locked card opens up without reopening the page. A failed refresh keeps the last summary on screen.
-  const { data: s, error: loadError } = useLive(`/consults/${encodeURIComponent(consultId)}/summary`, ['consents', 'records', 'lab', 'prescriptions']);
+  const { data: s, error: loadError } = useLive(`/consults/${encodeURIComponent(consultId)}/summary`, ['consents', 'records', 'lab', 'prescriptions', 'vitals']);
   const error = !s && loadError;
 
   if (error) return null; // the rest of the consult page still works; the record tabs show the reason

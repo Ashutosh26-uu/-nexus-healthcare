@@ -83,7 +83,7 @@ function DoctorCard({ d, onApprove, onReject, busy }) {
               {k.aadhaarVerification?.verified && k.aadhaarLast4 && k.aadhaarVerification.last4 !== k.aadhaarLast4 && <span className="badge rose">{`Aadhaar QR ends ${k.aadhaarVerification.last4}, typed number ends ${k.aadhaarLast4}`}</span>}
               <span>Latest degree: {k.latestDegree}{k.degreeNumber ? ` · ${k.degreeNumber}` : ''}</span>
               {d.patientsLifetime ? <span>~{Number(d.patientsLifetime).toLocaleString()} patients seen</span> : null}
-              <span>Proposed fee ₹{d.fee}</span>
+              <span>{d.fee != null ? `Proposed fee ₹${d.fee}` : 'No fee set yet'}</span>
               {k.degreeFileId && <button type="button" className="link-btn" onClick={() => openFile(k.degreeFileId)}>View degree certificate</button>}
               {k.photoFileId && <button type="button" className="link-btn" onClick={() => openFile(k.photoFileId)}>View photo</button>}
             </div>
@@ -93,7 +93,7 @@ function DoctorCard({ d, onApprove, onReject, busy }) {
               <span className="ad-partner-tag">E-Clinic partner · self-applied</span>
               <span>{{ remote: 'Video consults only', eclinic: 'At E-Clinics', both: 'Video + E-Clinics' }[d.practiceMode] || 'Video + E-Clinics'}</span>
               {d.availability && <span>{d.availability.days.join(', ')} · {d.availability.from}–{d.availability.to} · ~{d.availability.hoursPerWeek} h/week</span>}
-              <span>Fee ₹{d.fee}</span>
+              <span>{d.fee != null ? `Fee ₹${d.fee}` : 'No fee set yet'}</span>
               {d.mainPractice && <span>Main practice: {d.mainPractice}</span>}
               {d.eClinicNames?.length > 0 && <span>Prefers: {d.eClinicNames.join(', ')}</span>}
               {d.claimRequest && <span className="badge sun">Claims a clinic listing ({d.claimRequest}) — check identity before approving</span>}

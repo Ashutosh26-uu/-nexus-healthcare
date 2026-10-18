@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useConsent, openLocationSettings } from '../../consent';
 import { LocateFixed, MapPin, Star, Languages, Video, Stethoscope, Ambulance, Phone, Building2, Loader2, CalendarClock, BedDouble, Clock, X, Smile, Users, Briefcase, Globe2, Radar, MonitorSmartphone, Home as HomeIcon } from 'lucide-react';
-import { api } from '../../api';
+import { api, subscribe } from '../../api';
 import { Avatar, Button, Empty, Field, fmtMoney, cx, useDebounced } from '../../components/ui';
 import { AvailBadge, availClass } from '../../components/Availability';
 import VoiceInput from '../../components/VoiceInput';
@@ -44,10 +44,10 @@ export function DoctorStats({ d }) {
   const n = (x) => Number(x || 0).toLocaleString(getLocale());
   return (
     <div className="pt-doc-stats tiny">
-      <span title="Rating from patients"><Star size={12} className="pt-sun" /> <strong>{d.rating ? Number(d.rating).toFixed(1) : 'New'}</strong>{d.reviewCount ? <span className="muted"> ({n(d.reviewCount)} reviews)</span> : null}</span>
+      <span title="Rating from patients"><Star size={12} className="pt-sun" /> <strong>{d.rating && d.reviewCount ? Number(d.rating).toFixed(1) : 'New'}</strong>{d.reviewCount ? <span className="muted"> ({n(d.reviewCount)} reviews)</span> : null}</span>
       {d.satisfaction != null && <span title="Patients who rated 4★ or 5★"><Smile size={12} /> <strong>{d.satisfaction}%</strong> satisfied</span>}
-      <span><Users size={12} /> <strong>{n(d.patientsSeen)}+</strong> patients</span>
-      <span><Briefcase size={12} /> <strong>{d.experience}</strong> yrs exp.</span>
+      {d.patientsSeen > 0 && <span><Users size={12} /> <strong>{n(d.patientsSeen)}</strong> patients</span>}
+      {d.experience > 0 && <span><Briefcase size={12} /> <strong>{d.experience}</strong> yrs exp.</span>}
     </div>
   );
 }
@@ -88,6 +88,12 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
   const manualDistrict = device.manual?.district || '';
   const manualState = device.manual?.state || '';
 
+  // Live: availability, queues and free beds change while the list is open — refetch quietly when they do.
+  const [tick, setTick] = useState(0);
+  useEffect(() => subscribe((topics) => {
+    if (topics.includes('all') || topics.some((t) => ['doctors', 'queue', 'beds', 'roster'].includes(t))) setTick((n) => n + 1);
+  }), []);
+
   useEffect(() => {
     if (!active) { setData(null); return undefined; }
     let alive = true;
@@ -98,7 +104,7 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
     if (place) { params.set('district', place.district); params.set('state', place.state); } else if (lat != null && lng != null) { params.set('lat', lat); params.set('lng', lng); } else if (manualDistrict) { params.set('district', manualDistrict); params.set('state', manualState); }
     api.get(`/doctors/recommend?${params}`).then((r) => alive && setData(r)).catch((e) => { if (alive) { setData(null); setError(e.message); } }).finally(() => alive && setLoading(false));
     return () => { alive = false; };
-  }, [q, dept, scope, lat, lng, manualDistrict, manualState, place, active, excludeId]);
+  }, [q, dept, scope, lat, lng, manualDistrict, manualState, place, active, excludeId, tick]);
 
   const [booking, setBooking] = useState(null);
   const pick = (doc) => (onPick ? onPick(doc) : setBooking(doc));
@@ -225,7 +231,7 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
                         <button type="button" key={x.id} className={cx('pt-fac-doc', !x.available && 'off')} onClick={() => pick(x)}>
                           <span className={cx('dot', x.available ? 'green' : '')} />
                           <span translate="no">{x.name}</span>
-                          <span className="muted">· {x.specialty} · ★{x.rating ? Number(x.rating).toFixed(1) : 'New'}</span>
+                          <span className="muted">· {x.specialty} · ★{x.rating && x.reviewCount ? Number(x.rating).toFixed(1) : 'New'}</span>
                           <span className="pt-fac-doc-cta">{onPick ? pickLabel : 'Book'}</span>
                         </button>
                       ))}

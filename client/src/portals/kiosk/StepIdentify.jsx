@@ -157,8 +157,10 @@ export default function StepIdentify() {
     } finally { setBusy(false); setScanState('idle'); }
   };
 
-  // Simulated camera: "reads" the card a moment after the operator holds it up.
+  // Demo network only: pretends to read one of the seeded demo cards. A live kiosk reads the card with its
+  // handheld scanner (it types into the box below) or the operator types the number.
   const simulateScan = (id) => {
+    if (!demo) return;
     setQr('');
     setBusy(true);
     clearTimeout(timer.current);
@@ -167,6 +169,7 @@ export default function StepIdentify() {
 
   // Simulated biometric reader. The POC has no biometric store, so a match resolves to the demo patient's enrolled mobile.
   const scanThumb = () => {
+    if (!demo) return;
     setScanState('scanning');
     clearTimeout(timer.current);
     timer.current = setTimeout(() => identify('9876500002', '+91', true), 2200);
@@ -218,20 +221,22 @@ export default function StepIdentify() {
           <div className="k-qr fade-in">
             <div className={cx('k-cam', busy && 'busy')}>
               <span className="k-cam-c tl" /><span className="k-cam-c tr" /><span className="k-cam-c bl" /><span className="k-cam-c br" />
-              <span className="k-scanline" />
+              {busy && <span className="k-scanline" />}
               <QrCode className="k-cam-ghost" />
-              <span className="k-cam-label">{busy ? t('searching') : t('qr_hint')}</span>
+              <span className="k-cam-label">{busy ? t('searching') : demo ? t('qr_hint') : 'Scan the card with the card scanner, or type the number on it'}</span>
             </div>
             <div className="k-qr-side">
               <label className="k-field"><span>{t('qr_type')}</span>
-                <input className="k-input big mono" dir="ltr" value={qr} onChange={(e) => setQr(e.target.value.toUpperCase())} placeholder="OC-2041-5521" onKeyDown={(e) => e.key === 'Enter' && !busy && identify(qr.trim())} />
+                <input className="k-input big mono" dir="ltr" value={qr} onChange={(e) => setQr(e.target.value.toUpperCase())} placeholder="OC-0000-0000" autoFocus onKeyDown={(e) => e.key === 'Enter' && !busy && identify(qr.trim())} />
               </label>
               <KButton icon={Search} loading={busy} disabled={!qr.trim()} onClick={() => identify(qr.trim())}>{t('find')}</KButton>
-              <div className="k-demo">
-                <span>Demo cards</span>
-                <button type="button" translate="no" onClick={() => simulateScan('OC-2041-5521')}>Ramesh Yadav</button>
-                <button type="button" translate="no" onClick={() => simulateScan('OC-2041-7783')}>Sunita Devi</button>
-              </div>
+              {demo && (
+                <div className="k-demo">
+                  <span>Demo cards</span>
+                  <button type="button" translate="no" onClick={() => simulateScan('OC-2041-5521')}>Ramesh Yadav</button>
+                  <button type="button" translate="no" onClick={() => simulateScan('OC-2041-7783')}>Sunita Devi</button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -242,7 +247,7 @@ export default function StepIdentify() {
               <span className="k-field-l">{t('mobile_hint')}</span>
               <div className={cx('k-phone', phone.length === 10 && 'full')} dir="ltr">
                 <span className="k-phone-cc">+91</span>
-                <span className="k-phone-num">{fmtPhone(phone) || <em>98765 00002</em>}</span>
+                <span className="k-phone-num">{fmtPhone(phone) || <em>98765 43210</em>}</span>
               </div>
               <KButton icon={Search} className="xl" loading={busy} disabled={phone.length !== 10} onClick={() => identify(phone, '+91')}>{t('find')}</KButton>
               <p className="k-fine">We'll only use this number to find the passport. No OTP is needed when the ASHA operator is present.</p>

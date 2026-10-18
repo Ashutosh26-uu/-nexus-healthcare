@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
-import { Users, UserRound, Stethoscope, Building2, MonitorSmartphone, BadgeCheck, ShieldAlert, ArrowRight, Server, Gauge, Video, PhoneCall, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Users, UserRound, Stethoscope, Building2, BadgeCheck, ShieldAlert, ArrowRight, Server, PhoneCall, CheckCircle2 } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
-import { Card, Stat, Sparkline, StatusBadge, fmtNum, timeAgo, cx } from '../../components/ui';
+import { Card, Stat, StatusBadge, fmtNum, timeAgo, cx } from '../../components/ui';
 import { useLive } from '../../live';
 import { LiveGate, RoleBadge } from './shared';
 
@@ -19,7 +19,7 @@ function Health({ icon: Icon, label, value, unit, ok, hint }) {
 }
 
 export default function Overview() {
-  const home = useLive('/admin/home', ['admin', 'doctors', 'kiosks', 'audit']);
+  const home = useLive('/admin/home', ['admin', 'doctors', 'kiosks', 'audit', 'patients', 'consults']);
   const audit = useLive('/admin/audit', ['audit', 'admin']);
 
   return (
@@ -58,26 +58,12 @@ export default function Overview() {
 
             <div className="grid side">
               <Card title="System health" action={<Link to="/admin/monitoring" className="small">Monitoring →</Link>}>
-                {m.uptime == null ? (
-                  <div className="ad-health-grid">
-                    <Health icon={Server} label="Server running for" value={m.processUptimeHours ?? 0} unit=" h" ok hint="since the last restart / deploy" />
-                    <Health icon={PhoneCall} label="Active calls" value={m.activeCalls} unit="" ok hint="consults in progress now" />
-                    <p className="tiny muted mb-0">Request, error and latency metrics: Catalyst → AppSail → Logs &amp; Metrics.</p>
-                  </div>
-                ) : (<>
+                {/* Only what the server knows — request, error and latency figures live on the hosting platform. */}
                 <div className="ad-health-grid">
-                  <Health icon={Server} label="Uptime (30 days)" value={m.uptime} unit="%" ok={m.uptime >= 99.9} hint="target 99.9%" />
-                  <Health icon={AlertTriangle} label="API error rate" value={m.apiErrorRate} unit="%" ok={m.apiErrorRate < 1} hint="5xx over all requests" />
-                  <Health icon={Gauge} label="p95 latency" value={m.p95LatencyMs} unit=" ms" ok={m.p95LatencyMs < 500} hint="budget 500 ms" />
-                  <Health icon={Video} label="Video call quality" value={m.videoQuality} unit=" / 5" ok={m.videoQuality >= 4} hint="mean opinion score" />
-                  <Health icon={PhoneCall} label="Active calls" value={m.activeCalls} unit="" ok hint="consults in progress now" />
+                  <Health icon={Server} label="Server running for" value={m?.processUptimeHours ?? '—'} unit={m?.processUptimeHours != null ? ' h' : ''} ok hint="since the last restart / deploy" />
+                  <Health icon={PhoneCall} label="Active calls" value={m?.activeCalls ?? '—'} unit="" ok hint="consults in progress now" />
+                  <p className="tiny muted mb-0">Request, error and latency metrics: Catalyst → AppSail → Logs &amp; Metrics.</p>
                 </div>
-                <div className="ad-uptime">
-                  <div className="row between tiny muted"><span>Uptime · last 7 days</span><span>{Math.min(...m.uptimeSeries)}% lowest</span></div>
-                  <Sparkline data={m.uptimeSeries} height={56} />
-                  <div className="row between tiny muted"><span>7 days ago</span><span>today</span></div>
-                </div>
-                </>)}
               </Card>
 
               <Card title="Recent activity" action={<Link to="/admin/audit" className="small">Audit log →</Link>}>

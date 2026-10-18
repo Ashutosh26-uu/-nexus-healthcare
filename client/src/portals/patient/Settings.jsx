@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Save, Plus, Trash2, ShieldCheck, Bell, Lock, UserX, Languages, ChevronRight } from 'lucide-react';
 import { api } from '../../api';
 import { useAuth } from '../../auth';
-import { Button, Card, Field, Modal, Switch, fmtDate, useAction } from '../../components/ui';
+import { Button, Card, Field, Modal, PreviewBadge, Switch, fmtDate, useAction } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import AadhaarVerify from '../../components/AadhaarVerify';
 import { usePatient, firstName, splitList, BLOOD_GROUPS, PageSkeleton } from './shared';
@@ -177,7 +177,8 @@ export default function Settings() {
       </form>
 
       <div className="grid two">
-        <Card title={<h3 className="row" style={{ gap: 8 }}><Bell size={18} /> Notifications</h3>}>
+        <Card title={<h3 className="row" style={{ gap: 8 }}><Bell size={18} /> Notifications <PreviewBadge /></h3>}>
+          <p className="tiny muted mt-0">These choices are only remembered on this device for now — they don&apos;t change what we send yet. You&apos;ll still get every update in the app.</p>
           <div className="list">
             {NOTIFS.map((n) => (
               <div key={n.key} className="list-item">
@@ -196,12 +197,12 @@ export default function Settings() {
               <ChevronRight size={16} className="muted" />
             </button>
             <div className="list-item">
-              <div className="grow"><div className="small strong">Help spot outbreaks early</div><div className="tiny muted">Share anonymised symptoms and PIN code — never your name</div></div>
-              <Switch checked={privacy.research} onChange={(v) => setPrivacy('research', v, v ? 'Thank you for helping your community' : 'Turned off. Nothing more will be shared.')} label="Share anonymised data for outbreak detection" />
+              <div className="grow"><div className="small strong">Help spot outbreaks early <PreviewBadge>Coming soon</PreviewBadge></div><div className="tiny muted">Share anonymised symptoms and PIN code — never your name. Your choice is saved now and will apply when this launches.</div></div>
+              <Switch checked={privacy.research} onChange={(v) => setPrivacy('research', v, 'Preference saved')} label="Share anonymised data for outbreak detection" />
             </div>
             <div className="list-item">
-              <div className="grow"><div className="small strong">Ask for OTP at kiosks</div><div className="tiny muted">An E-Clinic can only open your passport after you share the OTP</div></div>
-              <Switch checked={privacy.kioskOtp} onChange={(v) => setPrivacy('kioskOtp', v, v ? 'Kiosks will ask for your OTP.' : 'Kiosks won’t ask for an OTP any more.')} label="Require OTP at kiosks" />
+              <div className="grow"><div className="small strong">Ask for OTP at kiosks <PreviewBadge>Coming soon</PreviewBadge></div><div className="tiny muted">An E-Clinic can only open your passport after you share the OTP. E-Clinics aren&apos;t open yet — your choice is saved for when they are.</div></div>
+              <Switch checked={privacy.kioskOtp} onChange={(v) => setPrivacy('kioskOtp', v, 'Preference saved')} label="Require OTP at kiosks" />
             </div>
           </div>
         </Card>

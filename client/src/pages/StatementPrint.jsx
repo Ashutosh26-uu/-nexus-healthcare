@@ -88,7 +88,7 @@ export default function StatementPrint() {
           </tbody>
         </table>
 
-        <p className="rxp-note">Fees are what patients paid for completed consults; E-Clinic (kiosk pilot) consults count your listed fee of {fmtMoney(st.doctor.fee)} and are reimbursed by the state health mission. Free follow-ups count as ₹0. Amounts are before TDS (section 194J), where applicable. Generated {fmtDateTime(st.generatedAt)}.</p>
+        <p className="rxp-note">Fees are what patients paid for completed consults; E-Clinic consults count your listed fee of {fmtMoney(st.doctor.fee)}. Free follow-ups count as ₹0. Amounts are before TDS (section 194J), where applicable. Generated {fmtDateTime(st.generatedAt)}.</p>
       </article>
     </div>
   );

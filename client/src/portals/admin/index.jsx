@@ -15,7 +15,7 @@ import Automations from './Automations';
 import './admin.css';
 
 export default function AdminApp() {
-  const { data } = useLive('/admin/home', ['admin', 'doctors', 'kiosks', 'audit']);
+  const { data } = useLive('/admin/home', ['admin', 'doctors', 'kiosks', 'audit', 'patients', 'consults']);
   const c = data?.counts;
   const nav = [
     { to: '/admin', label: 'Overview', icon: LayoutDashboard, end: true },
@@ -29,12 +29,12 @@ export default function AdminApp() {
     { to: '/admin/audit', label: 'Audit & compliance', icon: ScrollText, badge: c?.breakGlassUnreviewed || null },
     { to: '/admin/content', label: 'Content & languages', icon: Languages },
   ];
-  // Live mode has no synthetic uptime figure (uptime is null) — show how long the server has been up instead.
+  // Only facts the server knows: how long it has been up and how many consults are live.
   const m = data?.monitoring;
   const headerExtra = m ? (
     <span className="ad-health tiny">
-      <span className={m.uptime == null || m.uptime >= 99.9 ? 'dot green pulse' : 'dot sun'} />
-      {m.uptime == null ? `Server up ${m.processUptimeHours ?? 0} h · ${m.activeCalls} active calls` : `All systems normal · ${m.uptime}% uptime`}
+      <span className="dot green pulse" />
+      {m.processUptimeHours != null ? `Server up ${m.processUptimeHours} h · ${m.activeCalls ?? 0} active calls` : `${m.activeCalls ?? 0} active calls`}
     </span>
   ) : null;
 

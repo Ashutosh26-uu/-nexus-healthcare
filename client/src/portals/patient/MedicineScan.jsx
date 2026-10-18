@@ -1,18 +1,20 @@
 import { useState } from 'react';
-import { ScanLine, ShieldCheck, ShieldAlert, ShieldX, Clock, CheckCircle2 } from 'lucide-react';
-import { Card, Button, Field, cx } from '../../components/ui';
+import { ScanLine, ShieldCheck, ShieldAlert, ShieldQuestion, Clock, CheckCircle2, Info } from 'lucide-react';
+import { Card, Button, Field, PreviewBadge, cx, fmtDate } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
+import { usePublicConfig } from '../../config';
+import { scanVerdict } from './shared';
 
 const VERDICT = {
-  genuine: { icon: ShieldCheck, c: 'var(--green-2)', label: 'Genuine' },
+  genuine: { icon: ShieldCheck, c: 'var(--green-2)', label: 'Batch found' },
   expired: { icon: Clock, c: 'var(--sun)', label: 'Expired' },
-  recall: { icon: ShieldAlert, c: 'var(--clay)', label: 'Recalled' },
-  fake: { icon: ShieldX, c: 'var(--rose)', label: 'Could not verify' },
+  unknown: { icon: ShieldQuestion, c: 'var(--ink-3)', label: 'Not in our records' },
   invalid: { icon: ShieldAlert, c: 'var(--ink-3)', label: 'Invalid code' },
 };
 
 export default function MedicineScan() {
+  const config = usePublicConfig();
   const [code, setCode] = useState('');
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -21,15 +23,17 @@ export default function MedicineScan() {
     e?.preventDefault();
     if (!code.trim()) return;
     setBusy(true); setResult(null);
-    try { setResult(await api.post('/medicine/scan', { code })); } catch (err) { setResult({ status: 'invalid', message: err.message }); } finally { setBusy(false); }
+    try { setResult(scanVerdict(await api.post('/medicine/scan', { code }))); } catch (err) { setResult({ status: 'invalid', message: err.message }); } finally { setBusy(false); }
   };
 
-  const v = result ? (VERDICT[result.status] || VERDICT.invalid) : null;
+  const v = result ? (VERDICT[result.status] || VERDICT.unknown) : null;
 
   return (
     <div className="stack lg">
       <PageHeader eyebrow="Medicine Authenticity" title="Is my medicine real?"
-        subtitle="Scan or type the code printed on the pack. We check it against the national supply grid and track-and-trace records, and flag fakes or recalls." />
+        subtitle="Type the batch number printed on the pack. We look it up among the stock that chemists on Nexus Healthcare have listed." />
+
+      <div className="callout"><Info /><span><PreviewBadge /> This only knows batches stocked by chemists on Nexus Healthcare. It can&apos;t tell you a pack is fake — if in doubt, ask your pharmacist.</span></div>
 
       <div className="grid side">
         <Card>
@@ -42,7 +46,7 @@ export default function MedicineScan() {
               <input className="input" value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. B2407" dir="ltr" translate="no" />
             </Field>
             <Button type="submit" loading={busy} icon={ScanLine} block>Check this medicine</Button>
-            <p className="tiny muted center mb-0">Try a real seeded batch (e.g. <span className="mono" translate="no">B2407</span>) or any code to see fake/recall detection.</p>
+            {config?.demo && <p className="tiny muted center mb-0">Demo: try a seeded batch such as <span className="mono" translate="no">B2407</span>.</p>}
           </form>
         </Card>
 
@@ -54,8 +58,11 @@ export default function MedicineScan() {
               <span className="pt-scan-badge" style={{ background: `color-mix(in srgb, ${v.c} 15%, transparent)`, color: v.c }}><v.icon size={34} /></span>
               <h3 className="mb-0" style={{ color: v.c }}>{v.label}</h3>
               {result.drug && <div className="strong" translate="no">{result.drug}{result.batch ? ` · ${result.batch}` : ''}</div>}
-              <p className="small mb-0">{result.message}</p>
-              {result.status === 'genuine' && <div className="row tiny" style={{ color: 'var(--green-2)', gap: 6 }}><CheckCircle2 size={14} /> Verified on the Nexus Healthcare supply grid</div>}
+              {result.status === 'genuine' && <p className="small mb-0">A chemist on Nexus Healthcare has listed this batch in its stock. Expires {fmtDate(result.expiry)}.</p>}
+              {result.status === 'expired' && <p className="small mb-0">This batch expired on {fmtDate(result.expiry)}. Please don&apos;t use it — take it back to the chemist.</p>}
+              {result.status === 'unknown' && <p className="small mb-0">We couldn&apos;t find this batch in the stock listed by chemists on Nexus Healthcare. That doesn&apos;t mean it&apos;s fake — check the code, or ask your pharmacist.</p>}
+              {result.status === 'invalid' && <p className="small mb-0">{result.message}</p>}
+              {result.status === 'genuine' && <div className="row tiny" style={{ color: 'var(--green-2)', gap: 6 }}><CheckCircle2 size={14} /> Matched against Nexus Healthcare chemist stock</div>}
               <Button variant="ghost" size="sm" onClick={() => { setResult(null); setCode(''); }}>Scan another</Button>
             </div>
           )}

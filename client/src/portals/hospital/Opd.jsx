@@ -23,7 +23,7 @@ const fmt12 = (t) => {
 export default function Opd({ home, setData, reload }) {
   const toast = useToast();
   const [adding, setAdding] = useState(false);
-  const slots = [...home.opd].sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
+  const slots = [...(home.opd || [])].sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
   const booked = slots.reduce((s, o) => s + o.booked, 0);
   const cap = slots.reduce((s, o) => s + o.capacity, 0);
 

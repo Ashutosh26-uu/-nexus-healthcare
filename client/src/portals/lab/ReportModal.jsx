@@ -300,7 +300,7 @@ function Success({ res, onClose }) {
 
       <ul className="lab-success-list">
         <li><CheckCircle2 size={16} /> {o.doctorName || 'The ordering doctor'} has been notified</li>
-        <li><CheckCircle2 size={16} /> Patient gets an SMS and app notification</li>
+        <li><CheckCircle2 size={16} /> The patient gets a notification in the app</li>
         {res.critical && <li className="crit"><AlertTriangle size={16} /> Critical alert sent to doctor and patient — please also call the doctor if you can</li>}
       </ul>
 

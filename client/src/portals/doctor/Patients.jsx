@@ -5,8 +5,10 @@ import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
 import { Avatar, Card, Empty, cx } from '../../components/ui';
 import { useDebounced } from './shared';
+import { usePublicConfig } from '../../config';
 import { RecordView } from './Record';
 
+// Seeded demo patients — offered as one-tap searches only on the demo network.
 const EXAMPLES = [
   { q: 'OC-2041-5521', label: 'OC-2041-5521', icon: QrCode },
   { q: '9876500002', label: '98765 00002', icon: Phone },
@@ -21,6 +23,7 @@ export default function Patients() {
   const dq = useDebounced(norm, 250);
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
+  const config = usePublicConfig();
 
   useEffect(() => {
     let alive = true;
@@ -45,12 +48,14 @@ export default function Patients() {
           <Card>
             <div className="input-wrap">
               <Search />
-              <input className="input" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="OC-2041-5521, 98765 00002 or a name" aria-label="Search patients" />
+              <input className="input" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Passport ID, mobile number or name" aria-label="Search patients" />
             </div>
-            <div className="row wrap mt-1" style={{ gap: 6 }}>
-              <span className="tiny muted">Try</span>
-              {EXAMPLES.map((e) => <button key={e.q} type="button" className="chip" onClick={() => setQ(e.q)}><e.icon size={13} style={{ display: 'inline', verticalAlign: '-2px', marginInlineEnd: 4 }} />{e.label}</button>)}
-            </div>
+            {config?.demo && (
+              <div className="row wrap mt-1" style={{ gap: 6 }}>
+                <span className="tiny muted">Demo patients</span>
+                {EXAMPLES.map((e) => <button key={e.q} type="button" className="chip" onClick={() => setQ(e.q)}><e.icon size={13} style={{ display: 'inline', verticalAlign: '-2px', marginInlineEnd: 4 }} />{e.label}</button>)}
+              </div>
+            )}
           </Card>
 
           {loading && <div className="row small muted" style={{ padding: '4px 8px' }}><span className="spinner sm" />Searching the passport registry…</div>}
