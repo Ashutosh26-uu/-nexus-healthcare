@@ -417,11 +417,18 @@ function sseAuth(req, res, next) {
   next();
 }
 
-app.get('/api/events', sseAuth, (req, res) => {
+// Event-stream headers, plus a 2 KB comment up front: proxies in front of the app (Catalyst AppSail's
+// included) hold small responses back until a buffer fills, which would delay every live update.
+function openStream(res) {
   res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
+  res.write(`:${' '.repeat(2048)}\n\n`);
+}
+app.get('/api/events', sseAuth, (req, res) => {
+  openStream(res);
   res.write(`data: ${JSON.stringify({ topics: ['hello'] })}\n\n`);
   const client = { res, userId: req.user.id, role: req.user.role, pending: new Set() };
   // One account can't pin unlimited sockets/timers on this single process: past the cap its oldest stream
@@ -499,10 +506,7 @@ setInterval(() => {
 app.get('/api/public/stats/stream', publicLimiter, (req, res) => {
   const ip = req.ip || '';
   if (statsStreams.size >= STATS_MAX || (statsPerIp.get(ip) || 0) >= STATS_MAX_PER_IP) return res.status(429).json({ error: 'Too many live connections.' });
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders?.();
+  openStream(res);
   statsLast = JSON.stringify(publicStats());
   res.write(`data: ${statsLast}\n\n`);
   statsStreams.add(res);
