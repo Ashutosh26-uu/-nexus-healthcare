@@ -28,7 +28,7 @@ export function HealthToday({ card, isSelf, name }) {
         <Link to="/patient/vaccines" className="hl-today-item">
           <span className="tiny muted row" style={{ gap: 6 }}><Syringe size={14} /> {v?.child ? 'Next vaccine' : 'Vaccines'}</span>
           <span className={`hl-big${v?.overdue ? ' pt-clay' : ''}`}>{vaxText}</span>
-          {v?.child && v.dueNames?.length ? <span className="tiny muted">{v.dueNames.slice(0, 2).join(', ')}</span> : null}
+          {v?.child && v.dueNames?.length ? <span className="tiny muted">{v.dueNames.slice(0, 2).join(', ')}</span> : !card.hasDob ? <span className="tiny muted">To see what&apos;s due</span> : !v?.child ? <span className="tiny muted">See the schedule for your family</span> : null}
         </Link>
         <Link to="/patient/follow-ups" className="hl-today-item">
           <span className="tiny muted row" style={{ gap: 6 }}><CalendarClock size={14} /> Next appointment</span>

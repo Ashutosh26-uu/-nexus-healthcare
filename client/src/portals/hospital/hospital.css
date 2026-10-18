@@ -17,7 +17,7 @@
 .hosp-donut { display: flex; align-items: center; gap: 12px; }
 .hosp-donut > div:first-child { flex-shrink: 0; }
 @media (min-width: 1400px) { .hosp-donuts { grid-template-columns: repeat(4, minmax(0, 1fr)); } .hosp-donut { flex-direction: column; align-items: flex-start; } }
-@media (max-width: 420px) { .hosp-donuts { grid-template-columns: 1fr; } }
+@media (max-width: 480px) { .hosp-donuts { grid-template-columns: 1fr; } }
 .hosp-trend { margin-top: 22px; padding-top: 16px; border-top: 1px dashed var(--line); }
 .hosp-ref-mini { color: var(--ink); border-radius: 10px; }
 .hosp-ref-mini:hover { color: var(--ink); background: #fdfbf7; }

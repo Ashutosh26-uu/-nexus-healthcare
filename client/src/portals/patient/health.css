@@ -3,9 +3,10 @@
 .hl-urgent .btn { background: var(--rose); color: #fff; border-color: var(--rose); }
 
 /* Home: add-family invite + health today */
-.hl-invite { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: var(--radius, 14px); background: var(--green-soft); border: 1px solid color-mix(in srgb, var(--green-2) 25%, transparent); }
+.hl-invite { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 16px; border-radius: var(--radius, 14px); background: var(--green-soft); border: 1px solid color-mix(in srgb, var(--green-2) 25%, transparent); }
+.hl-invite > .grow { flex: 1 1 220px; min-width: 0; }
 .hl-invite-ic { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: #fff; color: var(--green-2); flex-shrink: 0; }
-.hl-today { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.hl-today { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 10px; }
 .hl-today-item { display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 12px; background: var(--paper-2); color: inherit; text-decoration: none; min-width: 0; }
 .hl-today-item:hover { background: var(--green-soft); }
 .hl-today-item .hl-big { font-weight: 700; font-size: 1.05rem; overflow-wrap: anywhere; }
@@ -48,8 +49,8 @@
 .hl-form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; }
 .hl-scroll-x { overflow-x: auto; max-width: 100%; }
 
-@media (max-width: 420px) {
-  .hl-today { grid-template-columns: 1fr; }
+@media (max-width: 480px) {
   .hl-fam-grid { grid-template-columns: 1fr; }
-  .hl-invite { flex-wrap: wrap; }
+  .hl-today { grid-template-columns: 1fr; }
+  .hl-invite > .btn { width: 100%; justify-content: center; }
 }

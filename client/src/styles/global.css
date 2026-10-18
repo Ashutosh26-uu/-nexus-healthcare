@@ -403,7 +403,7 @@ table { max-width: 100%; }
   .row.between { row-gap: 8px; }
   .kv, dl.kv { grid-template-columns: minmax(90px, auto) 1fr; }
 }
-@media (max-width: 420px) {
+@media (max-width: 480px) {
   .grid.two { grid-template-columns: 1fr !important; }
   .card { padding: 16px; }
 }

@@ -60,7 +60,7 @@
   .auth-top { margin-bottom: 26px; }
   .demo-list { max-height: none; }
 }
-@media (max-width: 420px) { .otp { gap: 6px; } .otp input { height: 54px; font-size: 1.3rem; } }
+@media (max-width: 480px) { .otp { gap: 6px; } .otp input { height: 54px; font-size: 1.3rem; } }
 .input.readonly-line { display: flex; align-items: center; justify-content: space-between; background: var(--paper-2); color: var(--ink-2); }
 
 /* Sign-in footer: divider, a clear secondary button and a partner link card */
