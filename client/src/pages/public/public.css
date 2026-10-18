@@ -1,7 +1,7 @@
 /* Public, no-login pages (medicine prices, lab tests, doctor & lab profiles). Mobile first: 360 px up. */
 .pb { min-height: 100vh; background: var(--paper); display: flex; flex-direction: column; overflow-x: clip; } /* clip, not hidden: keeps the sticky header working */
 .pb-wrap { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 16px; box-sizing: border-box; }
-.pb-head { position: sticky; top: 0; z-index: 20; background: rgba(251, 247, 240, 0.94); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line-2); }
+.pb-head { position: sticky; top: 0; z-index: 20; background: var(--paper); border-bottom: 1px solid var(--line-2); }
 .pb-head-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 10px; padding-bottom: 6px; }
 .pb .logo { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; min-width: 0; }
 .pb .logo-text { display: flex; flex-direction: column; line-height: 1.1; min-width: 0; }

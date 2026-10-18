@@ -33,7 +33,7 @@
 .lab-stepper li:first-child::before { display: none; }
 .lab-stepper li.done::before, .lab-stepper li.current::before { background: var(--green-2); }
 .lab-stepper li.current::before { background: linear-gradient(90deg, var(--green-2), var(--line)); }
-.lab-step-dot { position: relative; z-index: 1; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: #fff; border: 2px solid var(--line); color: var(--ink-3); transition: all 0.3s var(--ease); }
+.lab-step-dot { position: relative; z-index: 1; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: #fff; border: 2px solid var(--line); color: var(--ink-3); transition: background-color 0.3s var(--ease), border-color 0.3s var(--ease), color 0.3s var(--ease); }
 .lab-stepper li.done .lab-step-dot { background: var(--green-2); border-color: var(--green-2); color: #fff; }
 .lab-stepper li.current .lab-step-dot { border-color: var(--clay); color: var(--clay); box-shadow: 0 0 0 5px var(--clay-soft); }
 .lab-stepper li.done .lab-step-label, .lab-stepper li.current .lab-step-label { color: var(--ink); font-weight: 600; }

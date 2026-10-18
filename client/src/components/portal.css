@@ -27,7 +27,7 @@
 .portal-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topbar {
   height: 66px; display: flex; align-items: center; gap: 8px; padding: 0 28px; border-bottom: 1px solid var(--line);
-  background: rgba(251, 247, 240, 0.86); backdrop-filter: saturate(1.4) blur(10px); position: sticky; top: 0; z-index: 50;
+  background: var(--paper); position: sticky; top: 0; z-index: 50;
 }
 .topbar-extra { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .portal-content { padding: 28px; max-width: 1320px; width: 100%; margin: 0 auto; animation: fadeOnly 0.3s ease backwards; }

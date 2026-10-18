@@ -50,7 +50,7 @@
 .typing i:nth-child(3) { animation-delay: 0.3s; }
 @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.6; } 30% { transform: translateY(-5px); opacity: 1; } }
 .chat-suggest { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 4px; }
-.chat-suggest button { border: 1px solid var(--line); background: #fff; border-radius: 99px; padding: 7px 12px; font-size: 0.82rem; cursor: pointer; color: var(--green-ink); transition: all 0.15s; }
+.chat-suggest button { border: 1px solid var(--line); background: #fff; border-radius: 99px; padding: 7px 12px; font-size: 0.82rem; cursor: pointer; color: var(--green-ink); transition: background-color 0.15s, border-color 0.15s, color 0.15s; }
 .chat-suggest button:hover { border-color: var(--green-2); background: var(--green-soft); }
 
 .chat-input { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line-2); background: #fff; }

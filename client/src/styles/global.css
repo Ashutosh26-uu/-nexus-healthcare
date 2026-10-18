@@ -228,7 +228,7 @@ p { margin: 0 0 0.9em; }
 .pill.active { background: #fff; color: var(--ink); box-shadow: var(--shadow-sm); }
 
 /* ---------- modal ---------- */
-.modal-backdrop { position: fixed; inset: 0; background: rgba(22, 33, 31, 0.42); backdrop-filter: blur(3px); z-index: 80; display: grid; place-items: center; padding: 20px; animation: fade 0.2s ease; }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(22, 33, 31, 0.45); z-index: 80; display: grid; place-items: center; padding: 20px; animation: fade 0.2s ease; }
 .modal { background: #fff; border-radius: var(--radius-lg); width: 100%; max-width: 560px; max-height: calc(100vh - 40px); overflow: auto; box-shadow: var(--shadow-lg); animation: rise 0.28s var(--ease); }
 .modal.wide { max-width: 820px; }
 .modal:focus { outline: none; } /* focus is moved onto the dialog on open; its content is the indicator */
@@ -271,7 +271,7 @@ p { margin: 0 0 0.9em; }
 .progress.warn > span { background: var(--sun); }
 .progress.danger > span { background: var(--rose); }
 .chip-select { display: flex; flex-wrap: wrap; gap: 8px; }
-.chip { border: 1px solid var(--line); background: #fff; border-radius: 99px; padding: 7px 14px; font-size: 0.86rem; cursor: pointer; transition: all 0.15s; font-weight: 500; }
+.chip { border: 1px solid var(--line); background: #fff; border-radius: 99px; padding: 7px 14px; font-size: 0.86rem; cursor: pointer; transition: background-color 0.15s, border-color 0.15s, color 0.15s; font-weight: 500; }
 .chip:hover { border-color: var(--ink-3); }
 .chip.on { background: var(--green); border-color: var(--green); color: #fff; }
 .callout { display: flex; gap: 12px; padding: 14px 16px; border-radius: var(--radius-sm); background: var(--sun-soft); color: #6b4708; font-size: 0.9rem; align-items: flex-start; }
@@ -331,7 +331,7 @@ body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-ins
 
 /* ---- voice input (speak instead of typing) ---- */
 .voice-in { display: inline-flex; flex-direction: column; gap: 4px; align-self: flex-start; }
-.voice-btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: #fff; color: var(--green); border-radius: 99px; padding: 6px 13px; font: 600 0.84rem var(--sans); cursor: pointer; transition: all 0.15s; }
+.voice-btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: #fff; color: var(--green); border-radius: 99px; padding: 6px 13px; font: 600 0.84rem var(--sans); cursor: pointer; transition: background-color 0.15s, border-color 0.15s, color 0.15s; }
 .voice-btn:hover { border-color: var(--green-2); background: var(--green-soft); }
 .voice-btn.on { background: var(--rose); border-color: var(--rose); color: #fff; }
 .voice-wave { display: inline-flex; gap: 2px; align-items: center; height: 12px; }
