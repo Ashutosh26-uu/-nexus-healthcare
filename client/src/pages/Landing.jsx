@@ -47,16 +47,21 @@ export default function Landing() {
 
   useEffect(() => {
     let alive = true;
-    // Real numbers only — an error page must not render as "0 doctors".
-    // Refreshed every 30 s while the tab is visible, so the counts stay live; a failed refresh keeps the last real numbers.
+    // Real numbers only — an error page must not render as "0 doctors"; a failed refresh keeps the last real numbers.
     const load = (first) => fetch('/api/public/stats', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : Promise.reject())).then((s) => alive && setStats(s)).catch(() => alive && first && setStats(false));
     load(true);
-    const timer = setInterval(() => { if (document.visibilityState === 'visible') load(false); }, 30000);
+    // Live: the server pushes new counts the moment one changes. If the stream can't connect, poll every 30 s instead.
+    let es = null;
+    try {
+      es = new EventSource('/api/public/stats/stream');
+      es.onmessage = (e) => { try { if (alive) setStats(JSON.parse(e.data)); } catch { /* ignore a bad frame */ } };
+    } catch { es = null; }
+    const timer = setInterval(() => { if (document.visibilityState === 'visible' && es?.readyState !== 1) load(false); }, 30000);
     const onScroll = () => setScrolled(window.scrollY > 12);
     window.addEventListener('scroll', onScroll, { passive: true });
     // Sign-in and sign-up are the next click for most visitors — fetch their code while the page is idle.
     const warm = setTimeout(() => (window.requestIdleCallback || setTimeout)(() => { import('./Login').catch(() => {}); import('./Signup').catch(() => {}); }), 2000);
-    return () => { alive = false; clearInterval(timer); clearTimeout(warm); window.removeEventListener('scroll', onScroll); };
+    return () => { alive = false; es?.close(); clearInterval(timer); clearTimeout(warm); window.removeEventListener('scroll', onScroll); };
   }, []);
 
   const home = user ? ROLE_HOME[user.role] : null;

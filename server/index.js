@@ -51,7 +51,7 @@ app.disable('x-powered-by');
 app.use(security.securityHeaders);
 app.use(cors(security.corsOptions()));
 // gzip everything except the live event stream (compression would buffer SSE).
-app.use(compression({ filter: (req, res) => (req.path === '/api/events' ? false : compression.filter(req, res)) }));
+app.use(compression({ filter: (req, res) => (req.path === '/api/events' || req.path === '/api/public/stats/stream' ? false : compression.filter(req, res)) }));
 app.use(express.json({ limit: '2mb' }));
 // Per-request context: who acted and whom the request touched (scopes live-update fan-out).
 app.use((req, _res, next) => requestCtx.run({ affected: new Set(), userId: null }, next));
@@ -186,7 +186,9 @@ const sseDirty = new Set(); // connections with something to send at the next fl
 const sseConns = new Map(); // userId → that account's open streams, oldest first (every role) — for the per-user cap
 const SSE_MAX_PER_USER = 10;
 const PERSONAL_ROLES = new Set(['patient', 'caregiver', 'doctor', 'pharmacist', 'lab_tech', 'hospital_admin', 'delivery']);
-const PUBLIC_TOPICS = new Set(['all', 'advisories']);
+// Topic names only travel on the stream (never data); 'doctors' is public so a patient browsing doctors sees
+// someone come online, go offline or lose a slot without refreshing.
+const PUBLIC_TOPICS = new Set(['all', 'advisories', 'doctors']);
 const requestCtx = new AsyncLocalStorage();
 let sseTimer = null;
 function touch(...userIds) { const s = requestCtx.getStore(); if (s) userIds.flat().forEach((u) => u && s.affected.add(u)); }
@@ -452,17 +454,66 @@ app.get('/api/public/config', (_req, res) => {
   });
 });
 
-app.get('/api/public/stats', publicLimiter, (_req, res) => {
+// Real counts only, in every mode — no padded or illustrative figures on the public page.
+function publicStats() {
   const d = db();
-  // Real counts only, in every mode — no padded or illustrative figures on the public page.
-  res.set('Cache-Control', 'no-store');
-  res.json({
+  return {
     // availabilityOf directly — withAvail also builds timings/affiliation per doctor, which a count never reads.
     doctorsOnline: d.doctors.filter((x) => x.verified && availabilityOf(x, { facilities: d.facilities }).available).length,
     kiosks: d.facilities.filter((f) => f.type === 'kiosk' && f.verified).length,
     passports: d.patients.length,
     states: new Set([...d.facilities.map((f) => f.state), ...d.patients.map((p) => p.state)].filter(Boolean)).size,
     languages: i18n.LANGUAGES.length,
+  };
+}
+app.get('/api/public/stats', publicLimiter, (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(publicStats());
+});
+
+// Live home-page counters for signed-out visitors. One shared check every 5 s (doctors also come online by
+// their schedule, not only by a request), pushed only when a number actually changes. Aggregate counts only.
+const statsStreams = new Set();
+const statsPerIp = new Map();
+const STATS_MAX = 2000, STATS_MAX_PER_IP = 4;
+let statsLast = '';
+let statsTimer = null;
+function pushStats() {
+  if (!statsStreams.size) { clearInterval(statsTimer); statsTimer = null; return; }
+  const json = JSON.stringify(publicStats());
+  if (json === statsLast) return;
+  statsLast = json;
+  for (const r of statsStreams) if (!r.destroyed) r.write(`data: ${json}\n\n`);
+}
+// Doctors also come online or go offline by the clock (their schedule), with no request to trigger a broadcast.
+// Once a minute, tell open screens when the set of available doctors has changed.
+let availSig = '';
+setInterval(() => {
+  try {
+    const d = db();
+    const sig = d.doctors.filter((x) => x.verified && availabilityOf(x, { facilities: d.facilities }).available).map((x) => x.id).sort().join(',');
+    if (availSig && sig !== availSig) broadcast('doctors');
+    availSig = sig;
+  } catch { /* store not ready yet */ }
+}, 60000).unref();
+app.get('/api/public/stats/stream', publicLimiter, (req, res) => {
+  const ip = req.ip || '';
+  if (statsStreams.size >= STATS_MAX || (statsPerIp.get(ip) || 0) >= STATS_MAX_PER_IP) return res.status(429).json({ error: 'Too many live connections.' });
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+  statsLast = JSON.stringify(publicStats());
+  res.write(`data: ${statsLast}\n\n`);
+  statsStreams.add(res);
+  statsPerIp.set(ip, (statsPerIp.get(ip) || 0) + 1);
+  if (!statsTimer) statsTimer = setInterval(pushStats, 5000);
+  const ping = setInterval(() => { if (!res.destroyed) res.write(': ping\n\n'); }, 25000);
+  req.on('close', () => {
+    clearInterval(ping);
+    statsStreams.delete(res);
+    const n = (statsPerIp.get(ip) || 1) - 1;
+    if (n > 0) statsPerIp.set(ip, n); else statsPerIp.delete(ip);
   });
 });
 

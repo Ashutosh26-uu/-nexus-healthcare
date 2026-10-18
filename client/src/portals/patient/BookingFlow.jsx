@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Video, Building2, MonitorSmartphone, Clock, CalendarClock, Check, ArrowLeft, ArrowRight, Ambulance, Phone, CheckCircle2, QrCode, UserRoundPen, ShieldCheck, Copy, MessageCircle } from 'lucide-react';
-import { api } from '../../api';
+import { api, subscribe } from '../../api';
 import { Avatar, Button, Field, Modal, fmtDateTime, fmtMoney, cx } from '../../components/ui';
 import { AvailBadge } from '../../components/Availability';
 import VoiceInput from '../../components/VoiceInput';
@@ -57,14 +57,19 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
       setVisitType(o.options.clinic ? 'clinic' : 'video');
       setWhen(o.doctor.online && !o.options.clinic ? 'now' : 'later');
     }).catch((e) => alive && setError(e.message));
-    return () => { alive = false; };
+    // Live while the patient decides: if the doctor goes offline or changes fees, the options update on screen.
+    const unsub = subscribe((topics) => {
+      if (!topics.some((t) => t === 'all' || t === 'doctors')) return;
+      api.get(`/doctors/${doctor.id}/booking-options`).then((o) => alive && setOpts(o)).catch(() => {});
+    });
+    return () => { alive = false; unsub(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doctor]);
 
   if (!doctor) return null;
   const d = opts?.doctor || doctor;
   const o = opts?.options;
-  const fees = o?.fees || { bookingFee: 100, video: Math.max(100, d.fee || 0), inPerson: 100, payAtClinic: d.fee || 0 };
+  const fees = o?.fees || {}; // only ever shown once the server's real fees have loaded
   const amount = visitType === 'video' ? fees.video : fees.inPerson;
   const canNow = visitType === 'video' && d.online;
   const later = when === 'later' || !canNow; // "Right now" only counts when the doctor is actually available
