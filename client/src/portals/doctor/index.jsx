@@ -1,8 +1,9 @@
 import { DoctorCtx } from './context';
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ListChecks, Users, CalendarDays, Wallet, Award, Pill, UserRound, Clock, FilePen, Video, Building2, GraduationCap, MapPin, Camera } from 'lucide-react';
-import { lazy, Suspense, useState } from 'react';
+import { Suspense, useState } from 'react';
 import PortalLayout from '../../components/PortalLayout';
+import { pageLoader } from '../../prefetch';
 import { useLive } from '../../live';
 import { api } from '../../api';
 import { Button, Loading, Modal, Switch, useAction, cx } from '../../components/ui';
@@ -12,15 +13,16 @@ import { NewBookingPopup } from './BookingAlerts';
 
 // The queue is the first screen; the consult room (WebRTC, prescription writer), records, schedule, profile
 // and the rest load when opened. Only code is cached — every screen still fetches live data.
-const Clinic = lazy(() => import('./Clinic'));
-const Score = lazy(() => import('./Score'));
-const Consult = lazy(() => import('./Consult'));
-const Patients = lazy(() => import('./Patients'));
-const Schedule = lazy(() => import('./Schedule'));
-const Earnings = lazy(() => import('./Earnings'));
-const Medicines = lazy(() => import('./Medicines'));
-const Profile = lazy(() => import('./Profile'));
-const Prescribe = lazy(() => import('./Prescribe'));
+const { page, usePrefetch } = pageLoader();
+const Clinic = page(() => import('./Clinic'));
+const Score = page(() => import('./Score'));
+const Consult = page(() => import('./Consult'));
+const Patients = page(() => import('./Patients'));
+const Schedule = page(() => import('./Schedule'));
+const Earnings = page(() => import('./Earnings'));
+const Medicines = page(() => import('./Medicines'));
+const Profile = page(() => import('./Profile'));
+const Prescribe = page(() => import('./Prescribe'));
 import './doctor.css';
 
 // Keyed by id so state from one consult never carries into the next.
@@ -88,6 +90,7 @@ function PresenceControl({ home }) {
 }
 
 export default function DoctorApp() {
+  usePrefetch();
   const home = useLive('/doctor/home', ['queue', 'consults', 'doctors', 'lab', 'payments', 'referrals', 'notifications']);
   const waiting = home.data?.stats?.waiting || 0;
   const doctor = home.data?.doctor;

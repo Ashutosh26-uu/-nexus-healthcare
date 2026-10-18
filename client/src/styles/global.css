@@ -188,8 +188,10 @@ p { margin: 0 0 0.9em; }
 .dot.green { background: #2a9d74; box-shadow: 0 0 0 3px rgba(42, 157, 116, 0.18); }
 .dot.rose { background: var(--rose); }
 .dot.sun { background: var(--sun); }
-.dot.pulse { animation: pulse 1.8s infinite; }
-@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(42, 157, 116, 0.45); } 70% { box-shadow: 0 0 0 8px rgba(42, 157, 116, 0); } 100% { box-shadow: 0 0 0 0 rgba(42, 157, 116, 0); } }
+/* The ring is a scaled copy of the dot (transform + opacity only), so the GPU animates it without repainting the page. */
+.dot.pulse { position: relative; }
+.dot.pulse::after { content: ''; position: absolute; inset: 0; border-radius: 50%; background: inherit; animation: pulse 1.8s ease-out infinite; pointer-events: none; }
+@keyframes pulse { from { transform: scale(1); opacity: 0.5; } to { transform: scale(3); opacity: 0; } }
 
 /* triage levels */
 .triage { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px; border-radius: 99px; font-size: 0.78rem; font-weight: 700; }

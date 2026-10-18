@@ -1,8 +1,9 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Home as HomeIcon, HeartPulse, Video, FolderHeart, Pill, ShieldCheck, Users, IdCard, Settings as SettingsIcon, ChevronDown, Check, UserPlus, Activity, Coins, Dna, ScanLine, UserRoundPen, MapPin, Stethoscope, FileUp, FlaskConical, CalendarClock, Repeat, Gauge, Syringe } from 'lucide-react';
 import { Gift } from 'lucide-react'; // Invite & earn
 import PortalLayout from '../../components/PortalLayout';
+import { pageLoader } from '../../prefetch';
 import { Avatar, Button, Modal, cx, useToast } from '../../components/ui';
 import { session } from '../../api';
 import { useLive } from '../../live';
@@ -13,27 +14,28 @@ import './patient.css';
 
 // Only Home is in the first load; every other page (and the doctor finder, booking, payment and call code they
 // pull in) is fetched on demand. Code is cached by the browser; data is still fetched live on every visit.
-const Triage = lazy(() => import('./Triage'));
-const Consult = lazy(() => import('./Consult'));
-const ConsultRoom = lazy(() => import('./ConsultRoom'));
-const Records = lazy(() => import('./Records'));
-const Medicines = lazy(() => import('./Medicines'));
-const Settings = lazy(() => import('./Settings'));
-const CompleteProfile = lazy(() => import('./CompleteProfile'));
-const FollowUps = lazy(() => import('./FollowUps'));
-const Twin = lazy(() => import('./Twin'));
-const Wallet = lazy(() => import('./Wallet'));
-const Invite = lazy(() => import('./Invite'));
-const FamilyGraph = lazy(() => import('./FamilyGraph'));
-const MedicineScan = lazy(() => import('./MedicineScan'));
-const ChangeDoctor = lazy(() => import('./ChangeDoctor'));
-const OrderMedicines = lazy(() => import('./OrderMedicines'));
-const Tests = lazy(() => import('./Tests'));
-const EmergencyCard = lazy(() => import('./EmergencyCard'));
-const Consents = lazy(() => import('./Consents'));
-const Family = lazy(() => import('./Family'));
-const Tracker = lazy(() => import('./Tracker'));
-const Vaccines = lazy(() => import('./Vaccines'));
+const { page, usePrefetch } = pageLoader();
+const Triage = page(() => import('./Triage'));
+const Consult = page(() => import('./Consult'));
+const ConsultRoom = page(() => import('./ConsultRoom'));
+const Records = page(() => import('./Records'));
+const Medicines = page(() => import('./Medicines'));
+const Settings = page(() => import('./Settings'));
+const CompleteProfile = page(() => import('./CompleteProfile'));
+const FollowUps = page(() => import('./FollowUps'));
+const Twin = page(() => import('./Twin'));
+const Wallet = page(() => import('./Wallet'));
+const Invite = page(() => import('./Invite'));
+const FamilyGraph = page(() => import('./FamilyGraph'));
+const MedicineScan = page(() => import('./MedicineScan'));
+const ChangeDoctor = page(() => import('./ChangeDoctor'));
+const OrderMedicines = page(() => import('./OrderMedicines'));
+const Tests = page(() => import('./Tests'));
+const EmergencyCard = page(() => import('./EmergencyCard'));
+const Consents = page(() => import('./Consents'));
+const Family = page(() => import('./Family'));
+const Tracker = page(() => import('./Tracker'));
+const Vaccines = page(() => import('./Vaccines'));
 
 // Keyed by id so state from one consult never carries into the next.
 function ConsultRoomById() {
@@ -42,6 +44,7 @@ function ConsultRoomById() {
 }
 
 export default function PatientApp() {
+  usePrefetch();
   const [profileKey, setProfileKey] = useState(() => session.profile || 'self');
   const home = useLive('/patient/home', HOME_TOPICS, [profileKey]);
   const toast = useToast();

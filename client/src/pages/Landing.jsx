@@ -54,7 +54,9 @@ export default function Landing() {
     const timer = setInterval(() => { if (document.visibilityState === 'visible') load(false); }, 30000);
     const onScroll = () => setScrolled(window.scrollY > 12);
     window.addEventListener('scroll', onScroll, { passive: true });
-    return () => { alive = false; clearInterval(timer); window.removeEventListener('scroll', onScroll); };
+    // Sign-in and sign-up are the next click for most visitors — fetch their code while the page is idle.
+    const warm = setTimeout(() => (window.requestIdleCallback || setTimeout)(() => { import('./Login').catch(() => {}); import('./Signup').catch(() => {}); }), 2000);
+    return () => { alive = false; clearInterval(timer); clearTimeout(warm); window.removeEventListener('scroll', onScroll); };
   }, []);
 
   const home = user ? ROLE_HOME[user.role] : null;

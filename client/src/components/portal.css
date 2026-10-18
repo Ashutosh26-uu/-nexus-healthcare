@@ -30,7 +30,7 @@
   background: var(--paper); position: sticky; top: 0; z-index: 50;
 }
 .topbar-extra { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.portal-content { padding: 28px; max-width: 1320px; width: 100%; margin: 0 auto; animation: fadeOnly 0.3s ease backwards; }
+.portal-content { padding: 28px; max-width: 1320px; width: 100%; margin: 0 auto; animation: fadeOnly 0.15s ease-out backwards; }
 @keyframes fadeOnly { from { opacity: 0; } }
 .page-header { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
 /* Never let action buttons squeeze the title into a one-letter column: below this width they wrap under it. */
