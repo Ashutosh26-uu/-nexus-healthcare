@@ -75,8 +75,11 @@ function problems() {
 const webhookOn = () => { const c = config(); return Boolean(c.url && c.secret.length >= 24 && !problems().length); };
 const apiOn = () => config().apiKey.length >= 32;
 
+let onChange = () => {};
 function init(opts = {}) {
   dataMode = opts.dataMode || dataMode;
+  if (typeof opts.onChange === 'function') onChange = opts.onChange; // the admin screen updates live
+
   const p = problems();
   if (p.length) console.warn(`[automation] off: ${p.join(' ')}`);
   else if (webhookOn()) console.log(`[automation] sending events to ${new URL(config().url).host}${config().shareContact ? ' (with patient contact details)' : ''}`);
@@ -161,6 +164,7 @@ async function deliver(payload) {
 function record(payload, status, r, attempts) {
   stats.recent.unshift({ id: payload.id, event: payload.event, status, code: r.code, error: r.error || null, attempts, at: new Date().toISOString() });
   stats.recent.length = Math.min(stats.recent.length, 30);
+  try { onChange(); } catch { /* never let a screen refresh break delivery */ }
 }
 
 function settle(job, r) {

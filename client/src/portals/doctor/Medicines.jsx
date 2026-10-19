@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Pill, Plus, Trash2, Search, Sparkles, Pencil } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
+import { useTopicTick } from '../../live';
 import { Button, Card, Empty, Field, Loading, useAction, cx } from '../../components/ui';
 import { TimingPicker, FOOD, FORMS, emptyTiming, freqText } from './medTiming';
 
@@ -48,7 +49,8 @@ export default function Medicines() {
   const [q, setQ] = useState('');
   const [run, busy] = useAction();
 
-  useEffect(() => { api.get('/doctor/medicines').then(setList).catch(() => setList([])); }, []);
+  const live = useTopicTick(['mymeds']); // saved on another device
+  useEffect(() => { api.get('/doctor/medicines').then(setList).catch(() => setList((cur) => cur || [])); }, [live]);
 
   const save = () => run('save', async () => {
     const m = await api.post('/doctor/medicines', draft);

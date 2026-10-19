@@ -4,6 +4,7 @@ import { useSupport, telHref } from '../../config';
 import { FlaskConical, MapPin, Home as HomeIcon, BadgeCheck, Check, Droplet, Utensils, FileText, Building2, Phone, Smartphone, CalendarClock, ArrowRight, ArrowLeft, Download, Stethoscope, Star, Users, LocateFixed, ShieldCheck, Ambulance, Repeat, Search, Hourglass, CreditCard, Bike, Gift, Stamp, HeartPulse } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
+import { useTopicTick } from '../../live';
 import { Button, Card, Empty, Field, Modal, Switch, fmtDate, fmtDateTime, fmtMoney, useAction, cx } from '../../components/ui';
 import { usePatient, usePatientLive, firstName, localISO, PageSkeleton } from './shared';
 import { useDeviceLocation } from './NearbyDoctors';
@@ -69,9 +70,10 @@ function LabChooser({ order, onClose, onBooked }) {
   // Mounted fresh per order (keyed in <Tests>), so every field starts clean. The first response also
   // decides `near`, which would re-run this effect for the very same query — the key check skips that.
   const fetched = useRef('');
+  const labsLive = useTopicTick(['labs']); // a lab's prices, tests or free slots changed
   useEffect(() => {
     if (!order) return undefined;
-    const key = (n) => `${n || ''}|${sort}|${device.loc?.lat ?? ''}|${device.loc?.lng ?? ''}`;
+    const key = (n) => `${n || ''}|${sort}|${device.loc?.lat ?? ''}|${device.loc?.lng ?? ''}|${labsLive}`;
     if (fetched.current === key(near)) return undefined;
     let alive = true;
     const qs = new URLSearchParams({ sort, ...(near ? { near } : {}), ...(device.loc ? { lat: device.loc.lat, lng: device.loc.lng } : {}) });
@@ -83,7 +85,7 @@ function LabChooser({ order, onClose, onBooked }) {
       setLabId((cur) => (r.labs.some((l) => l.id === cur) ? cur : r.labs[0]?.id || null));
     }).catch(() => alive && setData({ labs: [], tests: [], places: {} }));
     return () => { alive = false; };
-  }, [order, near, sort, device.loc]);
+  }, [order, near, sort, device.loc, labsLive]);
 
   const lab = data?.labs.find((l) => l.id === labId);
   useEffect(() => { if (lab && !lab.homeCollection) setHome(false); }, [lab]);
@@ -409,16 +411,22 @@ function PackagePicker({ resume, preselect, onClose }) {
   const [slot, setSlot] = useState('');
   const [pay, setPay] = useState(null);
   const [run, busy] = useAction();
+  const labsLive = useTopicTick(['labs']);
+  const first = useRef(true);
   useEffect(() => {
     let alive = true;
+    const initial = first.current;
+    first.current = false;
     api.get('/patient/packages').then((r) => {
       if (!alive) return;
       setData(r);
+      // A live refresh keeps what the person picked (re-pointed at the fresh price), it never re-picks.
+      if (!initial) { setPick((cur) => (cur ? r.packages.find((k) => k.id === cur.id && k.labId === cur.labId) || null : cur)); return; }
       if (resume) setPick(r.packages.find((k) => k.id === resume.packageId && k.labId === resume.labId) || null);
       else if (preselect) { const k = r.packages.find((x) => x.id === preselect); if (k) { setPick(k); setHome(!!k.lab.homeCollection); } }
     }).catch(() => alive && setData({ packages: [] }));
     return () => { alive = false; };
-  }, [resume, preselect]);
+  }, [resume, preselect, labsLive]);
   const total = pick ? pick.price + (home && pick.lab.homeCollection ? data.homeFee : 0) : 0;
   const advance = Math.max(1, Math.ceil(total * (data?.advanceShare || 0.2)));
   const book = () => run('book', async () => {

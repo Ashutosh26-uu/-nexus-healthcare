@@ -190,7 +190,10 @@ const SSE_MAX_PER_USER = 10;
 const PERSONAL_ROLES = new Set(['patient', 'caregiver', 'doctor', 'pharmacist', 'lab_tech', 'hospital_admin', 'delivery']);
 // Topic names only travel on the stream (never data); 'doctors' is public so a patient browsing doctors sees
 // someone come online, go offline or lose a slot without refreshing.
-const PUBLIC_TOPICS = new Set(['all', 'advisories', 'doctors']);
+// 'stock' and 'labs' are derived (below): any pharmacy / supply or lab event can change what a chemist has free
+// or a lab can take, so open chemist and lab lists refresh — again only the topic name travels.
+const PUBLIC_TOPICS = new Set(['all', 'advisories', 'doctors', 'stock', 'labs']);
+const DERIVED_TOPICS = { pharmacy: 'stock', supply: 'stock', lab: 'labs' };
 const requestCtx = new AsyncLocalStorage();
 let sseTimer = null;
 function touch(...userIds) { const s = requestCtx.getStore(); if (s) userIds.flat().forEach((u) => u && s.affected.add(u)); }
@@ -200,7 +203,8 @@ function touchFacility(...fids) {
   if (set.size) touch(db().users.filter((u) => u.facilityId && set.has(u.facilityId)).map((u) => u.id));
 }
 function queueTopics(c, list) { if (!list.length) return; list.forEach((t) => c.pending.add(t)); sseDirty.add(c); }
-function broadcast(...topics) {
+function broadcast(...given) {
+  const topics = [...new Set([...given, ...given.map((t) => DERIVED_TOPICS[t]).filter(Boolean)])];
   const ctx = requestCtx.getStore();
   const audience = ctx ? new Set([...ctx.affected, ctx.userId].filter(Boolean)) : null; // null → everyone (timers, resets)
   const pub = topics.filter((t) => PUBLIC_TOPICS.has(t));
@@ -3146,6 +3150,7 @@ app.post('/api/patient/vitals-log', auth, role('patient', 'caregiver'), (req, re
   store.save();
   touch(patientOwnerUserIds(p)); // the patient and their guardian (family hub) both see it
   const fresh = refreshMonitoring(p);
+  touch(monitoringDoctors(p).map((x) => x.userId)); // a doctor with the record open sees the new reading at once
   broadcast('vitals', 'monitoring');
   const v = wellness.readingView(rec, vitalsCtx(p));
   res.json({ ...v, text: wellness.readingText(v), alerts: fresh.map(patientAlertView) });
@@ -3569,12 +3574,14 @@ app.post('/api/doctor/medicines', auth, role('doctor'), (req, res) => {
     doc.myMedicines.unshift({ id: store.id('med'), ...med, createdAt: nowIso() });
   }
   store.save();
+  broadcast('mymeds'); // the doctor's other devices
   res.json(existing || doc.myMedicines[0]);
 });
 app.delete('/api/doctor/medicines/:id', auth, role('doctor'), (req, res) => {
   const doc = doctorFor(req.user);
   doc.myMedicines = (doc.myMedicines || []).filter((m) => m.id !== req.params.id);
   store.save();
+  broadcast('mymeds');
   res.json({ ok: true });
 });
 
@@ -6644,7 +6651,7 @@ function scrubLiveArtifacts() {
 (async () => {
   await store.init();
   scrubLiveArtifacts();
-  automation.init({ dataMode: DATA_MODE });
+  automation.init({ dataMode: DATA_MODE, onChange: () => broadcast('automation') });
   expireUnpaid();
   expireConsents();
   // Reminders run in their own try: a bad record must never stop unpaid bookings from expiring.

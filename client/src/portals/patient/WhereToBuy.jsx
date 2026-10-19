@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Store, MapPin, Clock, Check, ChevronDown, Truck, BadgeIndianRupee, Phone, AlertTriangle } from 'lucide-react';
 import { api } from '../../api';
+import { useTopicTick } from '../../live';
 import { fmtMoney, cx } from '../../components/ui';
 import { useDeviceLocation, LocationButton } from './NearbyDoctors';
 import DistancePicker, { useRadius } from '../../components/DistancePicker';
@@ -12,6 +13,7 @@ export default function WhereToBuy({ rx, selectable, value, onChange, onLoaded }
   const [error, setError] = useState('');
   const [open, setOpen] = useState(null);
   const [radius, setRadius] = useRadius('chemists', 50, { max: 100 });
+  const live = useTopicTick(['stock']); // a chemist's stock or prices changed somewhere
 
   const lat = device.loc?.lat;
   const lng = device.loc?.lng;
@@ -27,7 +29,7 @@ export default function WhereToBuy({ rx, selectable, value, onChange, onLoaded }
     }).catch((e) => alive && setError(e.message));
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rx?.id, lat, lng, radius]);
+  }, [rx?.id, lat, lng, radius, live]);
 
   if (error) return <div className="form-error">{error}</div>;
   if (!data) return <div className="stack">{[0, 1].map((i) => <div key={i} className="skeleton" style={{ height: 64, borderRadius: 12 }} />)}</div>;

@@ -51,3 +51,15 @@ export function useLive(url, topics = [], deps = []) {
   const reload = useCallback(() => load(true, true), [load]);
   return { data, error, loading, reload, setData };
 }
+
+// A counter that goes up whenever the server broadcasts one of `topics` (or 'all' after a reconnect). Put it in
+// an effect's dependencies to refetch hand-built requests live, the same way useLive does.
+export function useTopicTick(topics) {
+  const [tick, setTick] = useState(0);
+  const key = topics.join('|');
+  useEffect(() => {
+    const want = key.split('|');
+    return subscribe((incoming) => { if (incoming.includes('all') || incoming.some((t) => want.includes(t))) setTick((n) => n + 1); });
+  }, [key]);
+  return tick;
+}

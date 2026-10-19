@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Workflow, Send, CheckCircle2, CircleAlert, KeyRound, ShieldCheck, RefreshCw } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
-import { api } from '../../api';
+import { api, subscribe } from '../../api';
 import { Button, Card, Stat, Empty, timeAgo, useAction, cx } from '../../components/ui';
 
 const STATUS_TONE = { sent: 'green', retrying: 'sun', failed: 'rose' };
@@ -10,9 +10,11 @@ const STATUS_TONE = { sent: 'green', retrying: 'sun', failed: 'rose' };
 export default function Automations() {
   const [s, setS] = useState(null);
   const [run, busy] = useAction();
-  // A failed 15 s poll keeps the last good status on screen instead of flipping the page to the error state.
+  // A failed refresh keeps the last good status on screen instead of flipping the page to the error state.
   const load = useCallback(() => api.get('/admin/automation').then(setS).catch(() => setS((prev) => (prev && !prev.error ? prev : { error: true }))), []);
-  useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, [load]);
+  // Live: every delivery attempt pushes an update; the slow poll only covers a dropped live connection.
+  useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, [load]);
+  useEffect(() => subscribe((topics) => { if (topics.includes('all') || topics.includes('automation')) load(); }), [load]);
   const test = () => run('test', () => api.post('/admin/automation/test', {}).finally(load), 'Test event delivered to n8n ✅');
 
   if (!s) return <div className="skeleton" style={{ height: 240, borderRadius: 16 }} />;

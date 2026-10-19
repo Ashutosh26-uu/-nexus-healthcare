@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Star, Languages, MapPin, Clock, GraduationCap, Users, BadgeCheck, Building2, IndianRupee, Briefcase, Smile, Quote } from 'lucide-react';
 import { api } from '../../api';
+import { useTopicTick } from '../../live';
 import { Avatar, Button, Modal, fmtMoney, timeAgo, cx } from '../../components/ui';
 import { AvailBadge } from '../../components/Availability';
 import { getLocale } from '../../i18n';
@@ -22,13 +23,16 @@ export function TodayTimings({ doc }) {
 
 export default function DoctorProfile({ doc, onClose, onConsult, busy, consultLabel }) {
   const [rev, setRev] = useState(null);
+  const live = useTopicTick(['doctors']); // a new review arrives while the profile is open
+  const shownFor = useRef(null);
   useEffect(() => {
-    setRev(null);
+    if (shownFor.current !== doc?.id) setRev(null); // a different doctor: never flash the previous reviews
+    shownFor.current = doc?.id;
     if (!doc?.id) return undefined;
     let alive = true; // opening another profile quickly must not show the previous doctor's reviews
     api.get(`/doctors/${doc.id}/reviews`).then((r) => alive && setRev(r)).catch(() => {});
     return () => { alive = false; };
-  }, [doc?.id]);
+  }, [doc?.id, live]);
   if (!doc) return null;
   const st = rev?.stats || { rating: doc.rating, reviewCount: doc.reviewCount, satisfaction: doc.satisfaction, patientsSeen: doc.patientsSeen };
   const today = todayKey();

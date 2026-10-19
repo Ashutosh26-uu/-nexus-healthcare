@@ -9,6 +9,7 @@ import VoiceInput from '../../components/VoiceInput';
 import { usePatient, PageSkeleton } from './shared';
 import { useDeviceLocation, LocationButton } from './NearbyDoctors';
 import DistancePicker, { useRadius } from '../../components/DistancePicker';
+import { useTopicTick } from '../../live';
 import PaymentStep from './Payment';
 import ShareButton from '../../components/ShareButton';
 
@@ -55,6 +56,10 @@ export default function OrderMedicines() {
   const prescriptions = useMemo(() => home?.prescriptions || [], [home]);
   const [step, setStep] = useState(0);
   const [radius, setRadius] = useRadius('chemists', 50, { max: 100 });
+  // Live: while the patient is choosing a chemist, stock and prices refresh the moment any chemist's change.
+  const stockLive = useTopicTick(['stock']);
+  const quoteBody = useRef(null);
+  const stepRef = useRef(0);
   // ?drug= comes from the public price checker: start on "other medicine" with that name filled in.
   const linkedDrug = (params.get('drug') || '').slice(0, 80);
   const [source, setSource] = useState(linkedDrug ? 'other' : 'rx');
@@ -109,6 +114,19 @@ export default function OrderMedicines() {
     return () => { alive = false; };
   }, [rx?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  stepRef.current = step;
+  useEffect(() => {
+    if (!stockLive || stepRef.current !== 1 || !quoteBody.current) return undefined;
+    let alive = true;
+    api.post('/medicine-orders/quote', quoteBody.current).then((q) => {
+      if (!alive || stepRef.current !== 1) return;
+      setQuote(q);
+      // Keep the chosen chemist if it still qualifies; otherwise fall back the same way the first search does.
+      setShopId((cur) => (cur === 'any' || q.shops.some((s) => s.id === cur) ? cur : q.shops.find((s) => s.complete)?.id || q.shops[0]?.id || (q.chemistsNearby ? 'any' : null)));
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [stockLive]);
+
   if (homeLoading) return <PageSkeleton />;
 
   const items = source === 'rx' ? Object.entries(picks).filter(([, v]) => v.on).map(([drug, v]) => ({ drug, qty: v.qty, ...(v.sub ? { sub: v.sub } : {}) })) : others.filter((o) => o.drug.trim().length >= 2).map((o) => ({ drug: o.drug.trim(), qty: o.qty }));
@@ -126,7 +144,9 @@ export default function OrderMedicines() {
     if (!items.length) { setError(source === 'rx' ? 'Tick at least one medicine.' : 'Add at least one medicine.'); return; }
     setBusy(true);
     try {
-      const q = await api.post('/medicine-orders/quote', { ...(source === 'rx' ? { rxId } : {}), items, radiusKm: km,...(device.loc ? { lat: device.loc.lat, lng: device.loc.lng } : {}) });
+      const body = { ...(source === 'rx' ? { rxId } : {}), items, radiusKm: km, ...(device.loc ? { lat: device.loc.lat, lng: device.loc.lng } : {}) };
+      quoteBody.current = body;
+      const q = await api.post('/medicine-orders/quote', body);
       setQuote(q);
       // A reorder goes back to the same chemist when it still has the medicines.
       const same = params.get('pharmacy') && q.shops.find((s) => s.id === params.get('pharmacy'));
