@@ -40,6 +40,7 @@ export function PublicPage({ children }) {
             <Link to="/find/doctors">Find a doctor</Link>
             <Link to="/find/labs">Labs</Link>
             <Link to="/join">Doctors &amp; clinics — join Nexus</Link>
+            <Link to="/testimonials">Testimonials</Link>
             <Link to="/privacy">Privacy policy</Link>
             <Link to="/cookies">Cookie policy</Link>
           </div>

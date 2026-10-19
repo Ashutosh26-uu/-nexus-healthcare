@@ -364,7 +364,7 @@ export default function Landing() {
           <div>
             <h4>Product</h4>
             <Link to="/medicines">Medicine price checker</Link><Link to="/lab-tests">Lab test prices</Link><Link to="/find/doctors">Find a doctor</Link><Link to="/find/labs">Labs near you</Link>
-            <a href="#how">How it works</a><a href="#kiosk">E-Clinics</a><Link to="/privacy">Privacy policy</Link><Link to="/cookies">Cookie policy</Link><button type="button" className="l-footer-link" onClick={openCookieSettings}>Cookie preferences</button>
+            <a href="#how">How it works</a><a href="#kiosk">E-Clinics</a><Link to="/testimonials">Testimonials</Link><Link to="/privacy">Privacy policy</Link><Link to="/cookies">Cookie policy</Link><button type="button" className="l-footer-link" onClick={openCookieSettings}>Cookie preferences</button>
           </div>
           <div>
             <h4>Partners</h4>
