@@ -5,6 +5,7 @@ import { api } from '../api';
 import { Loading, fmtDate, fmtDateTime } from '../components/ui';
 import { LogoMark } from '../components/Logo';
 import QR from '../components/QR';
+import { verifyUrl } from '../scanLinks';
 import './rxprint.css';
 
 // A clean A4 prescription. "Download PDF" uses the browser's Save-as-PDF, which renders every
@@ -100,8 +101,8 @@ export default function RxPrint() {
 
         <footer className="rxp-foot">
           <div className="rxp-qr">
-            <QR value={`nexus:rx:${rx.id}`} size={84} label="Prescription QR" />
-            <span>Scan at any Nexus Healthcare chemist to verify</span>
+            <QR value={verifyUrl('rx', rx.id, rx.verifySig) || `nexus:rx:${rx.id}`} size={92} label="Prescription QR — scan to verify" />
+            <span>Scan with any phone camera to check it’s genuine</span>
           </div>
           <div className="rxp-sign">
             <span className="rxp-sig-name" translate="no">{rx.doctor?.name}</span>

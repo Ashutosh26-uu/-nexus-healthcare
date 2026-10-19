@@ -3,6 +3,7 @@ import { HeartPulse, Video, FolderHeart, Pill, ShieldCheck, AlertTriangle, Calen
 import { Button, Card, Empty, StatusBadge, fmtDateTime, timeAgo } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, greeting, firstName, PageSkeleton, PassportQR } from './shared';
+import { passportUrl } from '../../scanLinks';
 import { getLocale } from '../../i18n';
 import { LateNotice, VisitChangeActions } from './VisitChange';
 import { useLive } from '../../live';
@@ -211,7 +212,7 @@ function PassportCard({ patient: p }) {
           <div className="pt-passport-name" translate="no">{p.name}</div>
           <div className="pt-passport-id mono" dir="ltr" translate="no">{p.id}</div>
         </div>
-        <div className="pt-passport-qr"><PassportQR value={p.id} size={72} /></div>
+        <div className="pt-passport-qr"><PassportQR value={passportUrl(p.id)} size={88} label="Health Passport QR — scan to open on Nexus Healthcare" /></div>
       </div>
       <dl className="pt-passport-grid">
         <div><dt>Blood group</dt><dd><Droplet size={14} className="inline-ic" /> {p.bloodGroup || '—'}</dd></div>

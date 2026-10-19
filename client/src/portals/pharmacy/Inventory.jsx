@@ -2,7 +2,7 @@ import { useDeferredValue, useMemo, useState } from 'react';
 import { Search, PackagePlus, ScanBarcode, Boxes, AlertTriangle, CalendarX } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Button, Pills, Stat, fmtNum } from '../../components/ui';
-import { StockTable, AddStockModal, BarcodeModal, expiryInfo } from './stock';
+import { StockTable, AddStockModal, expiryInfo } from './stock';
 import Advisory from './Advisory';
 
 export default function Inventory({ home, reload }) {
@@ -54,8 +54,7 @@ export default function Inventory({ home, reload }) {
 
       <StockTable items={items} onSaved={reload} unit="strips / units" />
 
-      <AddStockModal open={adding} onClose={() => setAdding(false)} onAdded={reload} />
-      <BarcodeModal open={scanning} onClose={() => setScanning(false)} onManual={() => setAdding(true)} />
+      <AddStockModal open={adding || scanning} scanFirst={scanning} onClose={() => { setAdding(false); setScanning(false); }} onAdded={reload} />
     </>
   );
 }

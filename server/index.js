@@ -1680,6 +1680,44 @@ app.post('/api/prescriptions/:id/order', auth, role('patient', 'caregiver'), (re
 });
 
 // ---- prescription: full details (for the patient's download / print) ----
+// Printed prescriptions and lab reports carry a QR to /v/<kind>/<id>.<sig>: anyone (a chemist, an employer, the
+// patient) can open it with a phone camera and see whether the document is real. The signature means links
+// can't be guessed for other documents; the page shows initials, never the patient's name.
+const verifySig = (kind, id) => crypto.createHmac('sha256', JWT_SECRET).update(`verify|${kind}|${id}`).digest('base64url').slice(0, 16);
+app.get('/api/public/verify/:kind/:token', publicLimiter, (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const { kind } = req.params;
+  const m = String(req.params.token || '').match(/^([A-Za-z0-9_-]{1,64})\.([A-Za-z0-9_-]{16})$/);
+  const bad = () => res.status(404).json({ valid: false, error: 'This code does not match any document on Nexus Healthcare. It may have been altered — ask the issuer.' });
+  if (!['rx', 'lab'].includes(kind) || !m) return bad();
+  const [, id, sig] = m;
+  const want = Buffer.from(verifySig(kind, id)); const got = Buffer.from(sig);
+  if (want.length !== got.length || !crypto.timingSafeEqual(want, got)) return bad();
+  const d = db();
+  if (kind === 'rx') {
+    const r = d.prescriptions.find((x) => x.id === id);
+    if (!r) return bad();
+    const doc = d.doctors.find((x) => x.id === r.doctorId) || {};
+    const p = d.patients.find((x) => x.id === r.patientId) || {};
+    return res.json({
+      valid: true, kind, id: r.id, issuedAt: r.createdAt, patientInitials: initialsOf(p.name), medicines: r.items.length,
+      doctor: { name: doc.name || 'Doctor', qualification: doc.qualification || null, specialty: doc.specialty || null, regNo: doc.regNo || null, verified: !!doc.verified },
+      status: r.status === 'dispensed' || r.dispensedAt ? 'dispensed' : 'issued', dispensedAt: r.dispensedAt || null,
+    });
+  }
+  const o = d.labOrders.find((x) => x.id === id);
+  if (!o) return bad();
+  const lab = d.facilities.find((f) => f.id === o.labId) || {};
+  const p = d.patients.find((x) => x.id === o.patientId) || {};
+  return res.json({
+    valid: true, kind, id: o.id, issuedAt: o.createdAt, patientInitials: initialsOf(p.name),
+    tests: (o.tests || []).map((t) => t.name || t.code).filter(Boolean).slice(0, 20),
+    lab: { name: lab.name || 'Lab', district: lab.district || null, nabl: !!lab.nabl, verified: !!lab.verified },
+    status: o.status === 'reported' ? 'reported' : 'in_progress', reportedAt: o.reportedAt || o.signedBy?.at || null,
+    signedBy: o.signedBy ? { name: o.signedBy.name, regNo: o.signedBy.regNo || null } : null,
+  });
+});
+
 app.get('/api/prescriptions/:id', auth, (req, res) => {
   const d = db();
   const r = d.prescriptions.find((x) => x.id === req.params.id);
@@ -1692,6 +1730,7 @@ app.get('/api/prescriptions/:id', auth, (req, res) => {
   const c = d.consults.find((x) => x.id === r.consultId) || {};
   res.json({
     ...enrichRx(r),
+    verifySig: verifySig('rx', r.id),
     items: r.items.map((it) => { const pr = catalog.priceOf(it.drug); const units = catalog.unitsFor(it); return { ...it, units, unit: pr?.unit || 'unit', estMrp: pr ? catalog.round(pr.mrp * units) : null }; }),
     doctor: { name: doc.name, qualification: doc.qualification, specialty: doc.specialty, regNo: doc.regNo, affiliation: withAvail(doc).affiliation },
     patient: { id: p.id, name: p.name, age: ageOf(p.dob), gender: p.gender, allergies: p.allergies || [], phone: enrichRx(r).patientPhone },
@@ -2758,7 +2797,7 @@ app.get('/api/lab-orders/:id', auth, (req, res) => {
   const lab = d.facilities.find((f) => f.id === o.labId) || {};
   const p = d.patients.find((x) => x.id === o.patientId) || {};
   res.json({
-    ...enrichLab(o), insights: o.insights || catalog.interpret(o.results || []), nextSteps: o.status === 'reported' ? (o.nextSteps || catalog.nextSteps(o.results || [], { doctorName: db().doctors.find((x) => x.id === o.doctorId)?.name })) : [],
+    ...enrichLab(o), verifySig: verifySig('lab', o.id), insights: o.insights || catalog.interpret(o.results || []), nextSteps: o.status === 'reported' ? (o.nextSteps || catalog.nextSteps(o.results || [], { doctorName: db().doctors.find((x) => x.id === o.doctorId)?.name })) : [],
     lab: { name: lab.name, address: lab.address || '', district: lab.district, phone: lab.phone, nabl: !!lab.nabl },
     patient: { id: p.id, name: p.name, age: ageOf(p.dob), gender: p.gender },
   });

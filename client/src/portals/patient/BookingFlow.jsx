@@ -9,7 +9,6 @@ import { usePatient } from './shared';
 import { SlotPicker } from './VisitChange';
 import PaymentStep from './Payment';
 import VisitPass from './VisitPass';
-import QR from '../../components/QR';
 import ShareButton from '../../components/ShareButton';
 
 const STEPS = ['Where', 'When', 'Symptoms', 'Pay'];
@@ -230,7 +229,7 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
             </>
           ) : (
             <>
-              <QR value={`NEXUS-BOOKING:${booking.consult.bookingNo}`} size={140} label="Booking QR" />
+              <p className="small mb-0">Booking ID <strong className="mono" translate="no">{booking.consult.bookingNo}</strong> — nothing to show anyone; the doctor calls you here.</p>
               <p className="small mb-0">{MODE_LABEL[booking.consult.mode] || MODE_LABEL.video}.{!later ? 'Stay on the consult screen — you’ll be called in shortly.' : `We'll remind you before ${fmtDateTime(slot)}.`}</p>
             </>
           )}

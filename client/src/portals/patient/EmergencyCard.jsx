@@ -4,6 +4,7 @@ import { Button, Card, Empty, PreviewBadge, timeAgo, useToast } from '../../comp
 import { PageHeader } from '../../components/PortalLayout';
 import { AadhaarBadge } from '../../components/AadhaarVerify';
 import { usePatient, usePatientLive, firstName, PassportQR, PageSkeleton } from './shared';
+import { passportUrl } from '../../scanLinks';
 
 export default function EmergencyCard() {
   const { patient: p, homeLoading, profiles } = usePatient();
@@ -39,9 +40,9 @@ export default function EmergencyCard() {
 
           <div className="pt-ecard-body">
             <div className="pt-ecard-qr">
-              <PassportQR value={p.id} size={150} />
+              <PassportQR value={passportUrl(p.id)} size={150} label="Health Passport QR" />
               <div className="mono small" dir="ltr" translate="no">{p.id}</div>
-              <div className="tiny">Scan for critical info</div>
+              <div className="tiny">Doctors: scan to open the record · Emergency: call 108</div>
             </div>
             <div className="pt-ecard-info">
               <Block icon={AlertTriangle} label="Allergies" tone="rose" items={p.allergies} empty="No known allergies" />
@@ -101,7 +102,7 @@ function Capsule() {
         <div>
           <h3 className="mb-0"><Lock size={18} style={{ verticalAlign: '-3px' }} /> Emergency Capsule <PreviewBadge /></h3>
           <p className="small muted mb-0 mt-1">Your critical details are sealed with strong encryption inside this code, opened with a time-limited key. Every time it&apos;s opened, you&apos;re told.</p>
-          <p className="tiny muted mb-0 mt-1">Doctors can&apos;t open capsules from the Nexus app yet — until they can, show the emergency card above.</p>
+          <p className="tiny muted mb-0 mt-1">Doctors and hospital desks open it with “Scan a patient QR” in Nexus Healthcare; you’re told each time.</p>
         </div>
       </div>
       <div className="pt-capsule-body">

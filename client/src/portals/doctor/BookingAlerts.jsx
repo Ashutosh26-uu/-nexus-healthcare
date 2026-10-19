@@ -5,6 +5,7 @@ import { api } from '../../api';
 import { Avatar, Button, Modal, TriageBadge, fmtDate, fmtDateTime, fmtMoney, useAction } from '../../components/ui';
 import { OtpInput } from '../../components/OtpFlow';
 import { chime } from '../../components/chime';
+import { detectorFor } from '../../components/BarcodeScanner';
 
 const WHERE = {
   video: { icon: Video, label: (c) => `${c.mode === 'audio' ? 'Audio' : c.mode === 'chat' ? 'Chat' : 'Video'} consult` },
@@ -94,7 +95,7 @@ export function CheckInModal({ open, onClose, onCheckedIn }) {
   const [run, busy] = useAction();
   const videoRef = useRef(null);
   const streamRef = useRef(null);
-  const canScan = typeof window !== 'undefined' && 'BarcodeDetector' in window && navigator.mediaDevices?.getUserMedia;
+  const canScan = typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia; // native reader or the ZXing fallback
 
   const openRef = useRef(open); // read after awaits: the modal may have closed (or unmounted) meanwhile
   const timerRef = useRef(null);
@@ -123,7 +124,8 @@ export function CheckInModal({ open, onClose, onCheckedIn }) {
       streamRef.current = stream; setScanning(true);
       await new Promise((r) => setTimeout(r, 50));
       if (videoRef.current && streamRef.current === stream) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
-      const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+      const detector = await detectorFor(['qr_code']);
+      if (!detector) throw new Error('no QR reader');
       // ~4 reads a second is plenty for a QR held up to the camera; every animation frame just burns battery.
       const tick = async () => {
         if (streamRef.current !== stream || !videoRef.current) return;

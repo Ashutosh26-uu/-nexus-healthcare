@@ -107,7 +107,7 @@ function RxCard({ rx, onOrder, past }) {
 
       {!past && rx.status !== 'issued' && <div className="mt-2"><RxTracker rx={rx} /></div>}
       {rx.status === 'dispensed' && rx.fulfilment === 'pickup' && (
-        <div className="callout green mt-2"><Package /><span>Packed and waiting for you at <strong translate="no">{rx.pharmacyName}</strong>. Show your passport QR at the counter.</span></div>
+        <div className="callout green mt-2"><Package /><span>Packed and waiting for you at <strong translate="no">{rx.pharmacyName}</strong>. Give your name and Health Passport number at the counter.</span></div>
       )}
       {rx.status === 'out_for_delivery' && (
         <div className="callout sky mt-2"><Truck /><span>On the way! The rider will ask for your delivery code to hand it over{rx.deliveryOtp ? <>: <strong className="mono" translate="no">{rx.deliveryOtp}</strong></> : '.'}</span></div>
@@ -251,7 +251,7 @@ function AuthenticityCard() {
           </div>
         </div>
       ) : (
-        <div className={cx('callout mt-1 fade-in', result.status === 'expired' && 'rose')} role="status">
+        <div className={cx('callout mt-1 fade-in', ['expired', 'recall'].includes(result.status) && 'rose')} role="status">
           <AlertTriangle />
           <span className="small">
             {result.status === 'expired' && <>This batch expired on {fmtDate(result.expiry)}. Please don&apos;t use it — take it back to the chemist.</>}

@@ -5,6 +5,7 @@ import { api } from '../api';
 import { Loading, fmtDate, fmtDateTime } from '../components/ui';
 import { LogoMark } from '../components/Logo';
 import QR from '../components/QR';
+import { verifyUrl } from '../scanLinks';
 import './rxprint.css';
 
 // Printable lab report with results, flags, plain-language suggestions and the doctor's advice.
@@ -71,7 +72,7 @@ export default function LabReportPrint() {
         {o.nextSteps?.length > 0 && <section className="rxp-block"><h4>What to do next</h4>{o.nextSteps.map((x, i) => <p key={i}>{x.kind === 'urgent' ? '⚠ ' : '• '}{x.text}</p>)}</section>}
         {o.doctorNote && <section className="rxp-block"><h4>Doctor&apos;s advice — {o.doctorNote.by}</h4><p>{o.doctorNote.text}</p></section>}
         <footer className="rxp-foot">
-          <div className="rxp-qr"><QR value={`nexus:lab:${o.id}`} size={84} label="Report QR" /><span>Scan to verify on Nexus Healthcare</span></div>
+          <div className="rxp-qr"><QR value={verifyUrl('lab', o.id, o.verifySig) || `nexus:lab:${o.id}`} size={92} label="Report QR — scan to verify" /><span>Scan with any phone camera to check it’s genuine</span></div>
           <div className="rxp-sign">
             <span>Report ID {o.id}{o.sampleId ? ` · Sample ${o.sampleId}` : ''}</span>
             {reported && o.signedBy

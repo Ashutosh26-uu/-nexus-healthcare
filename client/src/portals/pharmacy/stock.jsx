@@ -1,8 +1,9 @@
 // Shared stock helpers for the Pharmacy and Supply (distributor) portals.
 import { memo, useState } from 'react';
 import { ScanBarcode, PackagePlus } from 'lucide-react';
-import { Button, Field, Modal, PreviewBadge, Progress, Empty, useAction, useToast, fmtNum, fmtDate, cx } from '../../components/ui';
+import { Button, Field, Modal, Progress, Empty, useAction, useToast, fmtNum, fmtDate, cx } from '../../components/ui';
 import { api } from '../../api';
+import BarcodeScanner, { canScan, packFieldsFrom } from '../../components/BarcodeScanner';
 import './stock.css';
 
 export const COMMON_DRUGS = [
@@ -114,13 +115,27 @@ export const StockTable = memo(function StockTable({ items, onSaved, showSafety,
   );
 });
 
-export function AddStockModal({ open, onClose, onAdded, defaultSafety = 20, title = 'Add stock' }) {
+export function AddStockModal({ open, onClose, onAdded, defaultSafety = 20, title = 'Add stock', scanFirst = false }) {
   const [run, busy] = useAction();
+  const [scanning, setScanning] = useState(false);
+  const [scanNote, setScanNote] = useState('');
+  const [wasOpen, setWasOpen] = useState(false);
+  // Opened from "Scan barcode": go straight to the camera.
+  if (open !== wasOpen) { setWasOpen(open); if (open && scanFirst && canScan()) setScanning(true); if (!open) setScanNote(''); }
   // No guessed expiry: it must be typed from the pack.
   const blank = { drug: '', batch: '', expiry: '', qty: '', safetyStock: defaultSafety };
   const [form, setForm] = useState(blank);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const tooSoon = form.expiry && expiryInfo(form.expiry).days < 90;
+  // A GS1 pack code (DataMatrix / GS1-128) carries batch and expiry; the product name has to be typed — packs
+  // only carry a product number (GTIN), and there's no GTIN → name list on Nexus yet.
+  const onScan = (raw) => {
+    setScanning(false);
+    const f = packFieldsFrom(raw);
+    if (!f.batch && !f.expiry) { setForm((cur) => ({ ...cur, batch: cur.batch || f.raw.slice(0, 40) })); setScanNote('Read the code as the batch number — check it against the pack.'); return; }
+    setForm((cur) => ({ ...cur, batch: f.batch || cur.batch, expiry: f.expiry || cur.expiry }));
+    setScanNote(`Filled from the pack: ${[f.batch && `batch ${f.batch}`, f.expiry && `expiry ${f.expiry}`].filter(Boolean).join(', ')}. Type the medicine name and quantity.`);
+  };
   const submit = async (e) => {
     e.preventDefault();
     const ok = await run('add', () => api.post('/inventory', { ...form, qty: Number(form.qty), safetyStock: Number(form.safetyStock) }), `${form.qty} × ${form.drug} added to stock`);
@@ -129,6 +144,8 @@ export function AddStockModal({ open, onClose, onAdded, defaultSafety = 20, titl
   return (
     <Modal open={open} onClose={onClose} title={title} subtitle="Enter what's printed on the strip or carton.">
       <form className="stack" onSubmit={submit}>
+        {canScan() && <Button type="button" variant="secondary" icon={ScanBarcode} onClick={() => setScanning(true)}>Scan the pack’s barcode</Button>}
+        {scanNote && <div className="callout green"><span className="small">{scanNote}</span></div>}
         <Field label="Medicine">
           <input className="input" list="oc-drug-list" value={form.drug} onChange={set('drug')} placeholder="Start typing, e.g. Paracetamol 500mg" required autoFocus />
           <datalist id="oc-drug-list">{COMMON_DRUGS.map((d) => <option key={d} value={d} />)}</datalist>
@@ -147,24 +164,8 @@ export function AddStockModal({ open, onClose, onAdded, defaultSafety = 20, titl
           <Button type="submit" loading={busy === 'add'}>Add to stock</Button>
         </div>
       </form>
+      <BarcodeScanner open={scanning} onClose={() => setScanning(false)} onResult={onScan} title="Scan the strip or carton" subtitle="The square (DataMatrix) or long barcode — it fills the batch and expiry." />
     </Modal>
   );
 }
 
-export function BarcodeModal({ open, onClose, onManual }) {
-  return (
-    <Modal open={open} onClose={onClose} title={<span className="row" style={{ gap: 8 }}>Scan a barcode <PreviewBadge>Coming soon</PreviewBadge></span>} subtitle="Not available yet — add stock by hand for now">
-      <div className="scan-box">
-        <div className="scan-frame">
-          <ScanBarcode size={56} />
-          <span className="scan-line" />
-        </div>
-      </div>
-      <p className="small muted center">Soon you'll be able to point your phone at a strip or carton and we'll fill in the name, batch and expiry for you. We're also building sync with Marg and GoFrugal so your billing counter updates this automatically.</p>
-      <div className="row" style={{ justifyContent: 'center' }}>
-        <Button variant="secondary" onClick={onClose}>Close</Button>
-        <Button onClick={() => { onClose(); onManual?.(); }}>Add stock by hand</Button>
-      </div>
-    </Modal>
-  );
-}

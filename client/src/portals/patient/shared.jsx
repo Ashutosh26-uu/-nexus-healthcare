@@ -104,6 +104,6 @@ export const relationOf = (p) => (p.self ? 'You' : p.relation || (p.age < 18 ? '
 // Nexus (those come back with an expiry date). Anything else is "not found" — never a guessed genuine/fake/recall.
 export function scanVerdict(r) {
   if (!r) return null;
-  if (r.status === 'invalid' || (['genuine', 'expired'].includes(r.status) && r.expiry)) return r;
+  if (r.status === 'invalid' || r.status === 'recall' || (['genuine', 'expired'].includes(r.status) && r.expiry)) return r; // a recall must never be softened to "unknown"
   return { ...r, status: 'unknown', drug: null, batch: null };
 }

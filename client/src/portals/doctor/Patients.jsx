@@ -7,6 +7,7 @@ import { Avatar, Card, Empty, cx } from '../../components/ui';
 import { useDebounced } from './shared';
 import { usePublicConfig } from '../../config';
 import { RecordView } from './Record';
+import StaffScan from '../../components/StaffScan';
 
 // Seeded demo patients — offered as one-tap searches only on the demo network.
 const EXAMPLES = [
@@ -50,6 +51,7 @@ export default function Patients() {
               <Search />
               <input className="input" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Passport ID, mobile number or name" aria-label="Search patients" />
             </div>
+            <div className="mt-1"><StaffScan block label="Scan Health Passport / emergency card" /></div>
             {config?.demo && (
               <div className="row wrap mt-1" style={{ gap: 6 }}>
                 <span className="tiny muted">Demo patients</span>
@@ -90,7 +92,7 @@ export default function Patients() {
 
         <Card className="dr-record">
           {pid ? <RecordView key={pid} patientId={pid} /> : (
-            <Empty icon={QrCode} title="Open a record">Search on the left, or scan the QR on the patient's Health Passport card.</Empty>
+            <Empty icon={QrCode} title="Open a record">Search on the left, or tap “Scan Health Passport” and point your camera at the patient’s card.</Empty>
           )}
         </Card>
       </div>

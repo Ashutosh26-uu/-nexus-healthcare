@@ -5,6 +5,7 @@ import { Button, Card, Field, Modal, Empty, Loading, StatusBadge, Pills, fmtTime
 import { useLive } from '../../live';
 import { api } from '../../api';
 import AadhaarVerify from '../../components/AadhaarVerify';
+import StaffScan from '../../components/StaffScan';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
@@ -79,12 +80,19 @@ function NewToken({ desk, defaultFee, onIssued }) {
   const [complaint, setComplaint] = useState('');
   const [fee, setFee] = useState(String(defaultFee));
 
-  const search = async (e) => {
-    e.preventDefault();
-    const r = await run('find', () => api.get(`/hospital/reception/lookup?q=${encodeURIComponent(q.trim())}`));
+  const lookup = async (term) => {
+    if (!String(term || '').trim()) return;
+    const r = await run('find', () => api.get(`/hospital/reception/lookup?q=${encodeURIComponent(String(term).trim())}`));
     // A new search drops the previous pick, so a token can't go to someone no longer on screen.
     if (r) { setResults(r); setPatient(r.length === 1 ? r[0] : null); }
   };
+  const search = (e) => { e.preventDefault(); lookup(q); };
+  // Arriving from a scanned Health Passport link (/s/p/…): look that patient up straight away.
+  useEffect(() => {
+    const q0 = new URLSearchParams(window.location.search).get('q');
+    if (q0) { setQ(q0); setMode('find'); lookup(q0); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const register = async (e) => {
     e.preventDefault();
     const p = await run('reg', () => api.post('/hospital/reception/patients', reg), 'Health Passport created');
@@ -104,6 +112,9 @@ function NewToken({ desk, defaultFee, onIssued }) {
           <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Mobile, passport ID or name" aria-label="Search patient" minLength={3} required />
           <Button type="submit" icon={Search} loading={busy === 'find'}>Find</Button>
         </form>
+      ) : null}
+      {mode === 'find' ? (
+        <div className="mt-1"><StaffScan label="Scan Health Passport or visit pass" onPatient={(id) => { setQ(id); lookup(id); }} /></div>
       ) : (
         <form className="stack mt-2" onSubmit={register}>
           <Field label="Full name"><input className="input" value={reg.name} onChange={setR('name')} required minLength={2} autoComplete="off" /></Field>

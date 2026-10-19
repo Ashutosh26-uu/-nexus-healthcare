@@ -3,7 +3,68 @@ import { Camera } from 'lucide-react';
 import { Modal, Button } from './ui';
 
 const WANTED = ['data_matrix', 'qr_code', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39'];
-export const canScan = () => typeof window !== 'undefined' && 'BarcodeDetector' in window && !!navigator.mediaDevices?.getUserMedia;
+// Any device with a camera can scan: the browser's own BarcodeDetector when it reads these formats (Android
+// Chrome), otherwise an open-source ZXing decoder loaded only when needed, its wasm served from this site.
+export const canScan = () => typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
+
+let ponyfill = null;
+async function zxingDetector(formats) {
+  if (!ponyfill) {
+    ponyfill = Promise.all([import('barcode-detector/ponyfill'), import('zxing-wasm/reader/zxing_reader.wasm?url')]).then(([m, wasm]) => {
+      m.prepareZXingModule({ overrides: { locateFile: (path, prefix) => (path.endsWith('.wasm') ? wasm.default : prefix + path) } });
+      return m.BarcodeDetector;
+    });
+  }
+  const Ctor = await ponyfill;
+  return new Ctor({ formats });
+}
+// The best detector for these formats on this device, or null when none can be had.
+export async function detectorFor(formats) {
+  if ('BarcodeDetector' in window) {
+    try {
+      const supported = (await window.BarcodeDetector.getSupportedFormats?.()) || [];
+      const ok = formats.filter((f) => supported.includes(f));
+      // Native when it reads everything we want (1-D packs need more than QR, which many desktops only do).
+      if (ok.length === formats.length) return new window.BarcodeDetector({ formats: ok });
+    } catch { /* use ZXing */ }
+  }
+  try { return await zxingDetector(formats); } catch { return null; }
+}
+
+// GS1 expiry YYMMDD with day 00 means "end of that month".
+const monthEnd = (v) => String(new Date(Date.UTC(2000 + Number(v.slice(0, 2)), Number(v.slice(2, 4)), 0)).getUTCDate()).padStart(2, '0');
+
+// What a GS1 medicine pack's code holds: (01) GTIN, (17) expiry YYMMDD, (10) batch, (21) serial.
+export function packFieldsFrom(raw) {
+  const text = String(raw || '').trim();
+  // Printed form "(01)…(17)…(10)…(21)…": the brackets mark where each field starts and ends.
+  if (/^\(01\)\d{14}/.test(text)) {
+    const f = {};
+    for (const [, ai, v] of text.matchAll(/\((\d{2})\)([^(]*)/g)) {
+      if (ai === '01') f.gtin = v; else if (ai === '10') f.batch = v.trim(); else if (ai === '21') f.serial = v.trim();
+      else if (ai === '17' && /^\d{6}$/.test(v)) f.expiry = `20${v.slice(0, 2)}-${v.slice(2, 4)}-${v.slice(4, 6) === '00' ? monthEnd(v) : v.slice(4, 6)}`;
+    }
+    return { raw: text, ...f };
+  }
+  const s = text.replace(/^\]d2|^\]Q3|^\]C1/, '').replace(/[()]/g, '');
+  if (!/^01\d{14}/.test(s)) return { raw: text };
+  const GS = '\u001d';
+  const f = {};
+  let i = 0;
+  while (i < s.length) {
+    const ai = s.slice(i, i + 2);
+    if (ai === '01') { f.gtin = s.slice(i + 2, i + 16); i += 16; continue; }
+    if (ai === '17' || ai === '11') { const v = s.slice(i + 2, i + 8); if (ai === '17') f.expiry = `20${v.slice(0, 2)}-${v.slice(2, 4)}-${v.slice(4, 6) === '00' ? monthEnd(v) : v.slice(4, 6)}`; i += 8; continue; }
+    if (ai === '10' || ai === '21') {
+      const end = s.indexOf(GS, i + 2);
+      f[ai === '10' ? 'batch' : 'serial'] = s.slice(i + 2, end === -1 ? undefined : end);
+      i = end === -1 ? s.length : end + 1;
+      continue;
+    }
+    break;
+  }
+  return { raw: text, ...f };
+}
 // QR codes only: iPhone Safari has no BarcodeDetector, so QR scanning falls back to jsQR (lazy-loaded) on video frames.
 export const canScanQr = () => typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
 
@@ -34,7 +95,7 @@ export async function decodeQrFrom(source, w, h) {
 }
 
 // Indian medicine packs carry GS1 codes: (01) GTIN, (17) expiry, (10) batch, (21) unique serial.
-// The "code under the barcode" a patient would type is the serial — fall back to the batch, then the raw text.
+// Nexus looks packs up by batch (what chemists enter in stock) — fall back to the serial, then the raw text.
 export function packCodeFrom(raw) {
   const s = String(raw || '').replace(/^\]d2|^\]Q3/, '').replace(/[()]/g, '');
   if (!/^01\d{14}/.test(s)) return String(raw || '').trim();
@@ -53,7 +114,7 @@ export function packCodeFrom(raw) {
     }
     break;
   }
-  return fields['21'] || fields['10'] || String(raw).trim();
+  return fields['10'] || fields['21'] || String(raw).trim(); // the batch is what chemists list in their stock
 }
 
 // Full-screen camera scanner. onResult(text) gets the raw barcode text; the caller decides what to do with it.
@@ -72,11 +133,9 @@ export default function BarcodeScanner({ open, onClose, onResult, title = 'Scan 
     setError('');
     (async () => {
       try {
-        const native = 'BarcodeDetector' in window;
-        const supported = native ? (await window.BarcodeDetector.getSupportedFormats?.()) || WANTED : [];
-        const wanted = qrOnly ? ['qr_code'] : WANTED;
-        const detector = native && wanted.some((f) => supported.includes(f)) ? new window.BarcodeDetector({ formats: wanted.filter((f) => supported.includes(f)) }) : null;
+        const detector = await detectorFor(qrOnly ? ['qr_code'] : WANTED);
         if (!detector && !qrOnly) throw new Error('unsupported');
+        if (stopped) return;
         stream = await navigator.mediaDevices.getUserMedia({ video: qrOnly ? { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } : { facingMode: 'environment' } });
         if (stopped) { stream.getTracks().forEach((t) => t.stop()); return; }
         videoRef.current.srcObject = stream;

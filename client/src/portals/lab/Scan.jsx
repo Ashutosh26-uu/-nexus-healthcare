@@ -3,11 +3,13 @@ import { ScanLine, Camera, X, ChevronRight, Upload, AlertTriangle } from 'lucide
 import { Button, useAction } from '../../components/ui';
 import { api } from '../../api';
 import { NEXT, STATUS_LABEL, Stepper, TestChips, genderShort } from './shared';
+import { detectorFor } from '../../components/BarcodeScanner';
 
-const hasDetector = typeof window !== 'undefined' && 'BarcodeDetector' in window;
+// Any phone or laptop with a camera: the browser's own reader, or the ZXing fallback (components/BarcodeScanner).
+const hasDetector = typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
 
 // Scan a tube to open its order: USB/Bluetooth scanners type the ID + Enter into the focused field;
-// phones with BarcodeDetector can use the camera. The next step is sent with the scanned ID so the
+// any device with a camera can scan too. The next step is sent with the scanned ID so the
 // server refuses a tube that belongs to a different order.
 export default function ScanBox({ reload, onReport }) {
   const [code, setCode] = useState('');
@@ -83,7 +85,8 @@ function CameraScan({ onClose, onCode }) {
     let stream; let timer; let alive = true;
     (async () => {
       try {
-        const detector = new window.BarcodeDetector({ formats: ['code_128'] });
+        const detector = await detectorFor(['code_128']);
+        if (!detector) throw new Error('no barcode reader');
         const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         // Closed while the permission prompt was open: the cleanup already ran, so stop this stream here.
         if (!alive) { s.getTracks().forEach((t) => t.stop()); return; }

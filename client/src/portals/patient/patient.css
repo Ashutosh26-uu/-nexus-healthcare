@@ -749,3 +749,7 @@ button.pt-wtb-head { cursor: pointer; }
 .pt-inv-amt.plus { color: var(--green-2); }
 .pt-inv-amt.minus { color: var(--ink-3); }
 .share-wa { white-space: nowrap; }
+/* Medicine authenticity: the scan frame is a big tap target that opens the camera. */
+.pt-scan-tap { width: 100%; font: inherit; color: inherit; cursor: pointer; background: var(--green-soft); border-color: var(--green-2); transition: background-color 0.15s, border-color 0.15s; }
+.pt-scan-tap:hover, .pt-scan-tap:focus-visible { background: #d5ece3; }
+.pt-scan-tap svg { color: var(--green); }
