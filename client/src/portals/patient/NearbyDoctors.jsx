@@ -22,7 +22,7 @@ const PRACTICE = {
 // agree) or a place they typed. Coordinates go only to our own server, rounded to ~100 m.
 export function useDeviceLocation() {
   const ctx = useConsent();
-  const live = ctx?.loc?.source === 'live' ? ctx.loc : null;
+  const live = ctx?.loc?.source === 'live' && ctx?.consent?.location ? ctx.loc : null;
   const state = { live: 'ok', asking: 'asking', denied: 'denied', unsupported: 'unsupported', error: 'error' }[ctx?.status] || 'idle';
   return { loc: live, manual: ctx?.loc?.source === 'manual' ? ctx.loc : null, state, request: () => ctx?.requestLive() };
 }

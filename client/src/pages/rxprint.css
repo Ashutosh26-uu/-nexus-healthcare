@@ -26,6 +26,7 @@
 .rxp-note { margin: 18px 0 0; font-size: .68rem; color: #8a9491; }
 @media (max-width: 640px) { .rxp-page { padding: 22px 18px; } .rxp-head { flex-direction: column; } .rxp-doc { text-align: left; } .rxp-patient { grid-template-columns: 1fr 1fr; } }
 @media print {
+  .app-pop-wrap, .nx-cookie, .chat-fab, .chat-launcher { display: none !important; }
   @page { size: A4; margin: 12mm; }
   body { background: #fff !important; }
   .no-print, .chat-fab, .chat-widget, [class*="chat-"] { display: none !important; }

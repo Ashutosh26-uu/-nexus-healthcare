@@ -15,7 +15,10 @@ const LANGS = [
 const ADV_LANGS = ['Hindi', 'English', 'Awadhi', 'Bhojpuri', 'Bengali', 'Tamil', 'Telugu', 'Marathi', 'Kannada'];
 
 const Cell = memo(function Cell({ row, lang, onSave }) {
-  const [val, setVal] = useState(row[lang] || '');
+  const server = row[lang] || '';
+  const [val, setVal] = useState(server);
+  const [base, setBase] = useState(server);
+  if (server !== base) { setBase(server); if (val === base) setVal(server); } // untouched → follow the live value
   const [state, setState] = useState('');
   const dirty = val !== (row[lang] || '');
   const commit = async () => {

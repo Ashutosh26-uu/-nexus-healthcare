@@ -72,7 +72,7 @@ export default function Profile() {
     if (doctor && !form) {
       const k = doctor.kyc || {};
       let draft = {};
-      try { draft = JSON.parse(localStorage.getItem(`oc_dr_draft_${doctor.id}`) || '{}'); } catch { /* ignore */ }
+      try { draft = JSON.parse(sessionStorage.getItem(`oc_dr_draft_${doctor.id}`) || '{}'); } catch { /* ignore */ }
       setForm({
         age: k.age || '', specialty: doctor.specialty || 'General Medicine', qualification: doctor.qualification || '',
         latestDegree: k.latestDegree || '', degreeNumber: k.degreeNumber || '', degreeFileId: k.degreeFileId || null,
@@ -88,8 +88,8 @@ export default function Profile() {
   // Keep an unsent draft on this device (never the Aadhaar number) so "Finish later" loses nothing.
   useEffect(() => {
     if (!form || !doctor) return;
-    if (doctor.verified || doctor.profileComplete) { try { localStorage.removeItem(`oc_dr_draft_${doctor.id}`); } catch { /* ignore */ } return; }
-    try { localStorage.setItem(`oc_dr_draft_${doctor.id}`, JSON.stringify({ ...form, aadhaar: undefined })); } catch { /* ignore */ }
+    if (doctor.verified || doctor.profileComplete) { try { sessionStorage.removeItem(`oc_dr_draft_${doctor.id}`); } catch { /* ignore */ } return; }
+    try { sessionStorage.setItem(`oc_dr_draft_${doctor.id}`, JSON.stringify({ ...form, aadhaar: undefined })); } catch { /* ignore */ }
   }, [form, doctor]);
   const checks = useMemo(() => (form ? [
     !!form.age, form.address.trim().length >= 5 && !!form.district.trim(), !!form.specialty, form.qualification.trim().length > 1,
@@ -108,7 +108,7 @@ export default function Profile() {
         const doc = await api.put('/doctor/profile', { ...form, aadhaar: form.aadhaar.replace(/\D/g, '') });
         home.setData((d) => (d ? { ...d, doctor: doc } : d));
         // Submitted: the server has it now, so don't leave address/age/reg. no. on a possibly shared clinic computer.
-        try { localStorage.removeItem(`oc_dr_draft_${doctor.id}`); } catch { /* ignore */ }
+        try { sessionStorage.removeItem(`oc_dr_draft_${doctor.id}`); } catch { /* ignore */ }
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } catch (e) { setError(e.message); throw e; }
     }, 'Profile submitted — our team will verify it shortly');

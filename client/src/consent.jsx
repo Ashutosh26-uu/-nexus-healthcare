@@ -29,7 +29,8 @@ export const openLocationSettings = () => window.dispatchEvent(new Event('nx:loc
 export function ConsentProvider({ children }) {
   const { user } = useAuth();
   const [consent, setConsentState] = useState(() => read(CONSENT_KEY));
-  const [loc, setLoc] = useState(() => read(LOC_KEY)); // { lat, lng, accuracy, at, source: 'live' } | { district, state, country, pincode, source: 'manual' }
+  // A live fix saved before consent was withdrawn is never used again.
+  const [loc, setLoc] = useState(() => { const l = read(LOC_KEY); return l?.source === 'live' && !read(CONSENT_KEY)?.location ? null : l; }); // { lat, lng, accuracy, at, source: 'live' } | { district, state, country, pincode, source: 'manual' }
   const [status, setStatus] = useState(() => (read(LOC_KEY)?.source === 'manual' ? 'manual' : 'idle')); // idle | asking | live | denied | unsupported | error | manual
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [locOpen, setLocOpen] = useState(false);
@@ -40,6 +41,11 @@ export function ConsentProvider({ children }) {
     const v = { essential: true, analytics: !!c.analytics, location: !!c.location, at: new Date().toISOString(), v: 1 };
     write(CONSENT_KEY, v);
     setConsentState(v);
+    // Location switched off: forget the live position at once — stored, on screen and in every search.
+    if (!v.location) {
+      setLoc((prev) => { if (prev?.source !== 'live') return prev; write(LOC_KEY, null); return null; });
+      setStatus((st) => (st === 'manual' ? st : 'idle'));
+    }
   }, []);
 
   // A GPS watch fires every few seconds even when standing still. Keep the same object while the rounded
@@ -118,7 +124,8 @@ export function ConsentProvider({ children }) {
 function CookieBanner({ onCustomize }) {
   const { consent, setConsent } = useConsent();
   const path = useLocation().pathname;
-  if (consent || path.startsWith('/kiosk') || path.startsWith('/rx/') || path.startsWith('/lab-report/') || path.startsWith('/display/')) return null; // waiting-room TV: nobody there to answer
+  // Not on the kiosk, the waiting-room TV or printable documents (it would print onto them).
+  if (consent || ['/kiosk', '/rx/', '/lab-report/', '/lab-label/', '/invoice/', '/statement/', '/display/'].some((x) => path.startsWith(x))) return null; // waiting-room TV: nobody there to answer
   return (
     <div className="nx-cookie" role="dialog" aria-label="Cookie preferences" aria-live="polite">
       <div className="nx-cookie-text">

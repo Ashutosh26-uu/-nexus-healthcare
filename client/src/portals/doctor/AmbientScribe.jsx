@@ -30,6 +30,7 @@ export default function AmbientScribe({ consultId, onUse }) {
   const [run, busy] = useAction();
   const rec = useRef(null);
   const wantOn = useRef(false);
+  const restarts = useRef(0); // a mic that ends at once (offline, held by another app) must not restart forever
 
   useEffect(() => () => { wantOn.current = false; rec.current?.abort?.(); }, []);
 
@@ -46,6 +47,7 @@ export default function AmbientScribe({ consultId, onUse }) {
         const t = e.results[i][0].transcript;
         if (e.results[i].isFinal) { if (!sent.has(i)) { sent.add(i); finals += `${t.trim()}. `; } } else live += t;
       }
+      restarts.current = 0;
       if (finals) setTranscript((x) => `${x}${x && !x.endsWith(' ') ? ' ' : ''}${finals}`);
       setInterim(live);
     };
@@ -57,7 +59,8 @@ export default function AmbientScribe({ consultId, onUse }) {
     // Browsers end recognition after a pause; keep going until the doctor taps Stop.
     r.onend = () => {
       setInterim('');
-      if (wantOn.current) { try { startRec(); return; } catch { /* fall through */ } }
+      if (wantOn.current && restarts.current < 50) { restarts.current += 1; try { startRec(); return; } catch { /* fall through */ } }
+      if (wantOn.current) { wantOn.current = false; setMicError('The microphone keeps stopping — check your connection, then tap Listen again.'); }
       setListening(false);
     };
     rec.current = r;
@@ -66,6 +69,7 @@ export default function AmbientScribe({ consultId, onUse }) {
 
   const listen = () => {
     setMicError('');
+    restarts.current = 0;
     try { wantOn.current = true; startRec(); setListening(true); } catch { wantOn.current = false; setListening(false); setMicError('Could not start the microphone.'); }
   };
   const stop = () => { wantOn.current = false; rec.current?.stop?.(); setListening(false); };

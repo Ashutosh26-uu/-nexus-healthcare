@@ -20,6 +20,9 @@ export const LANGUAGES = ['Hindi', 'English', 'Bengali', 'Marathi', 'Telugu', 'T
 export const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'Unknown'];
 export const SPEECH_LANG = { Hindi: 'hi-IN', English: 'en-IN', Bengali: 'bn-IN', Marathi: 'mr-IN', Telugu: 'te-IN', Tamil: 'ta-IN', Gujarati: 'gu-IN', Urdu: 'ur-IN', Kannada: 'kn-IN', Malayalam: 'ml-IN', Punjabi: 'pa-IN', Odia: 'or-IN', Awadhi: 'hi-IN', Bhojpuri: 'hi-IN', Maithili: 'hi-IN', Assamese: 'as-IN' };
 
+// A lab result needs attention only when its flag is something other than normal / negative (a negative test is good news).
+export const isAbnormal = (r) => Boolean(r?.flag) && !['normal', 'negative'].includes(String(r.flag).toLowerCase());
+
 export const firstName = (name = '') => name.split(/\s+/)[0] || '';
 export const splitList = (v) => String(v || '').split(',').map((s) => s.trim()).filter(Boolean);
 // ISO string in the device's local time — for <input type="date|datetime-local"> values/limits, where

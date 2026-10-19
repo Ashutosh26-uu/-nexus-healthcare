@@ -86,11 +86,17 @@ export default function ConsultRoom() {
           <Button onClick={() => navigate('/patient/consult')}>Find a doctor</Button>
         </Card>
       )}
+      {c.status === 'expired' && (
+        <Card className="center pad-lg">
+          <Empty icon={X} title="This booking wasn&apos;t paid in time">Unpaid bookings are released after 30 minutes so the slot goes to someone else. If money left your account for it, ask Saathi or our team and it will be refunded. Book again whenever you&apos;re ready.</Empty>
+          <Button onClick={() => navigate('/patient/consult')}>Find a doctor</Button>
+        </Card>
+      )}
     </div>
   );
 }
 
-const statusText = (s) => ({ awaiting_payment: 'Payment pending', queued: 'In queue', scheduled: 'Booked', in_progress: 'Live now', completed: 'Completed', cancelled: 'Cancelled' }[s] || s);
+const statusText = (s) => ({ awaiting_payment: 'Payment pending', queued: 'In queue', scheduled: 'Booked', in_progress: 'Live now', completed: 'Completed', cancelled: 'Cancelled', expired: 'Expired' }[s] || s);
 const MODE_LABEL = { video: 'Video call', audio: 'Audio call', chat: 'Chat' };
 
 function CancelButton({ c, label = 'Cancel consult' }) {

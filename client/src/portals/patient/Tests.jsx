@@ -6,7 +6,7 @@ import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
 import { useTopicTick } from '../../live';
 import { Button, Card, Empty, Field, Modal, Switch, fmtDate, fmtDateTime, fmtMoney, useAction, cx } from '../../components/ui';
-import { usePatient, usePatientLive, firstName, localISO, PageSkeleton } from './shared';
+import { usePatient, usePatientLive, firstName, localISO, PageSkeleton, isAbnormal } from './shared';
 import { useDeviceLocation } from './NearbyDoctors';
 import PaymentStep from './Payment';
 import ShareButton from '../../components/ShareButton';
@@ -319,8 +319,8 @@ export default function Tests() {
             <table className="pt-wtb-table small mt-1">
               <tbody>
                 {o.results.map((r) => (
-                  <tr key={r.name} className={cx(r.flag && r.flag !== 'normal' && 'flag')}>
-                    <td>{r.name}</td><td><strong>{r.value}</strong> {r.unit}</td><td className="muted">{r.range}</td><td className="right">{r.flag && r.flag !== 'normal' ? <span className="badge rose">{r.flag}</span> : <span className="badge green">normal</span>}</td>
+                  <tr key={r.name} className={cx(isAbnormal(r) && 'flag')}>
+                    <td>{r.name}</td><td><strong>{r.value}</strong> {r.unit}</td><td className="muted">{r.range}</td><td className="right">{isAbnormal(r) ? <span className="badge rose">{r.flag}</span> : <span className="badge green">normal</span>}</td>
                   </tr>
                 ))}
               </tbody>

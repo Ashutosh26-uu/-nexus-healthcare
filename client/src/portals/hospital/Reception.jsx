@@ -90,7 +90,7 @@ function NewToken({ desk, defaultFee, onIssued }) {
   // Arriving from a scanned Health Passport link (/s/p/…): look that patient up straight away.
   useEffect(() => {
     const q0 = new URLSearchParams(window.location.search).get('q');
-    if (q0) { setQ(q0); setMode('find'); lookup(q0); }
+    if (q0) { setQ(q0); setMode('find'); lookup(q0); window.history.replaceState(window.history.state, '', window.location.pathname); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const register = async (e) => {
@@ -114,7 +114,7 @@ function NewToken({ desk, defaultFee, onIssued }) {
         </form>
       ) : null}
       {mode === 'find' ? (
-        <div className="mt-1"><StaffScan label="Scan Health Passport or visit pass" onPatient={(id) => { setQ(id); lookup(id); }} /></div>
+        <div className="mt-1"><StaffScan label="Scan Health Passport or visit pass" onPatient={(id) => { setQ(id); lookup(id); }} onVisit={(c) => onIssued(slipFor(desk, c))} /></div>
       ) : (
         <form className="stack mt-2" onSubmit={register}>
           <Field label="Full name"><input className="input" value={reg.name} onChange={setR('name')} required minLength={2} autoComplete="off" /></Field>
@@ -173,6 +173,12 @@ function NewToken({ desk, defaultFee, onIssued }) {
 }
 
 // Online in-person bookings: the patient's rotating 6-digit code (or booking ID + code) → checked in + next token.
+// The token slip for a checked-in online booking — the same whether the code was typed or the pass scanned.
+const slipFor = (desk, c) => {
+  const doc = desk.doctors.find((x) => x.id === c.doctorId);
+  return { consultId: c.id, token: c.token, doctorName: c.doctorName, room: doc?.room || '', facilityName: desk.facility.name, patientName: c.patientName, at: c.checkedInAt, ahead: doc ? doc.waiting : null };
+};
+
 function CheckIn({ desk, onDone }) {
   const [run, busy] = useAction();
   const [code, setCode] = useState('');
@@ -181,9 +187,8 @@ function CheckIn({ desk, onDone }) {
     e.preventDefault();
     const c = await run('ci', () => api.post('/visits/check-in', { code, bookingNo: bookingNo || undefined }), 'Checked in');
     if (!c) return;
-    const doc = desk.doctors.find((x) => x.id === c.doctorId);
     setCode(''); setBookingNo('');
-    onDone({ consultId: c.id, token: c.token, doctorName: c.doctorName, room: doc?.room || '', facilityName: desk.facility.name, patientName: c.patientName, at: c.checkedInAt, ahead: doc ? doc.waiting : null });
+    onDone(slipFor(desk, c));
   };
   return (
     <Card title="Check in an online booking" action={<QrCode size={18} className="muted" />}>

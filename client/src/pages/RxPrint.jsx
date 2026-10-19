@@ -18,11 +18,13 @@ export default function RxPrint() {
 
   useEffect(() => {
     const title = document.title;
+    let alive = true;
     api.get(`/prescriptions/${encodeURIComponent(id)}`).then((r) => {
+      if (!alive) return;
       setRx(r);
       document.title = `Prescription ${r.id} · ${r.patient?.name || ''}`;
-    }).catch((e) => setError(e.message));
-    return () => { document.title = title; }; // don't leave the patient's name in the tab after "Back"
+    }).catch((e) => alive && setError(e.message));
+    return () => { alive = false; document.title = title; }; // don't leave the patient's name in the tab after "Back"
   }, [id]);
 
   if (error) return <div className="rxp-wrap"><div className="rxp-error">{error}</div></div>;

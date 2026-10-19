@@ -9,29 +9,31 @@ export default function BedBoard({ home, setData, reload }) {
   const toast = useToast();
   const [saving, setSaving] = useState({});
   const timers = useRef({});
+  // Taps not yet saved, per bed type. A live refetch inside the debounce window used to replace the board with
+  // server values and lose them; they now sit on top of whatever the server sends until the PUT lands.
+  const pending = useRef({});
   useTick(30000);
 
   // Optimistic: update the board instantly, then PUT. Debounced per bed type so
   // a nurse tapping "+" five times sends one request with the final number.
   const change = (type, patch) => {
-    let next;
-    setData((d) => {
-      const beds = d.beds.map((b) => {
-        if (b.type !== type) return b;
-        const total = Math.max(0, patch.total ?? b.total);
-        const occupied = Math.min(total, Math.max(0, patch.delta !== undefined ? b.occupied + patch.delta : b.occupied));
-        next = { ...b, total, occupied, updatedAt: new Date().toISOString() };
-        return next;
-      });
-      return { ...d, beds };
-    });
+    const base = pending.current[type] || (home.beds || []).find((b) => b.type === type);
+    if (!base) return;
+    const total = Math.max(0, patch.total ?? base.total);
+    const occupied = Math.min(total, Math.max(0, patch.delta !== undefined ? base.occupied + patch.delta : base.occupied));
+    const next = { ...base, total, occupied, updatedAt: new Date().toISOString() };
+    pending.current[type] = next;
+    setData((d) => ({ ...d, beds: d.beds.map((b) => (b.type === type ? next : b)) }));
     clearTimeout(timers.current[type]);
     timers.current[type] = setTimeout(async () => {
-      if (!next) return;
+      const sent = pending.current[type];
+      if (!sent) return;
       setSaving((s) => ({ ...s, [type]: true }));
       try {
-        await api.put('/hospital/beds', { type, total: next.total, occupied: next.occupied });
+        await api.put('/hospital/beds', { type, total: sent.total, occupied: sent.occupied });
+        if (pending.current[type] === sent) delete pending.current[type]; // newer taps keep their own pending value
       } catch (e) {
+        delete pending.current[type];
         toast(e.message, 'error');
         reload();
       } finally {
@@ -40,7 +42,8 @@ export default function BedBoard({ home, setData, reload }) {
     }, 450);
   };
 
-  const totals = (home.beds || []).reduce((a, b) => ({ total: a.total + b.total, occ: a.occ + b.occupied }), { total: 0, occ: 0 });
+  const beds = (home.beds || []).map((b) => pending.current[b.type] || b);
+  const totals = beds.reduce((a, b) => ({ total: a.total + b.total, occ: a.occ + b.occupied }), { total: 0, occ: 0 });
 
   return (
     <>
@@ -48,7 +51,7 @@ export default function BedBoard({ home, setData, reload }) {
 
       <div className="grid side">
         <div className="bed-grid">
-          {(home.beds || []).map((b) => (
+          {beds.map((b) => (
             <BedCard key={b.type} bed={b} saving={saving[b.type]} onChange={(p) => change(b.type, p)} />
           ))}
         </div>

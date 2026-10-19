@@ -18,11 +18,13 @@ export default function InvoicePrint() {
 
   useEffect(() => {
     const title = document.title;
+    let alive = true;
     api.get(`/medicine-orders/${encodeURIComponent(orderId)}/invoice`).then((r) => {
+      if (!alive) return;
       setInv(r);
       document.title = `Invoice ${r.invoiceNo} · ${r.store?.name || ''}`;
-    }).catch((e) => setError(e.message));
-    return () => { document.title = title; };
+    }).catch((e) => alive && setError(e.message));
+    return () => { alive = false; document.title = title; };
   }, [orderId]);
 
   if (error) return <div className="rxp-wrap"><div className="rxp-error">{error}</div></div>;

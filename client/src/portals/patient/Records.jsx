@@ -3,7 +3,7 @@ import { Stethoscope, Pill, FlaskConical, Upload, Syringe, FolderHeart, ChevronR
 import { api } from '../../api';
 import { Button, Card, Empty, Field, Modal, StatusBadge, cx, fmtDate, fmtDateTime, safeUrl, useAction, useToast } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
-import { usePatient, usePatientLive, firstName, localISO, Skeleton } from './shared';
+import { usePatient, usePatientLive, firstName, localISO, Skeleton, isAbnormal } from './shared';
 import { getLocale } from '../../i18n';
 
 const KINDS = {
@@ -70,7 +70,7 @@ export default function Records() {
                   <div className="pt-month-items">
                     {g.items.map((it) => {
                       const K = KINDS[it.kind] || KINDS.upload;
-                      const flagged = it.kind === 'lab' && it.data?.results?.some((r) => r.flag && r.flag !== 'normal');
+                      const flagged = it.kind === 'lab' && it.data?.results?.some(isAbnormal);
                       return (
                         <button key={`${it.kind}-${it.id}`} className="pt-tl-item" onClick={() => setOpen(it)}>
                           <span className={`pt-ic-tile ${K.tone}`}><K.icon size={18} /></span>
@@ -169,11 +169,11 @@ function RecordModal({ item, onClose }) {
                 <thead><tr><th>Test</th><th>Result</th><th>Normal range</th><th /></tr></thead>
                 <tbody>
                   {d.results.map((r) => (
-                    <tr key={r.name} className={cx(r.flag && r.flag !== 'normal' && 'pt-flag-row')}>
+                    <tr key={r.name} className={cx(isAbnormal(r) && 'pt-flag-row')}>
                       <td className="strong">{r.name}</td>
                       <td translate="no" dir="ltr"><strong>{r.value}</strong> <span className="muted small">{r.unit}</span></td>
                       <td className="muted small" translate="no" dir="ltr">{r.range}</td>
-                      <td>{r.flag === 'normal' ? <span className="badge green">Normal</span> : <span className={cx('badge', r.flag === 'critical' ? 'solid-rose' : 'clay')}>{r.flag === 'low' ? 'Low' : r.flag === 'critical' ? 'Critical' : 'High'}</span>}</td>
+                      <td>{!isAbnormal(r) ? <span className="badge green">{r.flag === 'negative' ? 'Negative' : 'Normal'}</span> : <span className={cx('badge', r.flag === 'critical' ? 'solid-rose' : 'clay')}>{r.flag === 'low' ? 'Low' : r.flag === 'critical' ? 'Critical' : 'High'}</span>}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -182,7 +182,7 @@ function RecordModal({ item, onClose }) {
           ) : (
             <div className="callout sky"><FlaskConical /><span>Your sample is with the lab. We&apos;ll notify you the moment results are ready.</span></div>
           )}
-          {d.results?.some((r) => r.flag && r.flag !== 'normal') && <p className="small muted mb-0">Some values are outside the usual range. Don&apos;t worry on your own — share this with your doctor at your next consult.</p>}
+          {d.results?.some(isAbnormal) && <p className="small muted mb-0">Some values are outside the usual range. Don&apos;t worry on your own — share this with your doctor at your next consult.</p>}
         </div>
       )}
       {item.kind === 'upload' && <ExtractedView rec={d} />}

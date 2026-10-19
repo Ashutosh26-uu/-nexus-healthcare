@@ -36,6 +36,8 @@ function ConsultById() {
 // Hospital and partner-clinic doctors get no switch — their status follows their weekly hours.
 function PresenceControl({ home }) {
   const [run, busy] = useAction();
+  // The E-Clinic picked while checked out lives here, not in the live data — a refetch used to snap it back.
+  const [pick, setPick] = useState(null);
   const doctor = home.data?.doctor;
   if (!doctor) return null;
   if (!doctor.verified) return <span className="dr-online"><span className="dot sun" /><span className="small dr-online-label">Verification pending</span></span>;
@@ -69,7 +71,7 @@ function PresenceControl({ home }) {
   const clinics = home.data.eClinics || [];
   // The server sends null both for "checked out" and for "online, video only"; '' is the doctor's explicit
   // "video only" pick while checked out. What the select shows must be where the switch checks them in.
-  const clinicId = doctor.presenceClinicId ?? (doctor.online ? '' : clinics[0]?.id || '');
+  const clinicId = doctor.presenceClinicId ?? (doctor.online ? '' : pick ?? (clinics[0]?.id || ''));
   const setPresence = (online, presenceClinicId = clinicId || null) => run('online', async () => {
     const doc = await api.put('/doctor/me', { online, presenceClinicId: online ? presenceClinicId : null });
     home.setData((d) => (d ? { ...d, doctor: doc } : d));
@@ -79,7 +81,7 @@ function PresenceControl({ home }) {
       <span className={cx('dot', doctor.online ? 'green pulse' : '')} />
       {clinics.length > 0 && (
         <select className="dr-presence-select" value={clinicId} disabled={busy === 'online'} aria-label="E-Clinic"
-          onChange={(e) => (doctor.online ? setPresence(true, e.target.value || null) : home.setData((d) => ({ ...d, doctor: { ...d.doctor, presenceClinicId: e.target.value } })))}>
+          onChange={(e) => (doctor.online ? setPresence(true, e.target.value || null) : setPick(e.target.value))}>
           {clinics.map((c) => <option key={c.id} value={c.id}>{c.name.replace('E-Clinic · ', '')}</option>)}
           <option value="">Video only (from home)</option>
         </select>

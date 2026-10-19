@@ -6,6 +6,7 @@ import { Avatar, Button, Modal, TriageBadge, fmtDate, fmtDateTime, fmtMoney, use
 import { OtpInput } from '../../components/OtpFlow';
 import { chime } from '../../components/chime';
 import { detectorFor } from '../../components/BarcodeScanner';
+import { parseScan } from '../../scanLinks';
 
 const WHERE = {
   video: { icon: Video, label: (c) => `${c.mode === 'audio' ? 'Audio' : c.mode === 'chat' ? 'Chat' : 'Video'} consult` },
@@ -131,8 +132,9 @@ export function CheckInModal({ open, onClose, onCheckedIn }) {
         if (streamRef.current !== stream || !videoRef.current) return;
         try {
           const found = await detector.detect(videoRef.current);
-          const hit = found.find((f) => /^NEXUS-VISIT:/.test(f.rawValue));
-          if (hit) { submit({ payload: hit.rawValue }); return; }
+          // Visit passes are links now (/s/v/…); parseScan also accepts the older NEXUS-VISIT: text.
+          const hit = found.map((f) => parseScan(f.rawValue)).find((s) => s.type === 'visit');
+          if (hit) { submit({ payload: hit.payload }); return; }
         } catch { /* keep trying */ }
         if (streamRef.current === stream) timerRef.current = setTimeout(tick, 250);
       };

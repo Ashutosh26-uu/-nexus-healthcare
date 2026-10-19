@@ -24,7 +24,9 @@ export default function Twin() {
   // Only the readings we actually have on file — never a filled-in default.
   const inputs = useMemo(() => Object.fromEntries(Object.entries(data?.inputs || {}).filter(([, v]) => v && v.measured !== false && v.value != null && Number.isFinite(Number(v.value)))), [data]);
   const baseline = useMemo(() => Object.fromEntries(Object.entries(inputs).map(([k, v]) => [k, Number(v.value)])), [inputs]);
-  useEffect(() => { setVals(baseline); }, [baseline]);
+  // Reset the "what if" sliders only when the readings themselves change — not on every live refetch.
+  const baselineKey = JSON.stringify(baseline);
+  useEffect(() => { setVals(JSON.parse(baselineKey)); }, [baselineKey]);
   const dirty = useMemo(() => vals && Object.keys(vals).some((k) => vals[k] !== baseline[k]), [vals, baseline]);
 
   if (error && !data) return <Empty title="Couldn't load your Health Twin">{error}</Empty>;

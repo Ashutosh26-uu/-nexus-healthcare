@@ -35,7 +35,8 @@ const toForm = (p) => ({
   allergies: (p.allergies || []).join(', '),
   conditions: (p.conditions || []).join(', '),
   currentMeds: (p.currentMeds || []).join(', '),
-  emergencyContacts: (p.emergencyContacts?.length ? p.emergencyContacts : [{ name: '', relation: '', phone: '' }]).map((c) => ({ ...c })),
+  // The 'Mobile' entry is the patient's own number, kept by the server — not an emergency contact to edit here.
+  emergencyContacts: (() => { const list = (p.emergencyContacts || []).filter((c) => c.relation !== 'Mobile'); return (list.length ? list : [{ name: '', relation: '', phone: '' }]).map((c) => ({ ...c })); })(),
 });
 
 export default function Settings() {
@@ -58,6 +59,7 @@ export default function Settings() {
   if (homeLoading || !form) return <PageSkeleton />;
 
   const set = (k, v) => { setForm((f) => ({ ...f, [k]: v })); setDirty(true); };
+  const india = (patient.country || 'IN') === 'IN';
   const setContact = (i, k, v) => { setForm((f) => ({ ...f, emergencyContacts: f.emergencyContacts.map((c, j) => (j === i ? { ...c, [k]: v } : c)) })); setDirty(true); };
 
   const save = (e) => {
@@ -132,7 +134,8 @@ export default function Settings() {
                 {BLOOD_GROUPS.map((b) => <option key={b} value={b}>{b === 'Unknown' ? 'Don’t know' : b}</option>)}
               </select>
             </Field>
-            <Field label="PIN code"><input className="input" inputMode="numeric" maxLength={6} value={form.pincode} onChange={(e) => set('pincode', e.target.value.replace(/\D/g, ''))} /></Field>
+            {/* Same rule as Complete profile: 6 digits in India, letters and spaces elsewhere ("SW1A 1AA" used to save as "11"). */}
+            <Field label={india ? 'PIN code' : 'Postal code'}><input className="input" inputMode={india ? 'numeric' : 'text'} maxLength={india ? 6 : 12} value={form.pincode} onChange={(e) => set('pincode', india ? e.target.value.replace(/\D/g, '') : e.target.value.slice(0, 12))} /></Field>
             <Field label="ABHA number" hint="Your national health ID. Links records from government hospitals." className="pt-span-2">
               <input className="input mono" dir="ltr" value={form.abha} onChange={(e) => set('abha', e.target.value)} placeholder="91-XXXX-XXXX-XXXX" />
             </Field>

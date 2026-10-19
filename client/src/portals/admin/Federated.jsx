@@ -1,20 +1,13 @@
-import { useEffect, useState } from 'react';
 import { Network, Lock, Building2 } from 'lucide-react';
 import { Card, Empty, Loading, PreviewBadge } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
-import { api } from '../../api';
+import { useLive } from '../../live';
 
 // Federated training isn't running yet: no model accuracy, rounds or sync status exist, so none are shown.
 // Only the real hospitals on the network (that could take part) are listed.
 export default function Federated() {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState('');
-  useEffect(() => {
-    let alive = true;
-    api.get('/admin/federated').then((d) => alive && setData(d || {})).catch((e) => alive && setError(e.message));
-    return () => { alive = false; };
-  }, []);
-  if (error) return <Empty title="Couldn't load the network">{error}</Empty>;
+  const { data, error } = useLive('/admin/federated', ['admin', 'hospital', 'doctors']);
+  if (error && !data) return <Empty title="Couldn't load the network">{error}</Empty>;
   if (!data) return <Loading />;
   const nodes = Array.isArray(data.nodes) ? data.nodes : [];
 

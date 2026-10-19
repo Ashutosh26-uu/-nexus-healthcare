@@ -20,11 +20,13 @@ export default function StatementPrint() {
 
   useEffect(() => {
     const title = document.title;
+    let alive = true;
     api.get(`/doctor/statement?month=${encodeURIComponent(month)}`).then((r) => {
+      if (!alive) return;
       setSt(r);
       document.title = `Statement ${r.month} · ${r.doctor?.name || ''}`;
-    }).catch((e) => setError(e.message));
-    return () => { document.title = title; };
+    }).catch((e) => alive && setError(e.message));
+    return () => { alive = false; document.title = title; };
   }, [month]);
 
   if (error) return <div className="rxp-wrap"><div className="rxp-error">{error}</div></div>;

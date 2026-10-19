@@ -130,7 +130,7 @@ function ScrollToTop() {
 function AppRoutes() {
   const location = useLocation();
   // The kiosk is a full-screen touch app and the print pages are documents; no floating chat or install nudge there.
-  const bare = ['/kiosk', '/rx/', '/lab-report/', '/lab-label/', '/display/'].some((p) => location.pathname.startsWith(p));
+  const bare = ['/kiosk', '/rx/', '/lab-report/', '/lab-label/', '/invoice/', '/statement/', '/display/'].some((p) => location.pathname.startsWith(p));
   return (
     <>
       <ScrollToTop />

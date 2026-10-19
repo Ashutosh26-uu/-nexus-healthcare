@@ -34,6 +34,18 @@ export async function detectorFor(formats) {
 // GS1 expiry YYMMDD with day 00 means "end of that month".
 const monthEnd = (v) => String(new Date(Date.UTC(2000 + Number(v.slice(0, 2)), Number(v.slice(2, 4)), 0)).getUTCDate()).padStart(2, '0');
 
+// GS1 YYMMDD → ISO date, or null for a month outside 01–12 (a misread must not become an impossible date).
+const gs1Date = (v) => {
+  if (!/^\d{6}$/.test(v)) return null;
+  const mm = Number(v.slice(2, 4));
+  if (mm < 1 || mm > 12) return null;
+  const dd = v.slice(4, 6);
+  if (dd !== '00' && (Number(dd) < 1 || Number(dd) > Number(monthEnd(v)))) return null;
+  return `20${v.slice(0, 2)}-${v.slice(2, 4)}-${v.slice(4, 6) === '00' ? monthEnd(v) : v.slice(4, 6)}`;
+};
+// Fixed 6-digit date fields: (11) production, (12) due, (13) packaging, (15) best before, (16) sell by, (17) expiry.
+const DATE_AIS = new Set(['11', '12', '13', '15', '16', '17']);
+
 // What a GS1 medicine pack's code holds: (01) GTIN, (17) expiry YYMMDD, (10) batch, (21) serial.
 export function packFieldsFrom(raw) {
   const text = String(raw || '').trim();
@@ -42,7 +54,7 @@ export function packFieldsFrom(raw) {
     const f = {};
     for (const [, ai, v] of text.matchAll(/\((\d{2})\)([^(]*)/g)) {
       if (ai === '01') f.gtin = v; else if (ai === '10') f.batch = v.trim(); else if (ai === '21') f.serial = v.trim();
-      else if (ai === '17' && /^\d{6}$/.test(v)) f.expiry = `20${v.slice(0, 2)}-${v.slice(2, 4)}-${v.slice(4, 6) === '00' ? monthEnd(v) : v.slice(4, 6)}`;
+      else if (ai === '17') { const d = gs1Date(v); if (d) f.expiry = d; }
     }
     return { raw: text, ...f };
   }
@@ -54,7 +66,7 @@ export function packFieldsFrom(raw) {
   while (i < s.length) {
     const ai = s.slice(i, i + 2);
     if (ai === '01') { f.gtin = s.slice(i + 2, i + 16); i += 16; continue; }
-    if (ai === '17' || ai === '11') { const v = s.slice(i + 2, i + 8); if (ai === '17') f.expiry = `20${v.slice(0, 2)}-${v.slice(2, 4)}-${v.slice(4, 6) === '00' ? monthEnd(v) : v.slice(4, 6)}`; i += 8; continue; }
+    if (DATE_AIS.has(ai)) { if (ai === '17') { const d = gs1Date(s.slice(i + 2, i + 8)); if (d) f.expiry = d; } i += 8; continue; }
     if (ai === '10' || ai === '21') {
       const end = s.indexOf(GS, i + 2);
       f[ai === '10' ? 'batch' : 'serial'] = s.slice(i + 2, end === -1 ? undefined : end);

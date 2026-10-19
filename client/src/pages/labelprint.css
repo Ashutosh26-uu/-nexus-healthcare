@@ -13,6 +13,7 @@
 .slp-tests { font: 5.5pt/1.1 ui-monospace, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 360px) { .slp-zoom { zoom: 1.4; } }
 @media print {
+  .app-pop-wrap, .nx-cookie, .chat-fab, .chat-launcher { display: none !important; }
   /* named page only: an unnamed @page here would also resize A4 prescriptions printed later in this tab, and
      theirs would resize this label */
   @page sample-label { size: 50mm 25mm; margin: 0; }

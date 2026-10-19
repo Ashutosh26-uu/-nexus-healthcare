@@ -204,12 +204,15 @@ function ProfileSwitcher() {
 function CompleteProfilePrompt() {
   const { patient, profiles } = usePatient();
   const navigate = useNavigate();
-  const [dismissed, setDismissed] = useState(false);
+  // Remembered for this browser session: the page area remounts on every navigation, so plain state brought the
+  // prompt back on each page after "Later".
+  const key = `nx_profile_prompt_later_${patient?.id || ''}`;
+  const [dismissed, setDismissed] = useState(() => { try { return sessionStorage.getItem(key) === '1'; } catch { return false; } });
   const isSelf = profiles.find((p) => p.id === patient?.id)?.self;
   const onPage = useLocation().pathname.endsWith('/complete-profile');
   const needs = !!patient && (patient.profileComplete === false || (patient.bookingMissing || []).length > 0);
   const open = needs && isSelf && !dismissed && !onPage;
-  const close = () => setDismissed(true);
+  const close = () => { setDismissed(true); try { sessionStorage.setItem(key, '1'); } catch { /* storage blocked */ } };
   if (!open) return null;
   return (
     <Modal open onClose={close} title={`${greeting()}, ${firstName(patient.name)}! 👋`} subtitle="To continue and book a hospital, clinic or doctor, please complete your account — it takes about 2 minutes."

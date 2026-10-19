@@ -210,7 +210,7 @@ export default function KioskApp() {
             <Link to={onOperator ? '/kiosk' : '/kiosk/operator'} className={cx('k-topbtn', onOperator && 'active')}>
               <LayoutGrid /><span>{onOperator ? 'Patient screen' : 'Operator'}</span>
             </Link>
-            <button className="k-topbtn icon" onClick={() => { stopSpeaking(); signOut(); navigate('/'); }} aria-label="Sign out" title="Sign out"><LogOut /></button>
+            <button className="k-topbtn icon" onClick={() => { stopSpeaking(); try { sessionStorage.removeItem(FLOW_KEY); } catch { /* ignore */ } reset(); signOut(); navigate('/'); }} aria-label="Sign out" title="Sign out"><LogOut /></button>
           </div>
         </header>
         {offline && <div className="k-offline">{t('offline')}</div>}

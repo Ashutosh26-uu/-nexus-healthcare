@@ -16,8 +16,9 @@ export default function LabReportPrint() {
   const [error, setError] = useState('');
   useEffect(() => {
     const title = document.title;
-    api.get(`/lab-orders/${encodeURIComponent(id)}`).then((r) => { setO(r); document.title = `Lab report ${r.id} · ${r.patient?.name || ''}`; }).catch((e) => setError(e.message));
-    return () => { document.title = title; }; // don't leave the patient's name in the tab after "Back"
+    let alive = true;
+    api.get(`/lab-orders/${encodeURIComponent(id)}`).then((r) => { if (!alive) return; setO(r); document.title = `Lab report ${r.id} · ${r.patient?.name || ''}`; }).catch((e) => alive && setError(e.message));
+    return () => { alive = false; document.title = title; }; // don't leave the patient's name in the tab after "Back"
   }, [id]);
   if (error) return <div className="rxp-wrap"><div className="rxp-error">{error}</div></div>;
   if (!o) return <Loading />;

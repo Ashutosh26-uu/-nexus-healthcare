@@ -121,10 +121,11 @@ export function AddStockModal({ open, onClose, onAdded, defaultSafety = 20, titl
   const [scanNote, setScanNote] = useState('');
   const [wasOpen, setWasOpen] = useState(false);
   // Opened from "Scan barcode": go straight to the camera.
-  if (open !== wasOpen) { setWasOpen(open); if (open && scanFirst && canScan()) setScanning(true); if (!open) setScanNote(''); }
   // No guessed expiry: it must be typed from the pack.
   const blank = { drug: '', batch: '', expiry: '', qty: '', safetyStock: defaultSafety };
   const [form, setForm] = useState(blank);
+  // Every opening starts clean: a cancelled scan's batch/expiry must not land on the next pack.
+  if (open !== wasOpen) { setWasOpen(open); if (open) setForm(blank); if (open && scanFirst && canScan()) setScanning(true); if (!open) setScanNote(''); }
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const tooSoon = form.expiry && expiryInfo(form.expiry).days < 90;
   // A GS1 pack code (DataMatrix / GS1-128) carries batch and expiry; the product name has to be typed — packs

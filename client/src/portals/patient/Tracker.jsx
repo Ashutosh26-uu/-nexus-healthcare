@@ -170,7 +170,7 @@ export default function Tracker() {
             </div>
             <div className="hl-form-row mt-2">
               <Field label="What"><select className="select" value={reminder.kind} onChange={(e) => saveReminder({ kind: e.target.value })}>{Object.entries(READING_KINDS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></Field>
-              <Field label="At"><input className="input" type="time" value={reminder.time} onChange={(e) => e.target.value && saveReminder({ time: e.target.value })} /></Field>
+              <Field label="At"><input className="input" type="time" key={reminder.time} defaultValue={reminder.time} onBlur={(e) => e.target.value && e.target.value !== reminder.time && saveReminder({ time: e.target.value })} /></Field>
             </div>
             <p className="tiny muted mb-0">An in-app reminder, once a day (India time).</p>
           </Card>

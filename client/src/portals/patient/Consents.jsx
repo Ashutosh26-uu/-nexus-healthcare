@@ -45,7 +45,7 @@ export default function Consents() {
   const consents = data?.consents || [];
   const pending = consents.filter((c) => c.status === 'pending');
   const active = consents.filter((c) => c.status === 'active');
-  const past = consents.filter((c) => ['expired', 'denied', 'revoked'].includes(c.status));
+  const past = consents.filter((c) => ['expired', 'denied', 'revoked', 'archived'].includes(c.status));
   const log = data?.log || [];
 
   // Open on Requests only when something is waiting; otherwise show who has access now.
@@ -143,7 +143,7 @@ export default function Consents() {
           ))}
 
           {tab === 'past' && (past.length === 0 ? (
-            <Card><Empty icon={History} title="Nothing in the past yet">Expired, denied and revoked permissions will be listed here for your reference.</Empty></Card>
+            <Card><Empty icon={History} title="Nothing in the past yet">Expired, denied and revoked permissions — and doctors you moved away from — will be listed here for your reference.</Empty></Card>
           ) : (
             <Card>
               <div className="list">
@@ -155,8 +155,9 @@ export default function Consents() {
                       <div className="tiny muted">{c.purpose} · {c.scope.map(scopeLabel).join(', ')}</div>
                     </div>
                     <div className="right">
-                      <StatusBadge status={c.status} />
-                      <div className="tiny muted mt-1">{c.status === 'revoked' ? fmtDate(c.revokedAt) : c.status === 'expired' ? fmtDate(c.expiry) : fmtDate(c.requestedAt)}</div>
+                      <StatusBadge status={c.status}>{c.status === 'archived' ? 'Moved away' : undefined}</StatusBadge>
+                      {c.status === 'archived' && <div className="tiny muted">Read-only copy up to this date</div>}
+                      <div className="tiny muted mt-1">{c.status === 'archived' ? fmtDate(c.archivedAt) : c.status === 'revoked' ? fmtDate(c.revokedAt) : c.status === 'expired' ? fmtDate(c.expiry) : fmtDate(c.requestedAt)}</div>
                     </div>
                   </div>
                 ))}
