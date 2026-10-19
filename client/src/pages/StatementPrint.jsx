@@ -31,8 +31,9 @@ export default function StatementPrint() {
 
   if (error) return <div className="rxp-wrap"><div className="rxp-error">{error}</div></div>;
   if (!st) return <Loading />;
-  const rows = (st.days || []).filter((d) => d.consults > 0);
+  const rows = (st.days || []).filter((d) => d.consults > 0 || d.plans > 0);
   const t = st.totals || {};
+  const hasPlans = (t.plans || 0) > 0;
 
   return (
     <div className="rxp-wrap">
@@ -65,18 +66,19 @@ export default function StatementPrint() {
         <section className="rxp-patient">
           <div><span>Statement for</span><strong>{monthLabel(st.month)}</strong></div>
           <div><span>Consults completed</span><strong>{t.consults}</strong></div>
+          {hasPlans && <div><span>Care-plan months</span><strong>{t.plans}</strong></div>}
           <div><span>Fees collected</span><strong>{fmtMoney(t.gross)}</strong></div>
           <div><span>Online / app</span><strong>{t.online}</strong></div>
           <div><span>E-Clinic (kiosk)</span><strong>{t.kiosk}</strong></div>
           <div><span>Your payout</span><strong>{fmtMoney(t.payout)}</strong></div>
         </section>
 
-        {rows.length === 0 ? <p className="rxp-block">No consults were completed in {monthLabel(st.month)}.</p> : (
+        {rows.length === 0 ? <p className="rxp-block">No consults were completed and no care-plan fees were paid in {monthLabel(st.month)}.</p> : (
           <table className="rxp-table">
-            <thead><tr><th>Date</th><th>Consults</th><th>Online</th><th>E-Clinic</th><th style={{ textAlign: 'right' }}>Fees</th></tr></thead>
+            <thead><tr><th>Date</th><th>Consults</th><th>Online</th><th>E-Clinic</th>{hasPlans && <th>Care plans</th>}<th style={{ textAlign: 'right' }}>Fees</th></tr></thead>
             <tbody>
               {rows.map((d) => (
-                <tr key={d.date}><td>{dayLabel(d.date)}</td><td>{d.consults}</td><td>{d.online}</td><td>{d.kiosk}</td><td style={{ textAlign: 'right' }}>{fmtMoney(d.fees)}</td></tr>
+                <tr key={d.date}><td>{dayLabel(d.date)}</td><td>{d.consults}</td><td>{d.online}</td><td>{d.kiosk}</td>{hasPlans && <td>{d.plans || ''}</td>}<td style={{ textAlign: 'right' }}>{fmtMoney((d.fees || 0) + (d.planFees || 0))}</td></tr>
               ))}
             </tbody>
           </table>
@@ -84,13 +86,15 @@ export default function StatementPrint() {
 
         <table className="rxp-table rxp-totals">
           <tbody>
-            <tr><td>Fees collected</td><td style={{ textAlign: 'right' }}>{fmtMoney(t.gross)}</td></tr>
+            {hasPlans && <tr><td>Consult fees</td><td style={{ textAlign: 'right' }}>{fmtMoney(t.consultFees)}</td></tr>}
+            {hasPlans && <tr><td>Care-plan fees ({t.plans} month{t.plans === 1 ? '' : 's'})</td><td style={{ textAlign: 'right' }}>{fmtMoney(t.planFees)}</td></tr>}
+            <tr><td>{hasPlans ? 'Total fees collected' : 'Fees collected'}</td><td style={{ textAlign: 'right' }}>{fmtMoney(t.gross)}</td></tr>
             <tr><td>Platform fee ({Math.round(t.platformFeeRate * 100)}%)</td><td style={{ textAlign: 'right' }}>− {fmtMoney(t.platformFee)}</td></tr>
             <tr><td><strong>Payout to you</strong></td><td style={{ textAlign: 'right' }}><strong>{fmtMoney(t.payout)}</strong></td></tr>
           </tbody>
         </table>
 
-        <p className="rxp-note">Fees are what patients paid for completed consults; E-Clinic consults count your listed fee of {fmtMoney(st.doctor.fee)}. Free follow-ups count as ₹0. Amounts are before TDS (section 194J), where applicable. Generated {fmtDateTime(st.generatedAt)}.</p>
+        <p className="rxp-note">Fees are what patients paid for completed consults{hasPlans ? ' and for care-plan months (counted on the day the patient paid)' : ''}; E-Clinic consults count your listed fee of {fmtMoney(st.doctor.fee)}. Free follow-ups count as ₹0. Amounts are before TDS (section 194J), where applicable. Generated {fmtDateTime(st.generatedAt)}.</p>
       </article>
     </div>
   );

@@ -23,6 +23,8 @@ export default function Earnings() {
       values: days.map((d) => d.consults || 0),
       labels: days.map((d, i) => (i === days.length - 1 ? 'Today' : new Date(`${d.date}T12:00:00`).toLocaleDateString(getLocale(), { weekday: 'short' }))),
       earned: days.reduce((s, d) => s + (d.earnings || 0), 0),
+      plans: days.reduce((s, d) => s + (d.plans || 0), 0),
+      planFees: days.reduce((s, d) => s + (d.planFees || 0), 0),
     };
   }, [data]);
 
@@ -37,12 +39,12 @@ export default function Earnings() {
 
   return (
     <div className="stack lg">
-      <PageHeader eyebrow="Earnings & reports" title="Your practice at a glance" subtitle="What patients paid for the consults you completed, straight from your visit records." />
+      <PageHeader eyebrow="Earnings & reports" title="Your practice at a glance" subtitle="What patients paid for the consults you completed and the care plans you run, straight from your records." />
 
       <div className="grid four">
         <Stat label="Consults done" value={fmtNum(doctor.consultsDone)} icon={Stethoscope} sub="since you joined" />
         <Stat label="Total earnings" value={fmtMoney(doctor.earnings)} icon={Wallet} sub={`${fmtMoney(doctor.fee)} per consult`} />
-        <Stat label="Last 7 days" value={fmtMoney(weekEarn)} icon={TrendingUp} sub={`${weekTotal} consult${weekTotal === 1 ? '' : 's'}`} />
+        <Stat label="Last 7 days" value={fmtMoney(weekEarn)} icon={TrendingUp} sub={`${weekTotal} consult${weekTotal === 1 ? '' : 's'}${week.plans ? ` · ${week.plans} care-plan month${week.plans === 1 ? '' : 's'} (${fmtMoney(week.planFees)})` : ''}`} />
         <Stat label="Patient rating" value={rating ? `${rating.toFixed(1)} ★` : '—'} icon={Star} sub={rating ? `from ${reviews} patient review${reviews === 1 ? '' : 's'}` : 'No reviews yet'} />
       </div>
 
@@ -61,7 +63,7 @@ export default function Earnings() {
       </div>
 
       <Card title="Monthly statement" action={<FileText size={18} className="muted" />}>
-        <p className="small muted">Consults completed day by day, fees collected, the 10% platform fee and your payout — ready to print or save as PDF.</p>
+        <p className="small muted">Consults and care-plan months day by day, fees collected, the 10% platform fee and your payout — ready to print or save as PDF.</p>
         <div className="dr-statement-pick">
           <input className="input" type="month" value={month} max={thisMonth} min="2024-01" onChange={(e) => setMonth(e.target.value)} aria-label="Statement month" />
           <Button icon={Printer} disabled={!/^\d{4}-\d{2}$/.test(month) || month > thisMonth} onClick={() => window.open(`/statement/${month}`, '_blank', 'noopener')}>Open statement</Button>

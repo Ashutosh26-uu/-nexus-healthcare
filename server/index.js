@@ -2592,6 +2592,8 @@ function finalizePayment(d, pay, user) {
     if (!pl) return;
     const joining = pl.status === 'invited';
     activatePlan(d, pl);
+    const planDoc = doctorById(pl.doctorId);
+    if (planDoc) planDoc.earnings = catalog.round((Number(planDoc.earnings) || 0) + (Number(pay.gross ?? pay.amount) || 0));
     const p = patientById(pl.patientId);
     doctorInbox(d, doctorById(pl.doctorId)).forEach((u) => notify(u, joining ? `${p?.name || 'A patient'} joined your care plan` : `${p?.name || 'A patient'} renewed their care plan`, `Paid ₹${pay.gross ?? pay.amount} · runs to ${new Date(pl.paidUntil).toLocaleDateString('en-IN', { timeZone: APP_TZ, day: 'numeric', month: 'short' })}.`));
     touchPlan(pl);
@@ -3773,11 +3775,18 @@ function sweepWellness(now = Date.now()) {
 // ---------- doctor portal ----------
 // The doctor's last 7 local days (APP_TZ), oldest first: consults completed and what patients actually paid —
 // the same rule the completion handler adds to earnings (kiosk visits count the doctor's fee, others c.fee).
+// Care-plan months this doctor was paid for (money actually received — refunds and unconfirmed claims excluded).
+const planPaymentsFor = (doc) => {
+  const mine = new Set(db().carePlans.filter((pl) => pl.doctorId === doc.id).map((pl) => pl.id));
+  return db().payments.filter((p) => p.purpose === 'care_plan' && p.status === 'paid' && p.paidAt && mine.has(p.refId));
+};
+const planAmount = (p) => Number(p.gross ?? p.amount) || 0;
+
 function doctorWeek(consults, doc) {
   const today = istDay(nowIso());
   // Calendar arithmetic on the date string (not "now − 24 h"), so a DST zone can't skip or repeat a day.
   const days = Array.from({ length: 7 }, (_, i) => new Date(Date.parse(`${today}T12:00:00Z`) - (6 - i) * 86400000).toISOString().slice(0, 10));
-  const byDay = new Map(days.map((date) => [date, { date, consults: 0, earnings: 0 }]));
+  const byDay = new Map(days.map((date) => [date, { date, consults: 0, earnings: 0, plans: 0, planFees: 0 }]));
   for (const c of consults) {
     if (c.status !== 'completed' || !c.completedAt) continue;
     const row = byDay.get(istDay(c.completedAt));
@@ -3785,7 +3794,12 @@ function doctorWeek(consults, doc) {
     row.consults += 1;
     row.earnings += c.kioskId ? (Number(doc.fee) || 0) : Math.max(0, Number(c.fee) || 0);
   }
-  return days.map((date) => { const r = byDay.get(date); return { ...r, earnings: catalog.round(r.earnings) }; });
+  for (const p of planPaymentsFor(doc)) {
+    const row = byDay.get(istDay(p.paidAt));
+    if (!row) continue;
+    row.plans += 1; row.planFees += planAmount(p); row.earnings += planAmount(p);
+  }
+  return days.map((date) => { const r = byDay.get(date); return { ...r, earnings: catalog.round(r.earnings), planFees: catalog.round(r.planFees) }; });
 }
 
 app.get('/api/doctor/home', auth, role('doctor'), (req, res) => {
@@ -4134,7 +4148,7 @@ app.get('/api/doctor/statement', auth, role('doctor'), (req, res) => {
   const m = month.match(/^(\d{4})-(0[1-9]|1[0-2])$/);
   if (!m || Number(m[1]) < 2020 || month > istDay(nowIso()).slice(0, 7)) return res.status(400).json({ error: 'Choose a month (YYYY-MM) that isn\'t in the future.' });
   const daysIn = new Date(Date.UTC(Number(m[1]), Number(m[2]), 0)).getUTCDate();
-  const days = Array.from({ length: daysIn }, (_, i) => ({ date: `${month}-${String(i + 1).padStart(2, '0')}`, consults: 0, kiosk: 0, online: 0, fees: 0 }));
+  const days = Array.from({ length: daysIn }, (_, i) => ({ date: `${month}-${String(i + 1).padStart(2, '0')}`, consults: 0, kiosk: 0, online: 0, fees: 0, plans: 0, planFees: 0 }));
   for (const c of db().consults) {
     if (c.doctorId !== doc.id || c.status !== 'completed' || !c.completedAt) continue;
     const day = istDay(c.completedAt);
@@ -4144,14 +4158,23 @@ app.get('/api/doctor/statement', auth, role('doctor'), (req, res) => {
     if (c.kioskId) row.kiosk += 1; else row.online += 1;
     row.fees += c.kioskId ? (Number(doc.fee) || 0) : Math.max(0, Number(c.fee) || 0);
   }
-  const gross = catalog.round(days.reduce((s, r) => s + r.fees, 0));
+  // Care-plan months paid this month (same platform fee as consults).
+  for (const p of planPaymentsFor(doc)) {
+    const day = istDay(p.paidAt);
+    if (day.slice(0, 7) !== month) continue;
+    const row = days[Number(day.slice(8, 10)) - 1];
+    row.plans += 1; row.planFees += planAmount(p);
+  }
+  const consultFees = catalog.round(days.reduce((s, r) => s + r.fees, 0));
+  const planFees = catalog.round(days.reduce((s, r) => s + r.planFees, 0));
+  const gross = catalog.round(consultFees + planFees);
   const platformFee = catalog.round(gross * PLATFORM_FEE_RATE);
   const fac = doc.facilityId ? db().facilities.find((f) => f.id === doc.facilityId) : null;
   res.json({
     month, generatedAt: nowIso(),
     doctor: { name: doc.name, regNo: doc.regNo, specialty: doc.specialty, qualification: doc.qualification, fee: doc.fee, affiliation: isEClinicDoctor(doc) ? 'Nexus Healthcare E-Clinics' : fac?.verified ? fac.name : null },
-    days: days.map((r) => ({ ...r, fees: catalog.round(r.fees) })),
-    totals: { consults: days.reduce((s, r) => s + r.consults, 0), kiosk: days.reduce((s, r) => s + r.kiosk, 0), online: days.reduce((s, r) => s + r.online, 0), gross, platformFeeRate: PLATFORM_FEE_RATE, platformFee, payout: gross - platformFee },
+    days: days.map((r) => ({ ...r, fees: catalog.round(r.fees), planFees: catalog.round(r.planFees) })),
+    totals: { consults: days.reduce((s, r) => s + r.consults, 0), kiosk: days.reduce((s, r) => s + r.kiosk, 0), online: days.reduce((s, r) => s + r.online, 0), plans: days.reduce((s, r) => s + r.plans, 0), consultFees, planFees, gross, platformFeeRate: PLATFORM_FEE_RATE, platformFee, payout: catalog.round(gross - platformFee) },
   });
 });
 
