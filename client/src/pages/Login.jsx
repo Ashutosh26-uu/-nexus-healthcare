@@ -59,7 +59,7 @@ export default function Login() {
     e?.preventDefault();
     setBusy(true); setError('');
     try {
-      const r = await api.post('/auth/login', { identifier, password, dialCode: '+91' });
+      const r = await api.post('/auth/login', { identifier: identifier.trim(), password });
       await signIn(r.token);
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
@@ -93,8 +93,8 @@ export default function Login() {
 
           {mode === 'staff' && (
             <form className="stack" onSubmit={loginPassword}>
-              <Field label="Email or mobile number">
-                <div className="input-wrap"><Mail /><input className="input" value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="you@hospital.in" autoComplete="username" aria-label="Email or mobile number" required /></div>
+              <Field label="Email">
+                <div className="input-wrap"><Mail /><input className="input" type="email" inputMode="email" value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="you@hospital.in" autoComplete="username" aria-label="Email" required /></div>
               </Field>
               <Field label="Password">
                 <div className="input-wrap">

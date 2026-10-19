@@ -674,8 +674,10 @@ const findUserByPhone = (phone) => db().users.find((u) => u.phone && samePhone(u
 const findUserByEmail = (email) => db().users.find((u) => u.email && u.email.toLowerCase() === String(email).toLowerCase());
 
 app.post('/api/auth/login', loginIpLimiter, loginLimiter, async (req, res) => {
-  const { identifier, password, dialCode } = req.body || {};
-  const id = clean(identifier, 160);
+  const { identifier, password } = req.body || {};
+  const id = clean(identifier, 160).toLowerCase();
+  // Accounts sign in with their email address only — a mobile number is a contact detail, not a login.
+  if (!id.includes('@')) return res.status(400).json({ error: 'Please sign in with your email address. Mobile numbers can’t be used to sign in.' });
   const fk = loginFailKey(id);
   const fails = recentFails(fk);
   if (fails.length >= LOGIN_FAIL_MAX) {
@@ -683,11 +685,11 @@ app.post('/api/auth/login', loginIpLimiter, loginLimiter, async (req, res) => {
     res.setHeader('Retry-After', String(retry));
     return res.status(429).json({ error: 'Too many wrong passwords for this account. Please wait, or reset your password with an email code.', retryAfter: retry });
   }
-  const user = id.includes('@') ? findUserByEmail(id) : findUserByPhone(normalizePhone(id, dialCode));
+  const user = findUserByEmail(id);
   if (!user || typeof password !== 'string' || !user.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
     loginFails.delete(fk); loginFails.set(fk, [...fails, Date.now()]); // re-insert = newest last
     if (loginFails.size > 50000) loginFails.delete(loginFails.keys().next().value); // bounded memory under a spray
-    return res.status(401).json({ error: 'That email/phone and password don\'t match. Please try again.' });
+    return res.status(401).json({ error: 'That email and password don\'t match. Please try again.' });
   }
   if (user.status === 'suspended') return res.status(403).json({ error: 'This account is suspended. Contact support.' });
   if (user.status === 'pending') return res.status(403).json({ error: 'Your account is awaiting verification by our team. You can sign in as soon as it is approved.' });
@@ -699,9 +701,10 @@ app.post('/api/auth/login', loginIpLimiter, loginLimiter, async (req, res) => {
 app.get('/api/auth/otp/config', (_req, res) => res.json(otp.publicConfig()));
 
 app.post('/api/auth/otp/request', otpLimiter, async (req, res) => {
-  const { phone, dialCode, email, channel = 'sms', lang } = req.body || {};
+  const { email, lang } = req.body || {};
+  if (!email) return res.status(400).json({ error: 'Please enter your email address — sign-in codes are sent by email only.' });
   try {
-    const sent = await otp.sendCode({ phone, dialCode, email, channel, lang, ip: req.ip });
+    const sent = await otp.sendCode({ email, channel: 'email', lang, ip: req.ip });
     // Deliberately do NOT reveal whether the number/email is registered (account-existence oracle).
     res.json({ ok: true, ...sent, message: `We sent a 6-digit code to ${sent.masked}` });
   } catch (e) {
@@ -714,13 +717,14 @@ app.post('/api/auth/otp/verify', otpVerifyLimiter, async (req, res) => {
   const { target, code } = req.body || {};
   try {
     const ok = await otp.verifyCode({ target, code });
-    const user = ok.channel === 'email' ? findUserByEmail(ok.target) : findUserByPhone(ok.target);
+    if (ok.channel !== 'email') return res.status(400).json({ error: 'Sign-in codes are sent by email only. Please use your email address.' });
+    const user = findUserByEmail(ok.target);
     if (user) {
       // One-time codes are a patient convenience. Staff/clinical/admin roles must use
       // email + password (and MFA in production), so a leaked phone can't become a staff login.
       if (!['patient', 'caregiver'].includes(user.role)) return res.status(403).json({ error: 'Staff accounts sign in with email and password, not a one-time code.' });
       if (user.status === 'suspended') return res.status(403).json({ error: 'This account is suspended. Contact support.' });
-      if (user.phone && ok.channel !== 'email') user.phoneVerifiedAt = nowIso();
+      if (!user.emailVerifiedAt) user.emailVerifiedAt = nowIso(); // the code just proved they own this inbox
       user.lastLoginAt = nowIso();
       store.save();
       return res.json({ token: sign(user), user: publicUser(user) });
@@ -742,7 +746,7 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
     verified = jwt.verify(ticket, JWT_SECRET, JWT_VERIFY);
     if (verified.purpose !== 'signup') throw new Error();
   } catch {
-    return res.status(400).json({ error: 'Your verification expired. Please verify your mobile number again.' });
+    return res.status(400).json({ error: 'Your verification expired. Please verify your email again.' });
   }
   const cleanName = clean(name, 80);
   const dobT = Date.parse(dob);
@@ -751,7 +755,6 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
   const d = db();
   const phone = verified.phone || null;
   const loginEmail = verified.email || (email ? String(email).trim().toLowerCase() : null);
-  if (phone && findUserByPhone(phone)) return res.status(409).json({ error: 'An account with this number already exists.' });
   if (loginEmail && findUserByEmail(loginEmail)) return res.status(409).json({ error: 'This email is already registered.' });
   // NOTE: we deliberately do NOT auto-claim an existing unclaimed profile by name+DOB — that
   // would let anyone who knows a person's name and birth date take over their records. Linking a
@@ -805,7 +808,6 @@ app.post('/api/auth/register/quick', registerLimiter, async (req, res) => {
   const loginPhone = verified.phone || (phone ? normalizePhone(clean(phone, 20), dialCode) : null);
   if (!EMAIL_RE.test(loginEmail)) return res.status(400).json({ error: 'Please enter a valid email address.' });
   if (!loginPhone || String(loginPhone).replace(/\D/g, '').length < 7) return res.status(400).json({ error: 'Please enter a valid mobile number.' });
-  if (findUserByPhone(loginPhone)) return res.status(409).json({ error: 'An account with this mobile number already exists. Please sign in.' });
   if (findUserByEmail(loginEmail)) return res.status(409).json({ error: 'This email is already registered. Please sign in.' });
   const d = db();
   // Invite code: only here, only once (referredBy is never written anywhere else). Own code / own phone or
@@ -931,7 +933,6 @@ function validateApplicant(b) {
   // A string only: an object would become the password "[object Object]".
   if (typeof b.password !== 'string' || b.password.length < 8 || b.password.length > 200) return 'Choose a password of at least 8 characters.';
   if (findUserByEmail(clean(b.email, 160))) return 'This email is already registered. Sign in instead, or use a different email.';
-  if (findUserByPhone(normalizePhone(clean(b.phone, 20)))) return 'This mobile number is already registered.';
   return '';
 }
 
@@ -989,8 +990,9 @@ app.post('/api/public/join/facility', joinLimiter, async (req, res) => {
 
 // Doctors sign up with just name, email, mobile and a password, land straight in the portal and
 // finish their profile there. Nothing clinical unlocks until an admin verifies them (see auth()).
-// A doctor listed by their clinic / hospital (no account yet) — matched by email or mobile at sign-up.
-const findListedDoctor = (email, phone) => db().doctors.find((x) => !x.userId && x.listedBy && ((email && x.invite?.email === email) || (phone && samePhone(x.invite?.phone, phone))));
+// A doctor listed by their clinic / hospital (no account yet) — matched by email at sign-up. Never by mobile:
+// a phone number isn't verified, so typing someone's number must not claim their profile.
+const findListedDoctor = (email) => db().doctors.find((x) => !x.userId && x.listedBy && email && x.invite?.email === email);
 
 app.post('/api/public/join/doctor', joinLimiter, async (req, res) => {
   const b = req.body || {};
@@ -1009,7 +1011,7 @@ app.post('/api/public/join/doctor', joinLimiter, async (req, res) => {
   d.users.push(user);
   // Already listed by a clinic or hospital? Email/mobile aren't proven at sign-up, so this only files a
   // claim request — the admin merges it into the listing when they verify this doctor.
-  const listed = findListedDoctor(email, phone);
+  const listed = findListedDoctor(email);
   const doc = {
     id: store.id('doc'), userId: user.id, name: user.name, specialty: listed?.specialty || 'General Medicine', qualification: '', regNo: '',
     languages: country === 'IN' ? ['Hindi', 'English'] : ['English'], verified: false, online: false, district: '', state: '', country,

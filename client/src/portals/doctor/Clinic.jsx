@@ -53,7 +53,7 @@ export function ClinicDoctors({ doctors, specialties, onAdd, onRemove, busy, who
         </div>
         {error && <div className="form-error small">{error}</div>}
         <div className="row" style={{ justifyContent: 'flex-end' }}><Button icon={UserPlus} loading={busy === 'add'} disabled={form.name.trim().length < 2 || (!form.email && !form.phone)} onClick={add}>Add doctor</Button></div>
-        <p className="tiny muted mb-0">We use the email or mobile so the doctor can claim their profile and get their own login later.</p>
+        <p className="tiny muted mb-0">When the doctor signs up with this email, the profile becomes theirs. A mobile number is only for contacting them.</p>
       </div>
     </div>
   );
