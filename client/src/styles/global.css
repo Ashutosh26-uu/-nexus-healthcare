@@ -487,3 +487,7 @@ table { max-width: 100%; }
   .bl-num { width: 64px; }
   .bl-lines th:nth-child(4), .bl-lines td:nth-child(4) { display: none; } /* discount column on phones */
 }
+.bl-quick { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; padding: 10px 12px; background: var(--paper); border-radius: 14px; }
+.bl-quick .field { flex: 1 1 260px; margin: 0; }
+.ph-incoming { border-color: var(--green); background: var(--green-soft); }
+.ph-incoming-row { padding: 8px 10px; background: #fff; border-radius: 12px; }

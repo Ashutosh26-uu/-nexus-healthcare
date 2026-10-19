@@ -1,6 +1,6 @@
 // Shared stock helpers for the Pharmacy and Supply (distributor) portals.
 import { memo, useState } from 'react';
-import { ScanBarcode, PackagePlus } from 'lucide-react';
+import { ScanBarcode, PackagePlus, ClipboardPaste, Truck, CheckCircle2 } from 'lucide-react';
 import { Button, Field, Modal, Progress, Empty, useAction, useToast, fmtNum, fmtDate, cx } from '../../components/ui';
 import { api } from '../../api';
 import BarcodeScanner, { canScan, packFieldsFrom } from '../../components/BarcodeScanner';
@@ -122,20 +122,25 @@ export function AddStockModal({ open, onClose, onAdded, defaultSafety = 20, titl
   const [wasOpen, setWasOpen] = useState(false);
   // Opened from "Scan barcode": go straight to the camera.
   // No guessed expiry: it must be typed from the pack.
-  const blank = { drug: '', batch: '', expiry: '', qty: '', safetyStock: defaultSafety };
+  const blank = { drug: '', batch: '', expiry: '', qty: '', safetyStock: defaultSafety, gtin: '' };
   const [form, setForm] = useState(blank);
   // Every opening starts clean: a cancelled scan's batch/expiry must not land on the next pack.
   if (open !== wasOpen) { setWasOpen(open); if (open) setForm(blank); if (open && scanFirst && canScan()) setScanning(true); if (!open) setScanNote(''); }
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const tooSoon = form.expiry && expiryInfo(form.expiry).days < 90;
-  // A GS1 pack code (DataMatrix / GS1-128) carries batch and expiry; the product name has to be typed — packs
-  // only carry a product number (GTIN), and there's no GTIN → name list on Nexus yet.
-  const onScan = (raw) => {
+  // A GS1 pack code (DataMatrix / GS1-128) carries the product number (GTIN), batch and expiry. The NAME comes from
+  // Nexus's barcode book — learned the first time any verified store names that barcode — so after the first time,
+  // a scan fills everything except the quantity.
+  const onScan = async (raw) => {
     setScanning(false);
     const f = packFieldsFrom(raw);
-    if (!f.batch && !f.expiry) { setForm((cur) => ({ ...cur, batch: cur.batch || f.raw.slice(0, 40) })); setScanNote('Read the code as the batch number — check it against the pack.'); return; }
-    setForm((cur) => ({ ...cur, batch: f.batch || cur.batch, expiry: f.expiry || cur.expiry }));
-    setScanNote(`Filled from the pack: ${[f.batch && `batch ${f.batch}`, f.expiry && `expiry ${f.expiry}`].filter(Boolean).join(', ')}. Type the medicine name and quantity.`);
+    const gtin = f.gtin || (/^\d{8,14}$/.test(String(raw).trim()) ? String(raw).trim() : '');
+    if (!f.batch && !f.expiry && !gtin) { setForm((cur) => ({ ...cur, batch: cur.batch || f.raw.slice(0, 40) })); setScanNote('Read the code as the batch number — check it against the pack.'); return; }
+    let name = null;
+    if (gtin) { try { name = (await api.get(`/catalog/gtin/${encodeURIComponent(gtin)}`)).drug; } catch { /* offline or unknown: type it once */ } }
+    setForm((cur) => ({ ...cur, gtin: gtin || cur.gtin, drug: name || cur.drug, batch: f.batch || cur.batch, expiry: f.expiry || cur.expiry }));
+    const got = [name && name, f.batch && `batch ${f.batch}`, f.expiry && `expiry ${f.expiry}`].filter(Boolean).join(', ');
+    setScanNote(name ? `Filled from the pack: ${got}. Just enter the quantity.` : `Filled from the pack: ${got || 'barcode read'}. Type the medicine name once — next time this barcode fills it in by itself, for every store on Nexus.`);
   };
   const submit = async (e) => {
     e.preventDefault();
@@ -170,3 +175,100 @@ export function AddStockModal({ open, onClose, onAdded, defaultSafety = 20, titl
   );
 }
 
+
+
+/* ---------- Paste from Excel: whole supplier lists in one go ---------- */
+// Columns in any order with a header row (Medicine/Name, Batch, Expiry, Qty, optional Barcode/GTIN, Safety) —
+// or, without headers, Medicine · Batch · Expiry · Qty. Expiry can be 2027-08-31, 31/08/2027, 08/2027 or Aug-27.
+const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+const lastDay = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+export function parseExpiry(v) {
+  const s = String(v || '').trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/); // DD/MM/YYYY (Indian order)
+  if (m) { const y = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]); return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
+  m = s.match(/^(\d{1,2})[/.-](\d{2,4})$/); // MM/YYYY → last day of that month
+  if (m) { const y = m[2].length === 2 ? 2000 + Number(m[2]) : Number(m[2]); const mo = Number(m[1]); return mo >= 1 && mo <= 12 ? `${y}-${String(mo).padStart(2, '0')}-${lastDay(y, mo)}` : ''; }
+  m = s.match(/^([a-z]{3})[a-z]*[\s/.-]*(\d{2,4})$/i); // Aug-27 / August 2027
+  if (m && MONTHS[m[1].toLowerCase()]) { const y = m[2].length === 2 ? 2000 + Number(m[2]) : Number(m[2]); const mo = MONTHS[m[1].toLowerCase()]; return `${y}-${String(mo).padStart(2, '0')}-${lastDay(y, mo)}`; }
+  return '';
+}
+export function parsePastedStock(text) {
+  const lines = String(text || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return [];
+  const split = (l) => (l.includes('\t') ? l.split('\t') : l.split(',')).map((c) => c.trim().replace(/^"|"$/g, ''));
+  const head = split(lines[0]).map((h) => h.toLowerCase());
+  const find = (...names) => head.findIndex((h) => names.some((n) => h.includes(n)));
+  const hasHeader = find('medicine', 'name', 'item', 'product', 'drug') >= 0 && find('qty', 'quantity', 'units') >= 0;
+  const idx = hasHeader
+    ? { drug: find('medicine', 'name', 'item', 'product', 'drug'), batch: find('batch', 'lot'), expiry: find('exp'), qty: find('qty', 'quantity', 'units'), gtin: find('barcode', 'gtin', 'ean'), safety: find('safety', 'min') }
+    : { drug: 0, batch: 1, expiry: 2, qty: 3, gtin: -1, safety: -1 };
+  return lines.slice(hasHeader ? 1 : 0).map((l) => {
+    const c = split(l);
+    const get = (k) => (idx[k] >= 0 ? c[idx[k]] || '' : '');
+    return { drug: get('drug'), batch: get('batch'), expiry: parseExpiry(get('expiry')), rawExpiry: get('expiry'), qty: parseInt(String(get('qty')).replace(/[^\d]/g, ''), 10) || 0, gtin: get('gtin'), safetyStock: get('safety') };
+  }).filter((r) => r.drug);
+}
+
+export function PasteStockModal({ open, onClose, onAdded }) {
+  const [run, busy] = useAction();
+  const toast = useToast();
+  const [text, setText] = useState('');
+  const [result, setResult] = useState(null);
+  const rows = parsePastedStock(text);
+  const bad = rows.filter((r) => !r.expiry || !r.qty);
+  const submit = async () => {
+    const r = await run('bulk', () => api.post('/inventory/bulk', { rows: rows.map(({ rawExpiry: _r, ...x }) => x) }));
+    if (!r) return;
+    setResult(r);
+    if (r.added) { toast(`${r.added} line${r.added === 1 ? '' : 's'} added to stock`); onAdded?.(); }
+    if (!r.errors.length) { setText(''); onClose(); }
+  };
+  if (!open) return null;
+  return (
+    <Modal open wide onClose={onClose} title="Paste stock from Excel" subtitle="Copy the rows from your supplier's sheet or invoice and paste them here — no typing one by one."
+      footer={<><span className="grow tiny muted">{rows.length ? `${rows.length} row${rows.length === 1 ? '' : 's'} read${bad.length ? ` · ${bad.length} need a fix` : ''}` : ''}</span><Button variant="ghost" onClick={onClose}>Cancel</Button><Button icon={PackagePlus} loading={busy === 'bulk'} disabled={!rows.length} onClick={submit}>Add {rows.length || ''} to stock</Button></>}>
+      <div className="stack">
+        <textarea className="textarea mono" rows={6} value={text} onChange={(e) => { setText(e.target.value); setResult(null); }}
+          placeholder={'Medicine\tBatch\tExpiry\tQty\nParacetamol 500mg\tPCM24A118\t08/2027\t500\nMetformin 500mg\tMF2203\t31/03/2027\t300'} aria-label="Pasted rows" />
+        <p className="tiny muted mb-0">Headers like Medicine, Batch, Expiry, Qty (and Barcode) are understood in any order. Expiry can be 2027-08-31, 31/08/2027, 08/2027 or Aug-27.</p>
+        {rows.length > 0 && (
+          <div className="table-wrap" style={{ maxHeight: 260, overflow: 'auto' }}>
+            <table className="table">
+              <thead><tr><th>Medicine</th><th>Batch</th><th>Expiry</th><th className="right">Qty</th></tr></thead>
+              <tbody>{rows.slice(0, 100).map((r, i) => (
+                <tr key={i}><td>{r.drug}</td><td className="mono small">{r.batch || '—'}</td>
+                  <td className={cx(!r.expiry && 'text-rose')}>{r.expiry || <span style={{ color: 'var(--rose)' }}>{r.rawExpiry ? `can't read “${r.rawExpiry}”` : 'missing'}</span>}</td>
+                  <td className="right">{r.qty || <span style={{ color: 'var(--rose)' }}>missing</span>}</td></tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+        {result?.errors?.length > 0 && <div className="callout rose small"><span>{result.added} added. Not added: {result.errors.map((e) => `row ${e.row}${e.drug ? ` (${e.drug})` : ''} — ${e.error}`).join(' · ')}</span></div>}
+      </div>
+    </Modal>
+  );
+}
+
+/* ---------- From your distributors: their invoice is your stock entry ---------- */
+export function IncomingPurchases({ data, onDone }) {
+  const [run, busy] = useAction();
+  if (!data?.pending?.length) return null;
+  const receive = async (b) => { if (await run(b.id, () => api.post(`/pharmacy/purchases/${b.id}/receive`), `${b.lines.length} item${b.lines.length === 1 ? '' : 's'} from ${b.from} added to your stock`)) onDone?.(); };
+  return (
+    <div className="card mb-2 ph-incoming">
+      <h3 className="row" style={{ gap: 8 }}><Truck size={18} /> From your distributors</h3>
+      <p className="small muted">Invoices billed to you on Nexus — every medicine, batch and expiry is already on them. One tap puts them on your shelf.</p>
+      <div className="stack" style={{ gap: 8 }}>
+        {data.pending.map((b) => (
+          <div key={b.id} className="row between wrap ph-incoming-row" style={{ gap: 8 }}>
+            <span><strong translate="no">{b.from}</strong> <span className="mono tiny muted">{b.billNo}</span>
+              <span className="tiny muted block">{fmtDate(b.createdAt)} · {b.lines.map((l) => `${l.name} × ${l.qty}`).join(', ')}</span></span>
+            <Button size="sm" icon={CheckCircle2} loading={busy === b.id} onClick={() => receive(b)}>Add to my stock</Button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

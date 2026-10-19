@@ -1,13 +1,14 @@
 import { useDeferredValue, useMemo, useState } from 'react';
-import { Search, PackagePlus, Boxes, ShieldAlert, Snowflake, IndianRupee } from 'lucide-react';
+import { Search, PackagePlus, Boxes, ShieldAlert, Snowflake, IndianRupee, ClipboardPaste } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Button, Stat, Pills, fmtNum } from '../../components/ui';
-import { StockTable, AddStockModal, stockLevel, isColdChain } from '../pharmacy/stock';
+import { StockTable, AddStockModal, PasteStockModal, stockLevel, isColdChain } from '../pharmacy/stock';
 
 export default function Stock({ home, reload }) {
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all');
   const [adding, setAdding] = useState(false);
+  const [pasting, setPasting] = useState(false);
   const inv = home.inventory;
   const watch = inv.filter((i) => stockLevel(i).key !== 'ok');
   // Deferred search + memoised list so the (memoised) stock table doesn't re-render on every keystroke.
@@ -24,6 +25,7 @@ export default function Stock({ home, reload }) {
   return (
     <>
       <PageHeader eyebrow={home.warehouse?.district ? `${home.warehouse.district} · ${home.warehouse.state}` : undefined} title="Warehouse stock" subtitle="Safety stock is the line the supply engine never crosses when it pulls from you for another district.">
+        <Button variant="ghost" icon={ClipboardPaste} onClick={() => setPasting(true)}>Paste from Excel</Button>
         <Button icon={PackagePlus} onClick={() => setAdding(true)}>Receive stock (GRN)</Button>
       </PageHeader>
 
@@ -49,6 +51,7 @@ export default function Stock({ home, reload }) {
       <StockTable items={items} onSaved={reload} showSafety unit="units (strips, sachets, kits)" />
       <p className="tiny muted mt-2 row" style={{ gap: 6 }}><IndianRupee size={12} /> Valuation and GRN history sync from your ERP in the full version.</p>
 
+      <PasteStockModal open={pasting} onClose={() => setPasting(false)} onAdded={reload} />
       <AddStockModal open={adding} onClose={() => setAdding(false)} onAdded={reload} defaultSafety={200} title="Receive stock (GRN)" />
     </>
   );

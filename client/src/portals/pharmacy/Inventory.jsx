@@ -1,8 +1,9 @@
 import { useDeferredValue, useMemo, useState } from 'react';
-import { Search, PackagePlus, ScanBarcode, Boxes, AlertTriangle, CalendarX } from 'lucide-react';
+import { Search, PackagePlus, ScanBarcode, Boxes, AlertTriangle, CalendarX, ClipboardPaste } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Button, Pills, Stat, fmtNum } from '../../components/ui';
-import { StockTable, AddStockModal, expiryInfo } from './stock';
+import { StockTable, AddStockModal, PasteStockModal, IncomingPurchases, expiryInfo } from './stock';
+import { useLive } from '../../live';
 import Advisory from './Advisory';
 
 export default function Inventory({ home, reload }) {
@@ -10,6 +11,8 @@ export default function Inventory({ home, reload }) {
   const [filter, setFilter] = useState('all');
   const [adding, setAdding] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [pasting, setPasting] = useState(false);
+  const purchases = useLive('/pharmacy/purchases', ['billing', 'supply', 'pharmacy']);
   // Typing stays instant on a big shelf: the table filters on a deferred copy of the search, and
   // the list is only rebuilt when the stock, filter or search actually change.
   const dq = useDeferredValue(q);
@@ -28,11 +31,13 @@ export default function Inventory({ home, reload }) {
   return (
     <>
       <PageHeader title="Inventory" subtitle="Your live shelf. Doctors see “in stock nearby” from these numbers, so a quick correction saves a wasted trip for a patient.">
+        <Button variant="ghost" icon={ClipboardPaste} onClick={() => setPasting(true)}>Paste from Excel</Button>
         <Button variant="secondary" icon={ScanBarcode} onClick={() => setScanning(true)}>Scan barcode</Button>
         <Button icon={PackagePlus} onClick={() => setAdding(true)}>Add stock</Button>
       </PageHeader>
 
       <Advisory advisories={home.advisories} />
+      <IncomingPurchases data={purchases.data} onDone={() => { purchases.reload(); reload(); }} />
 
       <div className="grid three mb-2">
         <Stat label="Medicines on shelf" icon={Boxes} value={home.inventory.length} sub={`${fmtNum(units)} units in total`} />
@@ -54,6 +59,7 @@ export default function Inventory({ home, reload }) {
 
       <StockTable items={items} onSaved={reload} unit="strips / units" />
 
+      <PasteStockModal open={pasting} onClose={() => setPasting(false)} onAdded={reload} />
       <AddStockModal open={adding || scanning} scanFirst={scanning} onClose={() => { setAdding(false); setScanning(false); }} onAdded={reload} />
     </>
   );

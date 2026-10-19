@@ -5991,9 +5991,12 @@ app.post('/api/prescriptions/:id/dispense', auth, role('pharmacist'), (req, res)
   const NEXT = { sent: ['dispensed'], dispensed: r.fulfilment === 'delivery' ? ['out_for_delivery'] : ['collected'] };
   if (!(NEXT[r.status] || []).includes(status)) return res.status(409).json({ error: status === 'delivered' ? 'Delivery is confirmed by the rider with the patient\'s code.' : 'That step isn\'t possible for this prescription right now.' });
   if (status === 'dispensed') {
-    for (const it of r.items) {
-      const inv = d.inventory.find((i) => i.facilityId === req.user.facilityId && i.drug.toLowerCase() === it.drug.toLowerCase());
-      if (inv) inv.qty = Math.max(0, inv.qty - catalog.unitsFor(it));
+    if (!r.stockTaken) {
+      for (const it of r.items) {
+        const inv = d.inventory.find((i) => i.facilityId === req.user.facilityId && i.drug.toLowerCase() === it.drug.toLowerCase());
+        if (inv) inv.qty = Math.max(0, inv.qty - catalog.unitsFor(it));
+      }
+      r.stockTaken = true;
     }
     r.partial = Boolean(partial);
   }
@@ -6029,19 +6032,114 @@ app.put('/api/inventory/:id', auth, role('pharmacist', 'distributor'), (req, res
   res.json(i);
 });
 
-app.post('/api/inventory', auth, role('pharmacist', 'distributor'), (req, res) => {
-  const b = req.body || {};
+// ---------- No manual medicine entry: shared stock intake, barcode learning, bulk paste, one-tap purchase receipt ----------
+// Stock arrives three ways without typing: (1) a distributor on Nexus already billed it — the chemist taps "Add to
+// my stock"; (2) a pack is scanned — batch/expiry come from the GS1 code and the medicine NAME from Nexus's barcode
+// book, learned the first time any verified store names that barcode; (3) rows pasted straight from Excel.
+const GTIN_RE = /^\d{8,14}$/;
+const normGtin = (g) => { const s = String(g || '').replace(/\D/g, ''); return GTIN_RE.test(s) ? s.padStart(14, '0') : null; };
+const gtinName = (g) => { const k = normGtin(g); return k ? db().gtinMap.find((x) => x.gtin === k)?.drug || null : null; };
+// Learn barcode → medicine name from a verified facility's own entry (first good answer wins; a store can't
+// overwrite another's mapping, so one typo can't mislabel a product for everyone).
+function learnGtin(d, gtin, drug, fac) {
+  const k = normGtin(gtin);
+  if (!k || !drug || !fac?.verified) return;
+  const hit = d.gtinMap.find((x) => x.gtin === k);
+  if (hit) { if (hit.drug.toLowerCase() === drug.toLowerCase()) hit.confirmations = (hit.confirmations || 1) + 1; return; }
+  d.gtinMap.push({ gtin: k, drug, by: fac.id, at: nowIso(), confirmations: 1 });
+}
+const validStockRow = (b) => {
   const drug = clean(b.drug, 80);
   const qty = parseInt(b.qty, 10);
-  if (drug.length < 2 || b.qty === undefined) return res.status(400).json({ error: 'Drug and quantity are required.' });
-  if (!Number.isInteger(qty) || qty < 0 || qty > 10000000) return res.status(400).json({ error: 'Enter a valid quantity.' });
+  const expiry = /^\d{4}-\d{2}-\d{2}$/.test(String(b.expiry || '')) && Number.isFinite(Date.parse(b.expiry)) ? b.expiry : null;
+  if (drug.length < 2) return { error: 'Medicine name is missing.' };
+  if (!Number.isInteger(qty) || qty < 0 || qty > 10000000) return { error: 'Quantity must be a whole number.' };
+  if (!expiry) return { error: 'Expiry date (YYYY-MM-DD) as printed on the pack is required.' };
+  return { row: { drug, qty, expiry, batch: clean(b.batch, 30) || null, gtin: normGtin(b.gtin), safetyStock: b.safetyStock === undefined || b.safetyStock === '' ? null : Math.max(0, Math.min(1e6, parseInt(b.safetyStock, 10) || 0)) } };
+};
+// Add to a shelf: same medicine + batch + expiry tops up the existing line instead of creating a duplicate.
+function addStock(d, fid, row) {
+  const same = d.inventory.find((i) => i.facilityId === fid && sameDrug(i.drug, row.drug) && (i.batch || null) === (row.batch || null) && i.expiry === row.expiry);
+  if (same) {
+    same.qty += row.qty; same.updatedAt = nowIso();
+    if (row.gtin && !same.gtin) same.gtin = row.gtin;
+    if (row.safetyStock != null) same.safetyStock = row.safetyStock;
+    return same;
+  }
+  const i = { id: store.id('inv'), facilityId: fid, drug: row.drug, batch: row.batch || null, expiry: row.expiry, qty: row.qty, safetyStock: row.safetyStock ?? 10, ...(row.gtin ? { gtin: row.gtin } : {}), updatedAt: nowIso() };
+  d.inventory.push(i);
+  if (!d.drugMaster.includes(row.drug)) d.drugMaster.push(row.drug);
+  return i;
+}
+
+// Scan → name. Answers only for staff who stock medicines; unknown barcodes say so (the store types it once).
+app.get('/api/catalog/gtin/:gtin', auth, role('pharmacist', 'distributor'), (req, res) => {
+  const k = normGtin(req.params.gtin);
+  if (!k) return res.status(400).json({ error: 'That isn\'t a product barcode.' });
+  const own = db().inventory.find((i) => i.facilityId === req.user.facilityId && i.gtin === k);
+  const drug = own?.drug || gtinName(k);
+  res.json({ gtin: k, drug: drug || null, known: Boolean(drug) });
+});
+
+// Paste from Excel: up to 300 rows in one go; each row is checked on its own so one bad line doesn't sink the rest.
+app.post('/api/inventory/bulk', auth, role('pharmacist', 'distributor'), (req, res) => {
+  const d = db();
+  const fac = d.facilities.find((f) => f.id === req.user.facilityId);
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows.filter((r) => r && typeof r === 'object').slice(0, 300) : [];
+  if (!rows.length) return res.status(400).json({ error: 'Nothing to add — paste at least one row.' });
+  const added = []; const errors = [];
+  rows.forEach((r, n) => {
+    const { row, error } = validStockRow(r);
+    if (error) { errors.push({ row: n + 1, drug: clean(r.drug, 80) || null, error }); return; }
+    const i = addStock(d, fac.id, row);
+    if (row.gtin) learnGtin(d, row.gtin, row.drug, fac);
+    added.push({ id: i.id, drug: i.drug, batch: i.batch, qty: row.qty });
+  });
+  if (added.length) {
+    audit(req.user, 'stock_bulk_added', null, 'inventory', `${added.length} rows`);
+    touchFacility(fac.id);
+    store.save();
+    broadcast('pharmacy', 'supply');
+  }
+  res.json({ added: added.length, errors });
+});
+
+// Medicines bought from a distributor on Nexus: their B2B invoice already has every line, batch and expiry.
+app.get('/api/pharmacy/purchases', auth, role('pharmacist'), (req, res) => {
+  const fid = req.user.facilityId;
+  const list = db().bills.filter((b) => b.type === 'warehouse' && b.customer?.facilityId === fid && b.status !== 'cancelled')
+    .slice(0, 50).map((b) => ({ id: b.id, billNo: b.billNo, from: facilityName(b.facilityId), createdAt: b.createdAt, total: b.totals.total, due: b.due, receivedAt: b.receivedAt || null, lines: b.lines.map((l) => ({ name: l.name, batch: l.batch, expiry: l.expiry, qty: l.qty })) }));
+  res.json({ pending: list.filter((b) => !b.receivedAt), received: list.filter((b) => b.receivedAt).slice(0, 10) });
+});
+app.post('/api/pharmacy/purchases/:id/receive', auth, role('pharmacist'), (req, res) => {
+  const d = db();
+  const fac = d.facilities.find((f) => f.id === req.user.facilityId);
+  const bill = d.bills.find((b) => b.id === req.params.id && b.type === 'warehouse' && b.customer?.facilityId === fac.id);
+  if (!bill || bill.status === 'cancelled') return res.status(404).json({ error: 'Invoice not found.' });
+  if (bill.receivedAt) return res.status(409).json({ error: 'This invoice is already in your stock.' });
+  for (const l of bill.lines) {
+    if (!l.expiry) continue; // a line without an expiry can't go on a shelf; the store adds it by hand
+    const src = d.inventory.find((i) => i.id === l.inventoryId);
+    addStock(d, fac.id, { drug: l.name, batch: l.batch || null, expiry: l.expiry, qty: l.qty, gtin: src?.gtin || null, safetyStock: null });
+  }
+  Object.assign(bill, { receivedAt: nowIso(), receivedBy: req.user.id });
+  audit(req.user, 'purchase_received', null, 'bill', `${bill.billNo} from ${facilityName(bill.facilityId)}`);
+  touchFacility(fac.id, bill.facilityId);
+  store.save();
+  broadcast('pharmacy', 'supply', 'billing');
+  res.json({ ok: true, lines: bill.lines.length });
+});
+
+app.post('/api/inventory', auth, role('pharmacist', 'distributor'), (req, res) => {
+  const b = req.body || {};
+  if (b.qty === undefined) return res.status(400).json({ error: 'Drug and quantity are required.' });
   // Batch and expiry are what's printed on the pack — never invented (a made-up expiry would let expired
   // stock be sold, and a made-up batch would "verify" in the medicine authenticity check).
-  const expiry = /^\d{4}-\d{2}-\d{2}$/.test(String(b.expiry || '')) && Number.isFinite(Date.parse(b.expiry)) ? b.expiry : null;
-  if (!expiry) return res.status(400).json({ error: 'Add the expiry date printed on the pack.' });
-  const i = { id: store.id('inv'), facilityId: req.user.facilityId, drug, batch: clean(b.batch, 30) || null, expiry, qty, safetyStock: Math.max(0, Math.min(1e6, parseInt(b.safetyStock, 10) || 10)), updatedAt: nowIso() };
-  db().inventory.push(i);
-  if (!db().drugMaster.includes(drug)) db().drugMaster.push(drug);
+  const { row, error } = validStockRow({ ...b, safetyStock: b.safetyStock ?? 10 });
+  if (error) return res.status(400).json({ error: /Expiry/.test(error) ? 'Add the expiry date printed on the pack.' : error });
+  const d = db();
+  const i = addStock(d, req.user.facilityId, row);
+  if (row.gtin) learnGtin(d, row.gtin, row.drug, d.facilities.find((f) => f.id === req.user.facilityId));
   store.save();
   touchFacility(req.user.facilityId); // co-workers at this facility see it live too
   broadcast('pharmacy', 'supply');
@@ -6468,8 +6566,11 @@ app.get('/api/billing/setup', auth, role('pharmacist', 'distributor', 'lab_tech'
     ...base,
     stock: d.inventory.filter((i) => i.facilityId === f.id && i.qty > 0)
       .sort((a, b) => a.drug.localeCompare(b.drug) || String(a.expiry || '').localeCompare(String(b.expiry || '')))
-      .map((i) => ({ inventoryId: i.id, drug: i.drug, batch: i.batch || '', expiry: i.expiry || '', qty: i.qty, unit: catalog.priceOf(i.drug)?.unit || 'unit', mrp: catalog.priceOf(i.drug)?.mrp ?? null, price: defaultPrice(f, i.drug), gstRate: catalog.gstOf(i.drug).rate })),
+      .map((i) => ({ inventoryId: i.id, gtin: i.gtin || null, drug: i.drug, batch: i.batch || '', expiry: i.expiry || '', qty: i.qty, unit: catalog.priceOf(i.drug)?.unit || 'unit', mrp: catalog.priceOf(i.drug)?.mrp ?? null, price: defaultPrice(f, i.drug), gstRate: catalog.gstOf(i.drug).rate })),
     customers: f.type === 'warehouse' ? d.facilities.filter((x) => x.type === 'pharmacy' && x.verified).map((x) => ({ facilityId: x.id, name: x.name, district: x.district, state: x.state, gstin: x.gstin || '' })) : [],
+    // E-prescriptions sent to this store and not billed yet — one tap fills the bill from stock.
+    prescriptions: f.type === 'pharmacy' ? d.prescriptions.filter((r) => r.pharmacyId === f.id && ['sent', 'dispensed'].includes(r.status) && !r.billId).slice(-30).reverse()
+      .map((r) => { const p = patientById(r.patientId); return { rxId: r.id, patientName: p?.name || 'Patient', phone: userById(p?.userId)?.phone || '', createdAt: r.createdAt, stockTaken: Boolean(r.stockTaken), items: r.items.map((it) => ({ drug: it.drug, units: catalog.unitsFor(it) })) }; }) : [],
   });
 });
 
@@ -6518,6 +6619,10 @@ app.post('/api/billing/bills', auth, role('pharmacist', 'distributor', 'lab_tech
   const lines = [];
   const take = new Map(); // inventoryId → units taken across lines
   let labOrder = null;
+  const rx = f.type === 'pharmacy' && b.rxId ? d.prescriptions.find((r) => r.id === b.rxId && r.pharmacyId === f.id) : null;
+  if (b.rxId && !rx) return res.status(404).json({ error: 'Prescription not found at your store.' });
+  if (rx?.billId) return res.status(409).json({ error: 'This prescription is already billed.' });
+  const stockAlreadyTaken = Boolean(rx?.stockTaken);
   for (const l of raw) {
     const qty = parseInt(l.qty, 10);
     const discountPct = Math.min(100, Math.max(0, Number(l.discountPct) || 0));
@@ -6545,7 +6650,7 @@ app.post('/api/billing/bills', auth, role('pharmacist', 'distributor', 'lab_tech
     if (!inv) return res.status(400).json({ error: 'Each medicine must come from your stock on Nexus — add it to stock first.' });
     if (!Number.isInteger(qty) || qty < 1) return res.status(400).json({ error: `Enter a quantity for ${inv.drug}.` });
     const already = take.get(inv.id) || 0;
-    if (already + qty > inv.qty) return res.status(409).json({ error: `Only ${inv.qty - already} of ${inv.drug} (batch ${inv.batch || '—'}) in stock.` });
+    if (!stockAlreadyTaken && already + qty > inv.qty) return res.status(409).json({ error: `Only ${inv.qty - already} of ${inv.drug} (batch ${inv.batch || '—'}) in stock.` });
     take.set(inv.id, already + qty);
     const pr = catalog.priceOf(inv.drug);
     const price = l.price !== undefined && l.price !== '' ? r2(l.price) : defaultPrice(f, inv.drug);
@@ -6566,16 +6671,17 @@ app.post('/api/billing/bills', auth, role('pharmacist', 'distributor', 'lab_tech
   const dueDays = paidNow < totals.total ? Math.min(180, Math.max(0, parseInt(b.dueDays, 10) || (f.type === 'warehouse' ? 30 : 0))) : 0;
 
   // All checks passed — now change stock and write the bill.
-  for (const [id, n] of take) { const inv = d.inventory.find((i) => i.id === id); inv.qty -= n; inv.updatedAt = nowIso(); }
+  if (!stockAlreadyTaken) for (const [id, n] of take) { const inv = d.inventory.find((i) => i.id === id); inv.qty -= n; inv.updatedAt = nowIso(); }
   const at = nowIso();
   const payments = paidNow > 0 ? [{ id: store.id('bp'), at, amount: paidNow, mode, ref: clean(b.payment?.ref, 60) || null, by: req.user.id }] : [];
   const bill = {
     id: store.id('bill'), facilityId: f.id, type: f.type, billNo: nextBillNo(f), customer, lines, totals, payments,
     ...billing.settle(totals.total, payments), dueDate: dueDays ? new Date(Date.now() + dueDays * 86400000).toISOString().slice(0, 10) : null,
-    labOrderId: labOrder?.id || null, notes: clean(b.notes, 300) || null, createdBy: req.user.id, createdByName: req.user.name, createdAt: at,
+    labOrderId: labOrder?.id || null, rxId: rx?.id || null, stockFromRx: stockAlreadyTaken || undefined, notes: clean(b.notes, 300) || null, createdBy: req.user.id, createdByName: req.user.name, createdAt: at,
   };
   d.bills.unshift(bill);
   if (labOrder) Object.assign(labOrder.booking, { balancePaid: true, balancePaidAt: at, balanceBillId: bill.id });
+  if (rx) Object.assign(rx, { billId: bill.id, stockTaken: true });
   audit(req.user, 'bill_created', labOrder?.patientId || null, 'bill', `${bill.billNo} · ₹${totals.total} · ${bill.status}`);
   touchFacility(f.id);
   if (linked) touchFacility(linked.id);
@@ -6638,8 +6744,9 @@ app.post('/api/billing/bills/:id/cancel', auth, role('pharmacist', 'distributor'
   if (bill.status === 'cancelled') return res.json(billView(bill));
   const reason = clean(req.body?.reason, 200);
   if (reason.length < 3) return res.status(400).json({ error: 'Say why the bill is being cancelled.' });
+  if (bill.rxId) { const rxb = d.prescriptions.find((r) => r.id === bill.rxId); if (rxb?.billId === bill.id) { rxb.billId = null; if (!bill.stockFromRx && rxb.status === 'sent') rxb.stockTaken = false; } }
   for (const l of bill.lines) {
-    if (!l.inventoryId) continue;
+    if (!l.inventoryId || bill.stockFromRx) continue;
     const inv = d.inventory.find((i) => i.id === l.inventoryId);
     if (inv) { inv.qty += l.qty; inv.updatedAt = nowIso(); }
     else d.inventory.push({ id: l.inventoryId, facilityId: f.id, drug: l.name, batch: l.batch || null, expiry: l.expiry || null, qty: l.qty, safetyStock: 10, updatedAt: nowIso() });

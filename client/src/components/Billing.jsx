@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Receipt, Plus, Trash2, IndianRupee, Printer, Ban, Wallet, Settings2, Download, AlertTriangle, Search } from 'lucide-react';
+import { Receipt, Plus, Trash2, IndianRupee, Printer, Ban, Wallet, Settings2, Download, AlertTriangle, Search, ScanBarcode, FileText } from 'lucide-react';
+import BarcodeScanner, { canScan, packFieldsFrom } from './BarcodeScanner';
 import { api } from '../api';
 import { useLive } from '../live';
 import { PageHeader } from './PortalLayout';
@@ -40,6 +41,9 @@ function NewBill({ setup, onClose, onDone }) {
   const [dueDays, setDueDays] = useState(type === 'warehouse' ? 30 : 7);
   const [notes, setNotes] = useState('');
   const [q, setQ] = useState('');
+  const [rxId, setRxId] = useState('');
+  const [scanning, setScanning] = useState(false);
+  const [scanMsg, setScanMsg] = useState('');
 
   // What can go on a bill: stock rows (pharmacy / warehouse) or tests, packages and booked balances (lab).
   const options = useMemo(() => {
@@ -63,6 +67,46 @@ function NewBill({ setup, onClose, onDone }) {
   };
   const setLine = (key, k, v) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, [k]: v } : l)));
 
+  // Stock rows for a medicine, earliest expiry first (first-expiry-first-out).
+  const rowsFor = (drug) => (setup.stock || []).filter((r) => r.drug.toLowerCase() === String(drug).toLowerCase()).sort((a, b) => String(a.expiry).localeCompare(String(b.expiry)));
+  const lineFromRow = (r, qty) => ({ key: r.inventoryId, discountPct: 0, inventoryId: r.inventoryId, name: r.drug, batch: r.batch, expiry: r.expiry, max: r.qty, mrp: r.mrp, gstRate: r.gstRate, unit: r.unit, qty, price: r.price ?? '' });
+
+  // An e-prescription → the whole bill: each medicine from the earliest-expiring batches, quantity from the dose.
+  const loadRx = (id) => {
+    setRxId(id);
+    const rx = (setup.prescriptions || []).find((x) => x.rxId === id);
+    if (!rx) return;
+    const out = []; const missing = [];
+    for (const it of rx.items) {
+      let need = it.units;
+      for (const r of rowsFor(it.drug)) {
+        if (need <= 0) break;
+        const take = rx.stockTaken ? need : Math.min(need, r.qty); // already dispensed → the stock is already off the shelf
+        if (take > 0) { out.push(lineFromRow(r, take)); need -= take; }
+      }
+      if (need > 0) missing.push(`${it.drug}${need < it.units ? ` (${need} short)` : ''}`);
+    }
+    setLines(out);
+    setCustomer((c) => ({ ...c, name: rx.patientName, phone: rx.phone || c.phone }));
+    setScanMsg(missing.length ? `Not in your stock: ${missing.join(', ')}.` : `Loaded ${rx.items.length} medicine${rx.items.length === 1 ? '' : 's'} from the prescription.`);
+  };
+
+  // Scan a pack at the counter → that medicine goes on the bill (same batch if the code carries it); scan again for +1.
+  const onScan = async (raw) => {
+    setScanning(false);
+    const f = packFieldsFrom(raw);
+    const gtin = f.gtin || (/^\d{8,14}$/.test(String(raw).trim()) ? String(raw).trim() : '');
+    const g14 = gtin ? gtin.padStart(14, '0') : '';
+    let rows = (setup.stock || []).filter((r) => g14 && r.gtin === g14);
+    if (!rows.length && gtin) { try { const name = (await api.get(`/catalog/gtin/${encodeURIComponent(gtin)}`)).drug; if (name) rows = rowsFor(name); } catch { /* unknown barcode */ } }
+    if (f.batch) { const same = rows.filter((r) => r.batch === f.batch); if (same.length) rows = same; }
+    rows = rows.filter((r) => r.qty > 0).sort((a, b) => String(a.expiry).localeCompare(String(b.expiry)));
+    const r = rows[0];
+    if (!r) { setScanMsg('That pack isn\u2019t in your stock on Nexus yet — add it once under Inventory (scan there), then it scans straight onto bills.'); return; }
+    setLines((ls) => (ls.some((l) => l.key === r.inventoryId) ? ls.map((l) => (l.key === r.inventoryId ? { ...l, qty: Math.min(Number(l.qty) + 1, r.qty) } : l)) : [...ls, lineFromRow(r, 1)]));
+    setScanMsg(`Added ${r.drug} · batch ${r.batch || '—'}.`);
+  };
+
   // A preview only (the server decides): MRP-inclusive for a pharmacy, + GST for a warehouse, exempt for a lab.
   const preview = useMemo(() => {
     let total = 0; let gst = 0;
@@ -77,7 +121,7 @@ function NewBill({ setup, onClose, onDone }) {
   const customerOut = type === 'warehouse' && customer.facilityId ? { facilityId: customer.facilityId } : { name: customer.name, phone: customer.phone, gstin: customer.gstin, state: customer.state };
   const save = async () => {
     const body = {
-      customer: customerOut, notes, dueDays,
+      customer: customerOut, notes, dueDays, rxId: rxId || undefined,
       lines: lines.map((l) => (l.labOrderId ? { labOrderId: l.labOrderId } : { inventoryId: l.inventoryId, code: l.code, packageId: l.packageId, qty: Number(l.qty), price: l.price === '' ? undefined : Number(l.price), discountPct: Number(l.discountPct) || 0 })),
       payment: { mode, amount: mode === 'credit' ? 0 : amount === '' ? undefined : Number(amount), ref },
     };
@@ -91,6 +135,20 @@ function NewBill({ setup, onClose, onDone }) {
     <Modal open wide onClose={onClose} title={TITLE[type].newLabel} subtitle={isLab ? 'Tests are exempt from GST — this prints as a bill of supply.' : type === 'warehouse' ? 'Trade prices are before GST; GST is added (IGST for another state).' : 'Prices are MRP-inclusive of GST, as on the pack. You can sell below MRP, never above.'}
       footer={<><span className="grow small"><strong>{inr(preview.total)}</strong>{preview.gst > 0 ? <span className="muted"> · GST {inr(preview.gst)}</span> : null}</span><Button variant="ghost" onClick={onClose}>Cancel</Button><Button icon={Receipt} loading={busy === 'save'} disabled={!lines.length || needsName} onClick={save}>Save &amp; print</Button></>}>
       <div className="stack">
+        {type === 'pharmacy' && (setup.prescriptions?.length > 0 || canScan()) && (
+          <div className="bl-quick">
+            {setup.prescriptions?.length > 0 && (
+              <Field label={<span className="row" style={{ gap: 6 }}><FileText size={14} /> Bill an e-prescription</span>}>
+                <select className="select" value={rxId} onChange={(e) => loadRx(e.target.value)}>
+                  <option value="">Choose a prescription ({setup.prescriptions.length})…</option>
+                  {setup.prescriptions.map((r) => <option key={r.rxId} value={r.rxId}>{r.patientName} · {r.items.map((i) => i.drug).join(', ')}</option>)}
+                </select>
+              </Field>
+            )}
+            {canScan() && <Button type="button" variant="secondary" icon={ScanBarcode} onClick={() => setScanning(true)}>Scan pack</Button>}
+          </div>
+        )}
+        {scanMsg && <div className="callout small"><span>{scanMsg}</span></div>}
         <Field label={isLab ? 'Add a test, package or booked balance' : 'Add a medicine from your stock'}>
           <div className="bl-picker">
             <div className="input-wrap"><Search /><input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder={isLab ? 'Search tests…' : 'Search by name…'} aria-label="Search items" /></div>
@@ -158,6 +216,7 @@ function NewBill({ setup, onClose, onDone }) {
           {(mode === 'upi' || mode === 'card') && <Field label="Reference (optional)" hint="UPI / card transaction ID."><input className="input mono" value={ref} onChange={(e) => setRef(e.target.value)} /></Field>}
         </div>
         <Field label="Note on the bill (optional)"><input className="input" maxLength={300} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
+        {type !== 'lab' && <BarcodeScanner open={scanning} onClose={() => setScanning(false)} onResult={onScan} title="Scan the pack" subtitle="The square (DataMatrix) or long barcode on the strip or carton." />}
         {needsName && lines.length > 0 && <p className="tiny" style={{ color: 'var(--rose)' }}><AlertTriangle size={12} style={{ verticalAlign: '-2px' }} /> {type === 'warehouse' ? 'Choose the chemist or enter the buyer’s name.' : 'Add the customer’s name to leave an amount due.'}</p>}
       </div>
     </Modal>
