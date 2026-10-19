@@ -22,6 +22,7 @@ const { availabilityOf, isEClinicDoctor, timingsOf, DAYS: WEEK_DAYS } = require(
 const catalog = require('./catalog');
 const payments = require('./payments');
 const careplans = require('./careplans');
+const billing = require('./billing');
 const geo = require('./geo');
 const automation = require('./automation');
 const aadhaarQr = require('./aadhaarQr');
@@ -3863,6 +3864,7 @@ app.get('/api/doctor/home', auth, role('doctor'), (req, res) => {
     stats2: doctorStats(doc),
     clinicVisits, // upcoming visits for doctors listed at my clinic who have no login yet
     completed: mine.filter((c) => c.status === 'completed').map(consultCard).sort((a, b) => (a.completedAt < b.completedAt ? 1 : -1)).slice(0, 20),
+    feeRates: { consult: PLATFORM_FEE_RATE, carePlan: CARE_PLAN_FEE_RATE },
     week: doctorWeek(mine, doc), // [{ date: 'YYYY-MM-DD', consults, earnings }] × 7, oldest first, today last
     stats: {
       today: mine.filter((c) => c.status === 'completed' && c.completedAt && istDay(c.completedAt) === today).length,
@@ -4142,6 +4144,8 @@ app.delete('/api/doctor/rx-templates/:id', auth, role('doctor'), (req, res) => {
 // Same earnings rule as completion/doctorWeek (kiosk → the doctor's fee, otherwise what the patient paid). The
 // 10% platform fee is the payout rule shown on the Earnings page; TDS is the doctor's CA's job, so not computed.
 const PLATFORM_FEE_RATE = 0.1;
+// Care plans: Nexus does the month-long work (reminders, tracking, alerts), so its share is larger.
+const CARE_PLAN_FEE_RATE = 0.25;
 app.get('/api/doctor/statement', auth, role('doctor'), (req, res) => {
   const doc = doctorFor(req.user);
   const month = String(req.query.month || '');
@@ -4168,13 +4172,15 @@ app.get('/api/doctor/statement', auth, role('doctor'), (req, res) => {
   const consultFees = catalog.round(days.reduce((s, r) => s + r.fees, 0));
   const planFees = catalog.round(days.reduce((s, r) => s + r.planFees, 0));
   const gross = catalog.round(consultFees + planFees);
-  const platformFee = catalog.round(gross * PLATFORM_FEE_RATE);
+  const consultPlatformFee = catalog.round(consultFees * PLATFORM_FEE_RATE);
+  const planPlatformFee = catalog.round(planFees * CARE_PLAN_FEE_RATE);
+  const platformFee = consultPlatformFee + planPlatformFee;
   const fac = doc.facilityId ? db().facilities.find((f) => f.id === doc.facilityId) : null;
   res.json({
     month, generatedAt: nowIso(),
     doctor: { name: doc.name, regNo: doc.regNo, specialty: doc.specialty, qualification: doc.qualification, fee: doc.fee, affiliation: isEClinicDoctor(doc) ? 'Nexus Healthcare E-Clinics' : fac?.verified ? fac.name : null },
     days: days.map((r) => ({ ...r, fees: catalog.round(r.fees), planFees: catalog.round(r.planFees) })),
-    totals: { consults: days.reduce((s, r) => s + r.consults, 0), kiosk: days.reduce((s, r) => s + r.kiosk, 0), online: days.reduce((s, r) => s + r.online, 0), plans: days.reduce((s, r) => s + r.plans, 0), consultFees, planFees, gross, platformFeeRate: PLATFORM_FEE_RATE, platformFee, payout: catalog.round(gross - platformFee) },
+    totals: { consults: days.reduce((s, r) => s + r.consults, 0), kiosk: days.reduce((s, r) => s + r.kiosk, 0), online: days.reduce((s, r) => s + r.online, 0), plans: days.reduce((s, r) => s + r.plans, 0), consultFees, planFees, gross, platformFeeRate: PLATFORM_FEE_RATE, carePlanFeeRate: CARE_PLAN_FEE_RATE, consultPlatformFee, planPlatformFee, platformFee, payout: catalog.round(gross - platformFee) },
   });
 });
 
@@ -6412,6 +6418,240 @@ app.post('/api/deliveries/:id/status', auth, role('delivery'), async (req, res) 
   broadcast('dispatch', 'prescriptions', 'pharmacy', 'supply');
   const { otp: _code, ...job } = del;
   res.json(job);
+});
+
+// ---------- Partner billing: pharmacy counter sales, warehouse B2B invoices, lab bills (maths in billing.js) ----------
+// Every bill is a real sale from the partner's own records: medicine lines come out of their Nexus stock (and go
+// back if the bill is cancelled), lab lines from their test list / packages / a booked order's balance. Numbers
+// continue the facility's own financial-year series (a pharmacy shares it with its medicine-order invoices).
+const BILLING_TYPE = { pharmacist: 'pharmacy', distributor: 'warehouse', lab_tech: 'lab' };
+const BILL_LINES_MAX = 100;
+const GSTIN_RE = /^[0-9]{2}[A-Z0-9]{13}$/;
+const billingFacility = (req) => {
+  const f = db().facilities.find((x) => x.id === req.user.facilityId);
+  return f && f.type === BILLING_TYPE[req.user.role] ? f : null;
+};
+const nextBillNo = (f) => {
+  const fy = fyOf(Date.now());
+  f.invoiceSeq = { ...(f.invoiceSeq || {}), [fy]: ((f.invoiceSeq || {})[fy] || 0) + 1 };
+  return `${billing.PREFIX[f.type]}/${fy}/${String(f.invoiceSeq[fy]).padStart(5, '0')}`;
+};
+// Default selling price per unit: what Nexus already quotes patients for a pharmacy (MRP × the store's factor);
+// for a warehouse a suggested trade price (70% of MRP, before GST) the distributor edits to their own.
+const defaultPrice = (f, drug) => {
+  const pr = catalog.priceOf(drug);
+  if (!pr) return null;
+  return f.type === 'warehouse' ? r2(pr.mrp * 0.7) : r2(pr.mrp * (f.priceFactor || 1));
+};
+const labTestPrice = (lab, code) => { const t = catalog.TESTS[code]; return t ? catalog.round(t.base * (lab.priceFactor || 1)) : null; };
+const labOrderBalance = (o) => (o.booking && o.booking.balance > 0 && !o.booking.balancePaid && !['cancelled'].includes(o.status) ? o.booking.balance : 0);
+const billView = (b) => b;
+
+app.get('/api/billing/setup', auth, role('pharmacist', 'distributor', 'lab_tech'), (req, res) => {
+  const d = db();
+  const f = billingFacility(req);
+  if (!f) return res.status(403).json({ error: 'Billing is for pharmacies, warehouses and labs.' });
+  const base = {
+    facility: { id: f.id, type: f.type, name: f.name, address: f.address || '', district: f.district || '', state: f.state || '', phone: f.phone || '', gstin: f.gstin || '', billTerms: f.billTerms || '', licenceNo: f.licenceNo || '' },
+    pricing: billing.PRICING[f.type], prefix: billing.PREFIX[f.type], modes: billing.MODES,
+  };
+  if (f.type === 'lab') {
+    const codes = Array.isArray(f.tests) && f.tests.length ? f.tests : Object.keys(catalog.TESTS);
+    return res.json({
+      ...base,
+      tests: codes.filter((c) => catalog.TESTS[c]).map((c) => ({ code: c, name: catalog.TESTS[c].name, price: labTestPrice(f, c) })),
+      packages: (f.packages || []).filter((p) => p.active !== false).map((p) => ({ id: p.id, name: p.name, price: p.price, codes: p.codes })),
+      balances: d.labOrders.filter((o) => o.labId === f.id && labOrderBalance(o)).map((o) => ({ labOrderId: o.id, patientName: patientById(o.patientId)?.name || 'Patient', tests: o.tests.map((t) => t.name).join(', '), balance: o.booking.balance, bookedAt: o.booking.bookedAt })),
+    });
+  }
+  res.json({
+    ...base,
+    stock: d.inventory.filter((i) => i.facilityId === f.id && i.qty > 0)
+      .sort((a, b) => a.drug.localeCompare(b.drug) || String(a.expiry || '').localeCompare(String(b.expiry || '')))
+      .map((i) => ({ inventoryId: i.id, drug: i.drug, batch: i.batch || '', expiry: i.expiry || '', qty: i.qty, unit: catalog.priceOf(i.drug)?.unit || 'unit', mrp: catalog.priceOf(i.drug)?.mrp ?? null, price: defaultPrice(f, i.drug), gstRate: catalog.gstOf(i.drug).rate })),
+    customers: f.type === 'warehouse' ? d.facilities.filter((x) => x.type === 'pharmacy' && x.verified).map((x) => ({ facilityId: x.id, name: x.name, district: x.district, state: x.state, gstin: x.gstin || '' })) : [],
+  });
+});
+
+// Billing details that appear on every bill. A warehouse has no other profile screen, so it also sets its address.
+app.put('/api/billing/settings', auth, role('pharmacist', 'distributor', 'lab_tech'), (req, res) => {
+  const f = billingFacility(req);
+  if (!f) return res.status(403).json({ error: 'Billing is for pharmacies, warehouses and labs.' });
+  const b = req.body || {};
+  if (b.gstin !== undefined) {
+    const g = clean(b.gstin, 30).replace(/\s+/g, '').toUpperCase();
+    if (g && !GSTIN_RE.test(g)) return res.status(400).json({ error: 'GSTIN should be 15 characters — 2 digits, then 13 letters or digits.' });
+    f.gstin = g || undefined;
+  }
+  if (b.billTerms !== undefined) f.billTerms = clean(b.billTerms, 300) || undefined;
+  if (f.type === 'warehouse') {
+    if (b.address !== undefined) f.address = clean(b.address, 240) || f.address;
+    if (b.phone !== undefined) f.phone = clean(b.phone, 20) || f.phone;
+  }
+  audit(req.user, 'billing_settings', null, 'facility', f.name);
+  touchFacility(f.id);
+  store.save();
+  broadcast('billing');
+  res.json({ ok: true, gstin: f.gstin || '', billTerms: f.billTerms || '', address: f.address || '', phone: f.phone || '' });
+});
+
+app.post('/api/billing/bills', auth, role('pharmacist', 'distributor', 'lab_tech'), (req, res) => {
+  const d = db();
+  const f = billingFacility(req);
+  if (!f) return res.status(403).json({ error: 'Billing is for pharmacies, warehouses and labs.' });
+  const b = req.body || {};
+  const pricing = billing.PRICING[f.type];
+  const raw = Array.isArray(b.lines) ? b.lines.filter((l) => l && typeof l === 'object') : [];
+  if (!raw.length) return res.status(400).json({ error: 'Add at least one item.' });
+  if (raw.length > BILL_LINES_MAX) return res.status(400).json({ error: `A bill can have up to ${BILL_LINES_MAX} lines.` });
+
+  // Customer: a Nexus chemist (warehouse) or anyone by name; walk-ins can stay nameless for cash/UPI/card.
+  const c = b.customer && typeof b.customer === 'object' ? b.customer : {};
+  const linked = f.type === 'warehouse' && c.facilityId ? d.facilities.find((x) => x.id === c.facilityId && x.type === 'pharmacy') : null;
+  const customer = linked
+    ? { name: linked.name, facilityId: linked.id, gstin: linked.gstin || '', state: linked.state || '', address: [linked.address, linked.district].filter(Boolean).join(', '), phone: linked.phone || '' }
+    : { name: clean(c.name, 120), phone: clean(c.phone, 20), gstin: clean(c.gstin, 30).replace(/\s+/g, '').toUpperCase(), state: clean(c.state, 80), address: clean(c.address, 240) };
+  if (customer.gstin && !GSTIN_RE.test(customer.gstin)) return res.status(400).json({ error: 'The customer GSTIN should be 15 characters.' });
+  if (f.type === 'warehouse' && !customer.name) return res.status(400).json({ error: 'Choose the chemist or enter the buyer\'s name.' });
+
+  // Lines → validated against this facility's own stock / tests, then priced.
+  const lines = [];
+  const take = new Map(); // inventoryId → units taken across lines
+  let labOrder = null;
+  for (const l of raw) {
+    const qty = parseInt(l.qty, 10);
+    const discountPct = Math.min(100, Math.max(0, Number(l.discountPct) || 0));
+    if (f.type === 'lab') {
+      if (l.labOrderId) {
+        const o = d.labOrders.find((x) => x.id === l.labOrderId && x.labId === f.id);
+        const bal = o && labOrderBalance(o);
+        if (!bal) return res.status(409).json({ error: 'That booking has no balance left to collect.' });
+        if (labOrder) return res.status(400).json({ error: 'Collect one booking\'s balance per bill.' });
+        labOrder = o;
+        lines.push({ name: `Balance · ${o.tests.map((t) => t.name).join(', ')}`.slice(0, 160), ref: o.id, qty: 1, unit: 'booking', price: bal, discountPct: 0, ...billing.lineMoney({ qty: 1, price: bal }, pricing) });
+        continue;
+      }
+      if (!Number.isInteger(qty) || qty < 1 || qty > 50) return res.status(400).json({ error: 'Enter how many of each test (1–50).' });
+      const pkg = l.packageId && (f.packages || []).find((p) => p.id === l.packageId && p.active !== false);
+      const code = !pkg && l.code && catalog.TESTS[l.code] ? l.code : null;
+      if (!pkg && !code) return res.status(400).json({ error: 'Choose a test or package from your list.' });
+      const listPrice = pkg ? pkg.price : labTestPrice(f, code);
+      const price = l.price !== undefined && l.price !== '' ? r2(l.price) : listPrice;
+      if (!(price >= 0) || price > 100000) return res.status(400).json({ error: 'Enter a valid price.' });
+      lines.push({ name: pkg ? pkg.name : catalog.TESTS[code].name, code: code || null, packageId: pkg?.id || null, qty, unit: 'test', price, discountPct, ...billing.lineMoney({ qty, price, discountPct }, pricing) });
+      continue;
+    }
+    const inv = d.inventory.find((i) => i.id === l.inventoryId && i.facilityId === f.id);
+    if (!inv) return res.status(400).json({ error: 'Each medicine must come from your stock on Nexus — add it to stock first.' });
+    if (!Number.isInteger(qty) || qty < 1) return res.status(400).json({ error: `Enter a quantity for ${inv.drug}.` });
+    const already = take.get(inv.id) || 0;
+    if (already + qty > inv.qty) return res.status(409).json({ error: `Only ${inv.qty - already} of ${inv.drug} (batch ${inv.batch || '—'}) in stock.` });
+    take.set(inv.id, already + qty);
+    const pr = catalog.priceOf(inv.drug);
+    const price = l.price !== undefined && l.price !== '' ? r2(l.price) : defaultPrice(f, inv.drug);
+    if (!(price > 0) || price > 1000000) return res.status(400).json({ error: `Enter a price for ${inv.drug}.` });
+    // In India a medicine can't be sold above its MRP (the MRP already includes GST).
+    if (f.type === 'pharmacy' && pr && price > r2(pr.mrp) + 0.001) return res.status(400).json({ error: `${inv.drug} can't be sold above its MRP of ₹${pr.mrp}.` });
+    const gstRate = catalog.gstOf(inv.drug).rate;
+    lines.push({ name: inv.drug, inventoryId: inv.id, batch: inv.batch || '', expiry: inv.expiry || '', unit: pr?.unit || 'unit', mrp: pr?.mrp ?? null, qty, price, discountPct, ...billing.lineMoney({ qty, price, discountPct, gstRate }, pricing) });
+  }
+
+  const interState = f.type === 'warehouse' && Boolean(customer.state && f.state) && customer.state.toLowerCase() !== f.state.toLowerCase();
+  const totals = billing.totals(lines, { interState });
+
+  // Payment at billing: the full amount by default, a part payment, or none ("credit" — the buyer owes it).
+  const mode = billing.MODES.includes(b.payment?.mode) ? b.payment.mode : 'cash';
+  const paidNow = mode === 'credit' ? 0 : Math.min(totals.total, Math.max(0, b.payment?.amount === undefined || b.payment?.amount === '' ? totals.total : r2(b.payment.amount)));
+  if (paidNow < totals.total && !customer.name) return res.status(400).json({ error: 'Add the customer\'s name to leave an amount due.' });
+  const dueDays = paidNow < totals.total ? Math.min(180, Math.max(0, parseInt(b.dueDays, 10) || (f.type === 'warehouse' ? 30 : 0))) : 0;
+
+  // All checks passed — now change stock and write the bill.
+  for (const [id, n] of take) { const inv = d.inventory.find((i) => i.id === id); inv.qty -= n; inv.updatedAt = nowIso(); }
+  const at = nowIso();
+  const payments = paidNow > 0 ? [{ id: store.id('bp'), at, amount: paidNow, mode, ref: clean(b.payment?.ref, 60) || null, by: req.user.id }] : [];
+  const bill = {
+    id: store.id('bill'), facilityId: f.id, type: f.type, billNo: nextBillNo(f), customer, lines, totals, payments,
+    ...billing.settle(totals.total, payments), dueDate: dueDays ? new Date(Date.now() + dueDays * 86400000).toISOString().slice(0, 10) : null,
+    labOrderId: labOrder?.id || null, notes: clean(b.notes, 300) || null, createdBy: req.user.id, createdByName: req.user.name, createdAt: at,
+  };
+  d.bills.unshift(bill);
+  if (labOrder) Object.assign(labOrder.booking, { balancePaid: true, balancePaidAt: at, balanceBillId: bill.id });
+  audit(req.user, 'bill_created', labOrder?.patientId || null, 'bill', `${bill.billNo} · ₹${totals.total} · ${bill.status}`);
+  touchFacility(f.id);
+  if (linked) touchFacility(linked.id);
+  if (labOrder) touch(patientOwnerUserIds(patientById(labOrder.patientId)));
+  store.save();
+  broadcast('billing', f.type === 'lab' ? 'lab' : f.type === 'warehouse' ? 'supply' : 'pharmacy');
+  res.json(billView(bill));
+});
+
+app.get('/api/billing/bills', auth, role('pharmacist', 'distributor', 'lab_tech'), (req, res) => {
+  const f = billingFacility(req);
+  if (!f) return res.status(403).json({ error: 'Billing is for pharmacies, warehouses and labs.' });
+  const today = istDay(nowIso());
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '') ? req.query.from : `${today.slice(0, 7)}-01`;
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(req.query.to || '') ? req.query.to : today;
+  const mine = db().bills.filter((x) => x.facilityId === f.id);
+  const inRange = mine.filter((x) => { const day = istDay(x.createdAt); return day >= from && day <= to; });
+  const q = String(req.query.q || '').trim().toLowerCase();
+  const shown = q ? inRange.filter((x) => x.billNo.toLowerCase().includes(q) || String(x.customer?.name || '').toLowerCase().includes(q)) : inRange;
+  // Dues are owed whenever the bill was made, so they're counted across all bills, not just this range.
+  const allDues = billing.summary(mine, { dayOf: istDay }).dues;
+  res.json({ from, to, bills: shown.slice(0, 300).map(billView), summary: { ...billing.summary(inRange, { dayOf: istDay }), dues: allDues, outstanding: billing.r2(allDues.reduce((s, x) => s + x.due, 0)) } });
+});
+
+// A bill for printing: the facility's own staff only.
+app.get('/api/billing/bills/:id', auth, role('pharmacist', 'distributor', 'lab_tech'), (req, res) => {
+  const f = billingFacility(req);
+  const bill = f && db().bills.find((x) => x.id === req.params.id && x.facilityId === f.id);
+  if (!bill) return res.status(404).json({ error: 'Bill not found.' });
+  res.json({ ...billView(bill), facility: { name: f.name, type: f.type, address: f.address || '', district: f.district || '', state: f.state || '', pincode: f.pincode || '', phone: f.phone || '', gstin: f.gstin || '', licenceNo: f.licenceNo || '', billTerms: f.billTerms || '', nabl: !!f.nabl } });
+});
+
+app.post('/api/billing/bills/:id/payments', auth, role('pharmacist', 'distributor', 'lab_tech'), (req, res) => {
+  const f = billingFacility(req);
+  const bill = f && db().bills.find((x) => x.id === req.params.id && x.facilityId === f.id);
+  if (!bill) return res.status(404).json({ error: 'Bill not found.' });
+  if (bill.status === 'cancelled') return res.status(409).json({ error: 'This bill was cancelled.' });
+  if (bill.due <= 0) return res.status(409).json({ error: 'This bill is already fully paid.' });
+  const mode = ['cash', 'upi', 'card'].includes(req.body?.mode) ? req.body.mode : null;
+  if (!mode) return res.status(400).json({ error: 'Choose cash, UPI or card.' });
+  const amount = r2(req.body?.amount);
+  if (!(amount > 0) || amount > bill.due + 0.001) return res.status(400).json({ error: `Enter an amount up to ₹${bill.due}.` });
+  bill.payments.push({ id: store.id('bp'), at: nowIso(), amount, mode, ref: clean(req.body?.ref, 60) || null, by: req.user.id });
+  Object.assign(bill, billing.settle(bill.totals.total, bill.payments));
+  audit(req.user, 'bill_payment', null, 'bill', `${bill.billNo} · ₹${amount} ${mode} · due ₹${bill.due}`);
+  touchFacility(f.id);
+  if (bill.customer?.facilityId) touchFacility(bill.customer.facilityId);
+  store.save();
+  broadcast('billing');
+  res.json(billView(bill));
+});
+
+// Cancelling puts the medicines back on the shelf (or re-opens a lab booking's balance). Money already taken is
+// shown on the bill as to be refunded — the store returns it the way it was paid.
+app.post('/api/billing/bills/:id/cancel', auth, role('pharmacist', 'distributor', 'lab_tech'), (req, res) => {
+  const d = db();
+  const f = billingFacility(req);
+  const bill = f && d.bills.find((x) => x.id === req.params.id && x.facilityId === f.id);
+  if (!bill) return res.status(404).json({ error: 'Bill not found.' });
+  if (bill.status === 'cancelled') return res.json(billView(bill));
+  const reason = clean(req.body?.reason, 200);
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why the bill is being cancelled.' });
+  for (const l of bill.lines) {
+    if (!l.inventoryId) continue;
+    const inv = d.inventory.find((i) => i.id === l.inventoryId);
+    if (inv) { inv.qty += l.qty; inv.updatedAt = nowIso(); }
+    else d.inventory.push({ id: l.inventoryId, facilityId: f.id, drug: l.name, batch: l.batch || null, expiry: l.expiry || null, qty: l.qty, safetyStock: 10, updatedAt: nowIso() });
+  }
+  if (bill.labOrderId) { const o = d.labOrders.find((x) => x.id === bill.labOrderId); if (o?.booking?.balanceBillId === bill.id) Object.assign(o.booking, { balancePaid: false, balancePaidAt: null, balanceBillId: null }); }
+  Object.assign(bill, { status: 'cancelled', cancelledAt: nowIso(), cancelledBy: req.user.id, cancelReason: reason, refundDue: bill.paid || 0, due: 0 });
+  audit(req.user, 'bill_cancelled', null, 'bill', `${bill.billNo} · ${reason}${bill.paid ? ` · refund ₹${bill.paid}` : ''}`);
+  touchFacility(f.id);
+  if (bill.customer?.facilityId) touchFacility(bill.customer.facilityId);
+  store.save();
+  broadcast('billing', f.type === 'lab' ? 'lab' : f.type === 'warehouse' ? 'supply' : 'pharmacy');
+  res.json(billView(bill));
 });
 
 // ---------- government command center ----------

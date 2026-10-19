@@ -19,6 +19,7 @@ const LabReportPrint = lazy(() => import('./pages/LabReportPrint'));
 const SampleLabel = lazy(() => import('./pages/SampleLabel'));
 const InvoicePrint = lazy(() => import('./pages/InvoicePrint'));
 const StatementPrint = lazy(() => import('./pages/StatementPrint'));
+const BillPrint = lazy(() => import('./pages/BillPrint'));
 const ChatWidget = lazy(() => import('./components/ChatWidget'));
 const QueueDisplay = lazy(() => import('./pages/QueueDisplay'));
 // Public, no-login pages (free tools, doctor & lab profiles) — found from Google and WhatsApp shares.
@@ -130,7 +131,7 @@ function ScrollToTop() {
 function AppRoutes() {
   const location = useLocation();
   // The kiosk is a full-screen touch app and the print pages are documents; no floating chat or install nudge there.
-  const bare = ['/kiosk', '/rx/', '/lab-report/', '/lab-label/', '/invoice/', '/statement/', '/display/'].some((p) => location.pathname.startsWith(p));
+  const bare = ['/kiosk', '/rx/', '/lab-report/', '/lab-label/', '/invoice/', '/statement/', '/bill/', '/display/'].some((p) => location.pathname.startsWith(p));
   return (
     <>
       <ScrollToTop />
@@ -154,6 +155,7 @@ function AppRoutes() {
         <Route path="/lab-label/:id" element={<RequireRole roles={['lab_tech']}><Lazy><SampleLabel /></Lazy></RequireRole>} />
         <Route path="/invoice/:orderId" element={<RequireRole roles={['patient', 'caregiver', 'pharmacist']}><Lazy><InvoicePrint /></Lazy></RequireRole>} />
         <Route path="/lab-report/:id"element={<RequireRole roles={['patient', 'caregiver', 'doctor', 'lab_tech', 'super_admin']}><Lazy><LabReportPrint /></Lazy></RequireRole>} />
+        <Route path="/bill/:id" element={<RequireRole roles={['pharmacist', 'distributor', 'lab_tech']}><Lazy><BillPrint /></Lazy></RequireRole>} />
         <Route path="/statement/:month" element={<RequireRole roles={['doctor']}><Lazy><StatementPrint /></Lazy></RequireRole>} />
         <Route path="/patient/*" element={<Guarded roles={['patient', 'caregiver']} Comp={PatientApp} />} />
         <Route path="/kiosk/*" element={<Guarded roles={['kiosk_operator']} Comp={KioskApp} />} />

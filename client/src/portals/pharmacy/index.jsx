@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { FileText, Boxes, BellRing, ArrowLeftRight, Store, ShoppingBag, TrendingUp } from 'lucide-react';
+import { FileText, Boxes, BellRing, ArrowLeftRight, Store, ShoppingBag, TrendingUp, Receipt } from 'lucide-react';
 import PortalLayout from '../../components/PortalLayout';
 import { Loading, Empty } from '../../components/ui';
 import { useLive } from '../../live';
@@ -11,6 +11,7 @@ import Profile from './Profile';
 import Orders, { NewOrderPopup } from './Orders';
 import StoreSetup from './StoreSetup';
 import Insights from './Insights';
+import Billing from '../../components/Billing';
 import './pharmacy.css';
 
 export default function PharmacyApp() {
@@ -25,6 +26,7 @@ export default function PharmacyApp() {
   const nav = onboarding ? [{ to: '/pharmacy', label: 'Store setup', icon: Store, end: true, badge: home?.pharmacy?.profileComplete ? null : '!' }] : [
     { to: '/pharmacy', label: 'Medicine orders', icon: ShoppingBag, end: true, badge: newOrders || null },
     { to: '/pharmacy/prescriptions', label: 'E-prescriptions', icon: FileText, badge: newRx || null },
+    { to: '/pharmacy/billing', label: 'Billing', icon: Receipt },
     { to: '/pharmacy/inventory', label: 'Inventory', icon: Boxes },
     { to: '/pharmacy/alerts', label: 'Stock alerts', icon: BellRing, badge: alertCount || null },
     { to: '/pharmacy/insights', label: 'Stock insights', icon: TrendingUp },
@@ -46,6 +48,7 @@ export default function PharmacyApp() {
       <Routes>
         <Route index element={<Orders {...props} />} />
         <Route path="prescriptions" element={<Inbox {...props} />} />
+        <Route path="billing" element={<Billing />} />
         <Route path="inventory" element={<Inventory {...props} />} />
         <Route path="alerts" element={<Alerts {...props} />} />
         <Route path="insights" element={<Insights {...props} />} />

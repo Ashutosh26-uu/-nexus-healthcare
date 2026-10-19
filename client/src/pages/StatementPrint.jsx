@@ -89,7 +89,12 @@ export default function StatementPrint() {
             {hasPlans && <tr><td>Consult fees</td><td style={{ textAlign: 'right' }}>{fmtMoney(t.consultFees)}</td></tr>}
             {hasPlans && <tr><td>Care-plan fees ({t.plans} month{t.plans === 1 ? '' : 's'})</td><td style={{ textAlign: 'right' }}>{fmtMoney(t.planFees)}</td></tr>}
             <tr><td>{hasPlans ? 'Total fees collected' : 'Fees collected'}</td><td style={{ textAlign: 'right' }}>{fmtMoney(t.gross)}</td></tr>
-            <tr><td>Platform fee ({Math.round(t.platformFeeRate * 100)}%)</td><td style={{ textAlign: 'right' }}>− {fmtMoney(t.platformFee)}</td></tr>
+            {hasPlans ? (
+              <>
+                <tr><td>Platform fee on consults ({Math.round(t.platformFeeRate * 100)}%)</td><td style={{ textAlign: 'right' }}>− {fmtMoney(t.consultPlatformFee)}</td></tr>
+                <tr><td>Platform fee on care plans ({Math.round((t.carePlanFeeRate ?? 0.25) * 100)}%)</td><td style={{ textAlign: 'right' }}>− {fmtMoney(t.planPlatformFee)}</td></tr>
+              </>
+            ) : <tr><td>Platform fee ({Math.round(t.platformFeeRate * 100)}%)</td><td style={{ textAlign: 'right' }}>− {fmtMoney(t.platformFee)}</td></tr>}
             <tr><td><strong>Payout to you</strong></td><td style={{ textAlign: 'right' }}><strong>{fmtMoney(t.payout)}</strong></td></tr>
           </tbody>
         </table>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { Inbox, Route as RouteIcon, FileText, PlugZap, Radar, X, Stamp, Users } from 'lucide-react';
+import { Inbox, Route as RouteIcon, FileText, PlugZap, Radar, X, Stamp, Users, Receipt } from 'lucide-react';
 import PortalLayout from '../../components/PortalLayout';
 import { Loading, Empty } from '../../components/ui';
 import { useLive } from '../../live';
@@ -10,6 +10,7 @@ import Reports from './Reports';
 import Connectors from './Connectors';
 import Approvals from './Approvals';
 import Setup from './Setup';
+import Billing from '../../components/Billing';
 import ReportModal from './ReportModal';
 import './lab.css';
 
@@ -25,6 +26,7 @@ export default function LabApp() {
     { to: '/lab/tracking', label: 'Sample tracking', icon: RouteIcon, badge: null },
     { to: '/lab/approvals', label: 'Pathologist sign-off', icon: Stamp, badge: orders.filter((o) => o.status === 'review').length || null },
     { to: '/lab/reports', label: 'Reports sent', icon: FileText },
+    { to: '/lab/billing', label: 'Billing', icon: Receipt },
     { to: '/lab/setup', label: 'Team & packages', icon: Users },
     { to: '/lab/connectors', label: 'LIS & data feed', icon: PlugZap },
   ];
@@ -51,6 +53,7 @@ export default function LabApp() {
           <Route path="connectors" element={<Connectors {...props} />} />
           <Route path="approvals" element={<Approvals {...props} onApproved={onReported} />} />
           <Route path="setup" element={<Setup />} />
+          <Route path="billing" element={<Billing />} />
           <Route path="*" element={<Navigate to="/lab" replace />} />
         </Routes>
       </>

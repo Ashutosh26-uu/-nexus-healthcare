@@ -125,7 +125,7 @@ function CookieBanner({ onCustomize }) {
   const { consent, setConsent } = useConsent();
   const path = useLocation().pathname;
   // Not on the kiosk, the waiting-room TV or printable documents (it would print onto them).
-  if (consent || ['/kiosk', '/rx/', '/lab-report/', '/lab-label/', '/invoice/', '/statement/', '/display/'].some((x) => path.startsWith(x))) return null; // waiting-room TV: nobody there to answer
+  if (consent || ['/kiosk', '/rx/', '/lab-report/', '/lab-label/', '/invoice/', '/statement/', '/bill/', '/display/'].some((x) => path.startsWith(x))) return null; // waiting-room TV: nobody there to answer
   return (
     <div className="nx-cookie" role="dialog" aria-label="Cookie preferences" aria-live="polite">
       <div className="nx-cookie-text">

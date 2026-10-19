@@ -470,3 +470,20 @@ table { max-width: 100%; }
   .cp-metrics { grid-template-columns: 1fr 1fr; }
   .cp-metric strong { font-size: 1.1rem; }
 }
+
+/* ---------- Partner billing (components/Billing.jsx, pages/BillPrint.jsx) ---------- */
+.bl-range { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.bl-range .field { min-width: 160px; }
+.bl-picker { display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px; }
+.bl-lines td { vertical-align: middle; }
+.bl-num { width: 84px; padding: 6px 8px; }
+.bl-search { min-width: 180px; }
+.bl-search .input { padding-top: 6px; padding-bottom: 6px; }
+.bl-due { padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; }
+.bl-void { margin: -8px 0 12px; padding: 8px 12px; border: 2px solid var(--rose); color: var(--rose); font-weight: 700; text-align: center; border-radius: 8px; letter-spacing: 0.04em; }
+.nowrap { white-space: nowrap; }
+@media (max-width: 640px) {
+  .bl-picker { grid-template-columns: 1fr; }
+  .bl-num { width: 64px; }
+  .bl-lines th:nth-child(4), .bl-lines td:nth-child(4) { display: none; } /* discount column on phones */
+}

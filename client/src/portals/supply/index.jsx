@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { Warehouse, Truck, TrendingUp, AlertOctagon, ClipboardList } from 'lucide-react';
+import { Warehouse, Truck, TrendingUp, AlertOctagon, ClipboardList, Receipt } from 'lucide-react';
 import PortalLayout from '../../components/PortalLayout';
 import { Loading, Empty } from '../../components/ui';
 import { useLive } from '../../live';
@@ -8,6 +8,7 @@ import Approvals from './Approvals';
 import Forecast from './Forecast';
 import Shortages from './Shortages';
 import BulkOrder from './BulkOrder';
+import Billing from '../../components/Billing';
 import './supply.css';
 
 export default function SupplyApp() {
@@ -18,6 +19,7 @@ export default function SupplyApp() {
   const nav = [
     { to: '/supply', label: 'Warehouse stock', icon: Warehouse, end: true },
     { to: '/supply/approvals', label: 'Dispatch approvals', icon: Truck, badge: toApprove || null },
+    { to: '/supply/invoices', label: 'Invoices & dues', icon: Receipt },
     { to: '/supply/forecast', label: 'Demand forecast', icon: TrendingUp },
     { to: '/supply/shortages', label: 'Regional shortages', icon: AlertOctagon, badge: home?.regionalShortages?.length || null },
     { to: '/supply/orders', label: 'Bulk orders', icon: ClipboardList },
@@ -32,6 +34,7 @@ export default function SupplyApp() {
       <Routes>
         <Route index element={<Stock {...props} />} />
         <Route path="approvals" element={<Approvals {...props} />} />
+        <Route path="invoices" element={<Billing />} />
         <Route path="forecast" element={<Forecast {...props} />} />
         <Route path="shortages" element={<Shortages {...props} />} />
         <Route path="orders" element={<BulkOrder {...props} />} />
