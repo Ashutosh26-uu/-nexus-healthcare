@@ -51,7 +51,14 @@ function securityHeaders(_req, res, next) {
   // Only directives that cannot break the app (inline font onload, Razorpay checkout, print pop-ups written with
   // document.write and blob: PDF previews — which inherit this policy — all still work): no clickjacking, no
   // <base> hijack. A route that needs a stricter policy (e.g. /api/files) overrides this header.
-  res.setHeader('Content-Security-Policy', "base-uri 'self'; frame-ancestors 'none'");
+  // Scripts only from this site (plus Razorpay's checkout when card payments are on); 'wasm-unsafe-eval' lets the
+  // barcode reader's WebAssembly run — it does NOT allow eval() of strings. No plugins, no form posts elsewhere.
+  // Styles, images and connections are left open on purpose: inline style attributes, data:/blob: images and the
+  // print pop-ups need them, and they can't run code.
+  res.setHeader('Content-Security-Policy', [
+    "base-uri 'self'", "frame-ancestors 'none'", "object-src 'none'", "form-action 'self'",
+    "script-src 'self' 'wasm-unsafe-eval' https://checkout.razorpay.com",
+  ].join('; '));
   if (isProd()) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   next();
 }

@@ -139,6 +139,8 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
                 {['patient', 'caregiver'].includes(user?.role) && <button className="menu-item" onClick={() => { openLocationSettings(); setMenuOpen(false); }}><MapPin size={16} /> My location</button>}
                 <button className="menu-item" onClick={() => { openCookieSettings(); setMenuOpen(false); }}><Cookie size={16} /> Cookie preferences</button>
                 <button className="menu-item" onClick={() => { signOut(); navigate('/'); }}><LogOut size={16} /> Sign out</button>
+                {/* Ends every session on every device at once — for a lost phone or a shared computer left signed in. */}
+                <button className="menu-item" onClick={async () => { if (!window.confirm('Sign out on every device, including this one?')) return; try { await api.post('/auth/logout-all'); } catch { /* signed out below either way */ } signOut(); navigate('/'); }}><LogOut size={16} /> Sign out of all devices</button>
               </div>
             )}
           </div>

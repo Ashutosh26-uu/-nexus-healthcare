@@ -86,6 +86,9 @@ export function AuthProvider({ children }) {
     retry.current.timer = null;
     retry.current.attempt = 0;
     disconnectLive();
+    // Anything a shared device kept for this person goes too (kiosk visit in progress, lab signer pick) —
+    // on every sign-out, including an automatic one when the session expires.
+    try { ['oc_kiosk_flow', 'nx_lab_signer'].forEach((k) => { sessionStorage.removeItem(k); localStorage.removeItem(k); }); } catch { /* storage blocked */ }
     setState(SIGNED_OUT);
   }, []);
 

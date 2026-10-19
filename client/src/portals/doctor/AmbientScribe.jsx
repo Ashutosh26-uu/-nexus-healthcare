@@ -76,7 +76,7 @@ export default function AmbientScribe({ consultId, onUse }) {
 
   const makeDraft = () => run('draft', async () => {
     if (listening) stop();
-    const r = await api.post(`/consults/${consultId}/scribe`, { transcript: transcript.trim() });
+    const r = await api.post(`/consults/${consultId}/scribe`, { transcript: transcript.trim(), patientConsent: consent });
     setDraft(r);
     setPick(Object.fromEntries((r.medicines || []).map((m) => [m.drug, true])));
   });

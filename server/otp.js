@@ -113,9 +113,12 @@ const SUBJECTS = { consent: (c) => `${c} — approve your doctor (Nexus Healthca
 const PURPOSES = new Set(['login', 'consent', 'reset']);
 // Addresses that are not real inboxes: demo accounts (and phone-only patients' "…@patient.omnicare.in")
 // plus the reserved example/test domains. A real mail server must never send codes there.
-const DEMO_EMAIL = /@(([a-z0-9-]+\.)*omnicare.in|example\.(com|org|net)|[a-z0-9.-]+\.(test|invalid|example|localhost))$/i;
+const DEMO_EMAIL = /@(([a-z0-9-]+\.)*omnicare\.in|example\.(com|org|net)|[a-z0-9.-]+\.(test|invalid|example|localhost))$/i;
 const EMAIL_OK = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // only ever run on input of ≤ 254 chars (RFC 5321 limit)
-const keyFor = (purpose, target) => (purpose === 'login' ? target : `${purpose}|${target}`);
+const keyFor = (purpose, target) => {
+  if (String(target).includes('|')) throw new OtpError('Please enter a valid email address.');
+  return purpose === 'login' ? target : `${purpose}|${target}`;
+};
 
 /* ---------- providers ---------- */
 async function twilioRequest(url, params) {
@@ -177,6 +180,8 @@ async function sendViaProvider(provider, { target, channel, code, lang, purpose 
     if (!res.ok || data.type === 'error') throw new Error(`MSG91: ${data.message || res.status}`);
     return { ref: data.request_id || null };
   }
+  // Never print a live code in production logs (AppSail keeps them) — dev only.
+  if (process.env.NODE_ENV === 'production') { console.warn('[otp] console provider used in production — no gateway configured; code not shown.'); return { ref: null }; }
   console.log(`\n[otp] ${channel.toUpperCase()} to ${target}: ${code}  (console provider — configure Twilio/MSG91/SMTP to deliver for real)\n`);
   return { ref: null };
 }
@@ -244,6 +249,8 @@ async function sendCode({ phone, dialCode, email, channel = 'sms', lang, ip, pur
   // Email always runs through the email sender (real SMTP if SMTP_HOST is set, else the Ethereal
   // test mailbox). Phone channels use the configured SMS provider.
   let provider = channel === 'email' ? (placeholder ? 'dev' : configured().email ? 'smtp' : 'ethereal') : smsProvider();
+  // The Ethereal test mailbox hands a preview link (containing the code) back to whoever asked — never in production.
+  if (provider === 'ethereal' && process.env.NODE_ENV === 'production') throw new OtpError('Email codes aren\'t set up on this server yet. Please contact support.', 503);
   // Twilio Verify checks codes remotely per phone number (no purpose), so non-login codes go as plain SMS.
   if (provider === 'twilio_verify' && purpose !== 'login') {
     if (!configured().twilio) throw new OtpError('Approval codes need SMS sending (TWILIO_FROM) or email. Ask the patient to approve from their app.');
@@ -268,8 +275,16 @@ async function sendCode({ phone, dialCode, email, channel = 'sms', lang, ip, pur
     // Dev mode shows the code when nothing was really delivered (placeholder address, console SMS); the
     // Ethereal test mailbox shows a link to view the real email instead.
     devCode: devMode() && (provider === 'dev' || provider === 'console') ? code : undefined,
-    emailPreview: result.previewUrl || undefined,
+    emailPreview: process.env.NODE_ENV === 'production' ? undefined : result.previewUrl || undefined,
   };
+}
+
+// Keep the row (send counter, cooldown window) but make the code unusable.
+async function burn(adapter, target, row) {
+  await adapter.otpPut({
+    target, code_hash: 'burned', channel: row.channel, provider: row.provider, attempts: MAX_ATTEMPTS, expires_at: 0,
+    last_sent_at: Number(row.last_sent_at) || 0, sends_window_start: Number(row.sends_window_start) || Date.now(), sends_in_window: Number(row.sends_in_window) || 0, provider_ref: row.provider_ref || null,
+  });
 }
 
 async function verifyCode({ target: given, code, purpose = 'login' }) {
@@ -283,11 +298,12 @@ async function verifyCode({ target: given, code, purpose = 'login' }) {
   const row = target ? await adapter.otpGet(target) : null;
   const clean = String(code || '').replace(/\D/g, '');
   if (!row) throw new OtpError('Please request a new code.');
-  if (Date.now() > Number(row.expires_at)) { await adapter.otpDelete(target); throw new OtpError('This code has expired. Please request a new one.'); }
+  if (row.code_hash === 'burned') throw new OtpError('Please request a new code.');
+  if (Date.now() > Number(row.expires_at)) { await burn(adapter, target, row); throw new OtpError('This code has expired. Please request a new one.'); }
   // Count the attempt atomically in the database and judge by the value it returns: a check on `row.attempts`
   // alone let many parallel guesses all read the same count before any increment landed.
   const used = Number(await adapter.otpAttempt(target) ?? Number(row.attempts) + 1);
-  if (Number(row.attempts) >= MAX_ATTEMPTS || used > MAX_ATTEMPTS) { await adapter.otpDelete(target); throw new OtpError('Too many wrong attempts. Please request a new code.', 429); }
+  if (Number(row.attempts) >= MAX_ATTEMPTS || used > MAX_ATTEMPTS) { await burn(adapter, target, row); throw new OtpError('Too many wrong attempts. Please request a new code.', 429); }
 
   let ok = false;
   if (row.provider === 'twilio_verify') {

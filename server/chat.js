@@ -150,7 +150,7 @@ async function handleChat(req, res, ctx) {
     return res.end();
   }
 
-  const anthropic = getClient();
+  const anthropic = req.chatOffline ? null : getClient(); // over the daily AI budget → built-in answers
   if (!anthropic) {
     await streamFallback(res, await fallbackText(last.content, ctx, lang));
     res.write('data: [DONE]\n\n');

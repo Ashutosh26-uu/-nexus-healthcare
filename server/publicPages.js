@@ -417,7 +417,7 @@ module.exports = function registerPublicPages(app, deps) {
     if (STATIC_META[p]) return { ...STATIC_META[p], canonical: base + p + (p === '/find/doctors' && req.query.specialty ? `?specialty=${encodeURIComponent(clean(req.query.specialty, 60))}` : '') };
     let m;
     if ((m = p.match(/^\/medicines\/([^/]+)$/))) { const e = medIndex().bySlug.get(slugParam(m[1])); if (e) { const v = medicineView(e, null, base); return { ...v.seo, jsonLd: v.jsonLd, canonical: `${base}/medicines/${e.slug}` }; } }
-    if ((m = p.match(/^\/lab-tests\/([^/]+)$/))) { const c = testCodeOf(decodeURIComponent(m[1])); if (c) { const v = testView(c, null, base, 'price'); return { ...v.seo, jsonLd: v.jsonLd, canonical: `${base}/lab-tests/${v.test.slug}` }; } }
+    if ((m = p.match(/^\/lab-tests\/([^/]+)$/))) { const c = testCodeOf((() => { try { return decodeURIComponent(m[1]); } catch { return ''; } })()); if (c) { const v = testView(c, null, base, 'price'); return { ...v.seo, jsonLd: v.jsonLd, canonical: `${base}/lab-tests/${v.test.slug}` }; } }
     if ((m = p.match(/^\/find\/doctors\/([^/]+)$/))) { const doc = findBySlug(verifiedDoctors(d), m[1]); if (doc) { const v = doctorView(d, doc, null, base); return { ...v.seo, jsonLd: v.jsonLd, canonical: `${base}/find/doctors/${v.doctor.slug}` }; } }
     if ((m = p.match(/^\/find\/labs\/([^/]+)$/))) { const lab = findBySlug(verifiedLabs(d), m[1]); if (lab) { const v = labView(lab, null, base); return { ...v.seo, jsonLd: v.jsonLd, canonical: `${base}/find/labs/${v.lab.slug}` }; } }
     return null;
@@ -430,9 +430,9 @@ module.exports = function registerPublicPages(app, deps) {
       `<meta property="og:url" content="${esc(meta.canonical)}" />`, `<meta name="twitter:card" content="summary" />`,
       meta.jsonLd ? `<script type="application/ld+json" data-seo="1">${JSON.stringify(meta.jsonLd).replace(/</g, '\\u003c')}</script>` : '',
     ].join('');
-    return html.replace(/<title>[\s\S]*?<\/title>/, `<title>${esc(meta.title)}</title>`)
-      .replace(/<meta name="description"[^>]*>/, `<meta name="description" content="${esc(meta.description)}" />`)
-      .replace('</head>', `${tags}</head>`);
+    return html.replace(/<title>[\s\S]*?<\/title>/, () => `<title>${esc(meta.title)}</title>`)
+      .replace(/<meta name="description"[^>]*>/, () => `<meta name="description" content="${esc(meta.description)}" />`)
+      .replace('</head>', () => `${tags}</head>`);
   };
   app.get(['/medicines', '/medicines/:slug', '/lab-tests', '/lab-tests/:code', '/find/doctors', '/find/doctors/:slug', '/find/labs', '/find/labs/:slug'], pageLimiter, (req, res) => {
     let html;

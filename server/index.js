@@ -468,7 +468,7 @@ app.get('/api/events', sseAuth, (req, res) => {
     const mine = sseByUser.get(client.userId); if (mine) { mine.delete(client); if (!mine.size) sseByUser.delete(client.userId); }
     const list = sseConns.get(client.userId); if (list) { const i = list.indexOf(client); if (i >= 0) list.splice(i, 1); if (!list.length) sseConns.delete(client.userId); }
   };
-  req.on('close', client.drop);
+  res.on('close', client.drop);
 });
 
 const DATA_MODE = require('./seed').dataMode();
@@ -610,7 +610,7 @@ app.get('/api/public/stats/stream', publicLimiter, (req, res) => {
   statsPerIp.set(ip, (statsPerIp.get(ip) || 0) + 1);
   if (!statsTimer) statsTimer = setInterval(pushStats, 5000);
   const ping = setInterval(() => { if (!res.destroyed) res.write(': ping\n\n'); }, 25000);
-  req.on('close', () => {
+  res.on('close', () => {
     clearInterval(ping);
     statsStreams.delete(res);
     const n = (statsPerIp.get(ip) || 1) - 1;
@@ -638,7 +638,7 @@ app.put('/api/admin/i18n/:lang', auth, role('super_admin'), async (req, res) => 
 // ---------- file storage (reports, prescriptions, photos) ----------
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: Number(process.env.MAX_UPLOAD_MB || 10) * 1024 * 1024 },
+  limits: { fileSize: Number(process.env.MAX_UPLOAD_MB || 10) * 1024 * 1024, files: 1, fields: 8, fieldSize: 4096, parts: 10 },
   fileFilter: (_req, file, cb) => cb(null, /^(image\/(png|jpe?g|webp|heic)|application\/pdf)$/.test(file.mimetype)),
 });
 
@@ -715,7 +715,13 @@ app.get('/api/files/:id', auth, async (req, res) => {
 });
 
 const chatLimiter = security.rateLimit({ windowMs: 10 * 60000, max: 40, message: 'You\'re sending messages very fast. Please wait a few minutes.' });
+const chatBudget = { day: '', used: 0 };
+const CHAT_AI_DAILY = Math.max(0, parseInt(process.env.CHAT_AI_DAILY_LIMIT || '1500', 10));
 app.post('/api/chat', chatLimiter, optionalAuth, (req, res) => {
+  const today = istDay(nowIso());
+  if (chatBudget.day !== today) Object.assign(chatBudget, { day: today, used: 0 });
+  chatBudget.used += 1;
+  req.chatOffline = chatBudget.used > CHAT_AI_DAILY;
   const msgs = req.body?.messages;
   if (!Array.isArray(msgs) || !msgs.length) return res.status(400).json({ error: 'Please type a message.' });
   req.body.messages = msgs.slice(-12).map((m) => ({ role: m?.role === 'assistant' ? 'assistant' : 'user', content: String(m?.content ?? '').slice(0, 2000) }));
@@ -751,6 +757,7 @@ app.post('/api/dev/run-reminders', auth, role('super_admin'), (_req, res) => {
 const findUserByPhone = (phone) => db().users.find((u) => u.phone && samePhone(u.phone, phone));
 const findUserByEmail = (email) => db().users.find((u) => u.email && u.email.toLowerCase() === String(email).toLowerCase());
 
+const DUMMY_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
 app.post('/api/auth/login', loginIpLimiter, loginLimiter, async (req, res) => {
   const { identifier, password } = req.body || {};
   const id = clean(identifier, 160).toLowerCase();
@@ -764,13 +771,16 @@ app.post('/api/auth/login', loginIpLimiter, loginLimiter, async (req, res) => {
     return res.status(429).json({ error: 'Too many wrong passwords for this account. Please wait, or reset your password with an email code.', retryAfter: retry });
   }
   const user = findUserByEmail(id);
-  if (!user || typeof password !== 'string' || !user.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
+  // A bcrypt compare runs even for an unknown email, so response time doesn't reveal which emails have accounts.
+  const passOk = typeof password === 'string' && (await bcrypt.compare(password.slice(0, 200), user?.passwordHash || DUMMY_HASH));
+  if (!user || !user.passwordHash || !passOk) {
     loginFails.delete(fk); loginFails.set(fk, [...fails, Date.now()]); // re-insert = newest last
     if (loginFails.size > 50000) loginFails.delete(loginFails.keys().next().value); // bounded memory under a spray
     return res.status(401).json({ error: 'That email and password don\'t match. Please try again.' });
   }
   if (user.status === 'suspended') return res.status(403).json({ error: 'This account is suspended. Contact support.' });
   if (user.status === 'pending') return res.status(403).json({ error: 'Your account is awaiting verification by our team. You can sign in as soon as it is approved.' });
+  loginFails.delete(fk);
   user.lastLoginAt = nowIso();
   store.save();
   res.json({ token: sign(user), user: publicUser(user) });
@@ -922,7 +932,8 @@ app.get('/api/auth/me', auth, (req, res) => {
   res.json(out);
 });
 
-app.post('/api/auth/password', auth, async (req, res) => {
+const passwordChangeLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 5, key: (r) => r.user?.id || '', message: 'Too many attempts. Please wait a few minutes.' });
+app.post('/api/auth/password', auth, passwordChangeLimiter, async (req, res) => {
   const { current, next: nextPw } = req.body || {};
   // Accounts created with a one-time code have no password yet — they set one with an email code instead.
   if (!req.user.passwordHash) return res.status(400).json({ error: 'Your account has no password yet. Use "Change with an email code" to set one.' });
@@ -932,6 +943,13 @@ app.post('/api/auth/password', auth, async (req, res) => {
   req.user.tokenVersion = (req.user.tokenVersion || 0) + 1; // sign out every other device
   store.save();
   res.json({ ok: true, token: sign(req.user) });
+});
+
+app.post('/api/auth/logout-all', auth, (req, res) => {
+  req.user.tokenVersion = (req.user.tokenVersion || 0) + 1;
+  audit(req.user, 'signed_out_everywhere', null, 'account', 'All sessions ended');
+  store.save();
+  res.json({ ok: true });
 });
 
 // ---------- forgot / change password with an email code (every role) ----------
@@ -953,7 +971,7 @@ app.post('/api/auth/password-reset/request', resetLimiter, async (req, res) => {
     const sent = await otp.sendCode({ channel: 'email', email, lang: clean(req.body?.lang, 12) || 'en', ip: req.ip, purpose: 'reset' });
     res.json({ ...reply, expiresIn: sent.expiresIn, resendIn: sent.resendIn, devCode: sent.devCode, emailPreview: sent.emailPreview });
   } catch (e) {
-    if (e instanceof OtpError) return res.status(e.status).json({ error: e.message, retryAfter: e.retryAfter });
+    if (e instanceof OtpError) { console.warn('[reset] code not sent:', e.message); return res.json(reply); }
     throw e;
   }
 });
@@ -976,7 +994,10 @@ app.post('/api/auth/password-reset/confirm', resetVerifyLimiter, async (req, res
   notify(user.id, 'Password changed', 'Your password was changed using a code sent to your email. If this wasn\'t you, contact support right away.');
   audit(user, 'password_reset', null, 'account', 'Password set with an email code');
   store.save();
+  loginFails.delete(loginFailKey(email)); // a reset ends any lock-out on this account
   if (user.status === 'pending') return res.json({ ok: true, message: 'Password changed. You can sign in as soon as your account is approved.' });
+  // An inbox alone shouldn't open a staff or admin account: they sign in again with the new password.
+  if (!['patient', 'caregiver'].includes(user.role)) return res.json({ ok: true, message: 'Password changed. Please sign in with your new password.' });
   res.json({ ok: true, token: sign(user), user: publicUser(user) });
 });
 
@@ -1165,7 +1186,8 @@ app.post('/api/notifications/read', auth, (req, res) => {
 
 const triageLimiter = security.rateLimit({ windowMs: 10 * 60000, max: 60, message: 'Too many symptom checks. Please wait a few minutes.' });
 app.post('/api/triage', triageLimiter, optionalAuth, (req, res) => {
-  const result = engines.triage(req.body || {}, db().aiConfig);
+  const b = req.body && typeof req.body === 'object' ? req.body : {};
+  const result = engines.triage({ ...b, symptoms: String(b.symptoms || '').slice(0, 2000) }, db().aiConfig);
   res.json(result);
 });
 
@@ -1569,7 +1591,7 @@ app.post('/api/consults', auth, role('kiosk_operator'), (req, res) => {
 const callSignals = new Map(); // consultId → { seq, at, msgs: [{ seq, from, type, data, at }] }
 const SIGNAL_TYPES = new Set(['offer', 'answer', 'ice', 'hangup', 'ready']);
 const CALL_LIVE = ['queued', 'scheduled', 'in_progress'];
-const signalLimiter = security.rateLimit({ windowMs: 60000, max: 600, key: (r) => r.headers.authorization || r.ip, message: 'Too many call updates. Please wait a moment.' });
+const signalLimiter = security.rateLimit({ windowMs: 60000, max: 600, key: (r) => r.user?.id || r.ip, message: 'Too many call updates. Please wait a moment.' });
 // Patient side (patient, guardian, kiosk operator) or the treating doctor — admins can't join a call.
 function callAccess(req, res) {
   const c = db().consults.find((x) => x.id === req.params.id);
@@ -2899,7 +2921,7 @@ function activatePlan(d, pl) {
 function planView(pl, { forDoctor = false } = {}) {
   const p = patientById(pl.patientId) || {};
   const doc = doctorById(pl.doctorId) || {};
-  const pr = pl.status === 'active' || pl.status === 'lapsed' ? planProgress(pl) : null;
+  const pr = (pl.status === 'active' || pl.status === 'lapsed') && hasConsent(pl.patientId, [pl.doctorId], 'history') ? planProgress(pl) : null;
   const base = {
     id: pl.id, status: pl.status, conditions: pl.conditions, conditionLabels: pl.conditions.map((c) => careplans.CONDITION_LABEL[c]),
     targets: pl.targets, perWeek: pl.perWeek, fee: pl.fee, paidUntil: pl.paidUntil || null, createdAt: pl.createdAt, startedAt: pl.startedAt || null,
@@ -3305,7 +3327,7 @@ app.post('/api/lab-orders/:id/doctor-note', auth, role('doctor'), (req, res) => 
   const p = d.patients.find((x) => x.id === o.patientId);
   if (!p) return res.status(404).json({ error: 'Patient not found.' });
   o.doctorNote = { text, by: doc.name, at: nowIso() };
-  if (days) createFollowUp(d, { p, doc, days, diagnosis: `review of ${o.tests.map((t) => t.name).join(', ')}` });
+  if (days) createFollowUp(d, { p, doc, days, diagnosis: `review of ${o.tests.map((t) => t.name).join(', ')}` }); // no new access from a report note
   patientOwnerUserIds(p).forEach((u) => notify(u, 'Your doctor reviewed your report', `${doc.name}: "${text.slice(0, 90)}${text.length > 90 ? '…' : ''}"`));
   audit(req.user, 'report_advice', p.id, 'lab', o.id);
   store.save();
@@ -3391,7 +3413,7 @@ app.post('/api/doctor/transfers/:id/seen', auth, role('doctor'), (req, res) => {
   res.json({ ok: true });
 });
 
-const locationLimiter = security.rateLimit({ windowMs: 10 * 60000, max: 60, key: (r) => r.headers.authorization || r.ip, message: 'Too many location updates.' });
+const locationLimiter = security.rateLimit({ windowMs: 10 * 60000, max: 60, key: (r) => r.user?.id || r.ip, message: 'Too many location updates.' });
 app.post('/api/patient/location', auth, role('patient', 'caregiver'), locationLimiter, (req, res) => {
   const self = profilesFor(req.user).find((x) => x.userId === req.user.id);
   if (!self) return res.json({ ok: true, saved: false });
@@ -3673,9 +3695,9 @@ const MONITOR_REARM_MS = 3 * 86400000;
 const MONITOR_KEEP_MS = 90 * 86400000;
 const consentedPatientIds = (doc) => {
   const t = Date.now();
-  return new Set(db().consents.filter((c) => c.granteeId === doc.id && c.status === 'active' && (!c.expiry || Date.parse(c.expiry) > t)).map((c) => c.patientId));
+  return new Set(db().consents.filter((c) => c.granteeId === doc.id && c.status === 'active' && (!c.expiry || Date.parse(c.expiry) > t) && consentCovers(c, 'history')).map((c) => c.patientId));
 };
-const monitoringDoctors = (p) => db().doctors.filter((doc) => doc.userId && hasConsent(p.id, [doc.id]));
+const monitoringDoctors = (p) => db().doctors.filter((doc) => doc.userId && hasConsent(p.id, [doc.id], 'history'));
 const patientAlertView = (a) => ({ id: a.id, severity: a.severity, kind: a.kind, title: a.title, detail: a.detail, status: a.status, cleared: !!a.cleared, createdAt: a.createdAt, updatedAt: a.updatedAt, reviewedAt: a.reviewedAt || null, reviewedByName: a.reviewedByName || null, message: a.message || null });
 
 function refreshMonitoring(p, now = Date.now()) {
@@ -3757,7 +3779,7 @@ app.post('/api/doctor/monitoring/:id/review', auth, role('doctor'), (req, res) =
   const d = db();
   const doc = doctorFor(req.user);
   const a = (d.monitorAlerts || []).find((x) => x.id === req.params.id);
-  if (!a || !hasConsent(a.patientId, [doc.id])) return res.status(404).json({ error: 'Alert not found.' });
+  if (!a || !hasConsent(a.patientId, [doc.id], 'history')) return res.status(404).json({ error: 'Alert not found.' });
   if (a.status === 'reviewed') return res.json(patientAlertView(a));
   const message = clean(req.body?.message, 300);
   Object.assign(a, { status: 'reviewed', reviewedAt: nowIso(), reviewedBy: doc.id, reviewedByName: doc.name, message: message || null, updatedAt: nowIso() });
@@ -4377,7 +4399,7 @@ function recordAccess(user, doc, p) {
   return { consented, bg, copy };
 }
 
-const lookupLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 120, key: (r) => r.headers.authorization || r.ip, message: 'Too many patient searches. Please wait a while.' });
+const lookupLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 120, key: (r) => r.user?.id || r.ip, message: 'Too many patient searches. Please wait a while.' });
 app.get('/api/doctor/patient/:id', auth, role('doctor'), lookupLimiter, (req, res) => {
   const d = db();
   const doc = doctorFor(req.user);
@@ -4409,7 +4431,7 @@ app.get('/api/doctor/patient/:id', auth, role('doctor'), lookupLimiter, (req, re
     return res.json({ emergency: true, expiresAt: new Date(new Date(bg.at).getTime() + 60 * 60000).toISOString(), patient: { id: p.id, name: p.name, age: ageOf(p.dob), gender: p.gender, bloodGroup: p.bloodGroup, allergies: p.allergies, conditions: p.conditions, currentMeds: p.currentMeds, emergencyContacts: p.emergencyContacts } });
   }
   // Account-level settings (privacy choices, deletion requests, kiosk session) are the patient's own — not part of the clinical record.
-  const { privacy: _priv, deletionRequest: _del, kioskSeen: _ks, aadhaarRefHash: _ar, vaxReminded: _vr, vaxPrefs: _vp, vitalsReminder: _vit, ...clinical } = p;
+  const { privacy: _priv, deletionRequest: _del, kioskSeen: _ks, aadhaarRefHash: _ar, vaxReminded: _vr, vaxPrefs: _vp, vitalsReminder: _vit, govIds: _gi, aadhaarLast4: _a4, aadhaarVerification: _av, lat: _lat, lng: _lng, receptionSeen: _rs, ...clinical } = p;
   // With consent, only the parts the patient approved (break-glass returned above). Allergies and conditions stay
   // in the header for prescribing safety — the same critical set an emergency view shows.
   const may = consented ? consentScopes(p.id, [doc.id]) : new Set(CONSENT_SCOPES);
@@ -4539,7 +4561,7 @@ function pickChannel(c, wanted) {
 }
 const targetFor = (c, channel) => (channel === 'email' ? c.email : normalizePhone(c.mobile));
 
-const accessLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 30, key: (r) => r.headers.authorization || r.ip, message: 'Too many approval codes sent. Please wait a while.' });
+const accessLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 30, key: (r) => r.user?.id || r.ip, message: 'Too many approval codes sent. Please wait a while.' });
 // Which channel each doctor's last code for a patient went to, so verify checks the same target even when
 // the client doesn't repeat `channel`. Lives a little longer than the code itself; small and pruned on use.
 const accessChannels = new Map(); // `${doctorUserId}:${patientId}` → { channel, expiresAt }
@@ -4683,7 +4705,7 @@ function istAt(daysAhead, hour = 10, tz = APP_TZ) {
   const asUtc = new Date(utc.toLocaleString('en-US', { timeZone: 'UTC' }));
   return new Date(utc.getTime() - (local - asUtc)).toISOString();
 }
-function createFollowUp(d, { p, doc, days, diagnosis, from }) {
+function createFollowUp(d, { p, doc, days, diagnosis, from, grantAccess = false }) {
   const opts = bookingOptions(d, doc);
   const visitType = from?.visitType || (from?.mode === 'in_person' ? 'clinic' : from ? 'video' : opts.clinic ? 'clinic' : 'video');
   const location = from?.location || (visitType === 'clinic' && opts.clinic ? { kind: 'clinic', ...opts.clinic } : null);
@@ -4697,7 +4719,10 @@ function createFollowUp(d, { p, doc, days, diagnosis, from }) {
     ...(inPerson ? { visitSecret: crypto.randomBytes(16).toString('hex') } : {}),
   };
   d.consults.push(c);
-  d.consents.push({ id: store.id('cst'), patientId: p.id, granteeType: 'doctor', granteeId: doc.id, granteeName: doc.name, scope: ['history', 'prescriptions', 'labs', 'allergies'], purpose: 'Follow-up visit', start: nowIso(), expiry: new Date(Date.parse(c.scheduledAt) + 3 * 86400000).toISOString(), status: 'active' });
+  // Access until the follow-up only when it comes out of a real visit the patient took part in, and never wider
+  // than what the patient already allows this doctor — a follow-up can't revive revoked or narrowed access.
+  const may = grantAccess ? consentScopes(p.id, [doc.id]) : new Set();
+  if (may.size) d.consents.push({ id: store.id('cst'), patientId: p.id, granteeType: 'doctor', granteeId: doc.id, granteeName: doc.name, scope: [...may], purpose: 'Follow-up visit', start: nowIso(), expiry: new Date(Date.parse(c.scheduledAt) + 3 * 86400000).toISOString(), status: 'active' });
   const when = new Date(c.scheduledAt).toLocaleString('en-IN', { timeZone: APP_TZ, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
   patientOwnerUserIds(p).forEach((u) => notify(u, 'Follow-up booked', `${doc.name} wants to see you again on ${when}${inPerson ? ` at ${location.name}` : ' (video)'}.`));
   emailPatient(p, `Your follow-up with ${doc.name} is booked`, [`Your follow-up with ${doc.name} is booked for ${istWhen(c.scheduledAt)} IST (${consultWhere(c)}).`, 'We\'ll remind you the day before and an hour before. You can see or change it in the app.']);
@@ -4870,7 +4895,9 @@ app.post('/api/consults/:id/complete', auth, role('doctor'), (req, res) => {
     d.users.filter((u) => u.role === 'hospital_admin' && u.facilityId === refTo.id).forEach((u) => touch(u.id));
   }
   if (followUpDays) {
-    const fu = createFollowUp(d, { p, doc, days: followUpDays, diagnosis: c.diagnosis, from: c }); // the cleaned (≤200 chars) diagnosis, never the raw body
+    // The patient was in this visit (a booking they paid for, or a follow-up they actually attended / wrote in).
+    const attended = !c.followUp || Boolean(c.checkedInAt) || (c.messages || []).some((m) => m.from === 'patient');
+    const fu = createFollowUp(d, { p, doc, days: followUpDays, diagnosis: c.diagnosis, from: c, grantAccess: attended }); // the cleaned (≤200 chars) diagnosis, never the raw body
     if (rx) rx.followUpOn = fu.scheduledAt;
   }
   patientOwnerUserIds(p).forEach((u) => notify(u, 'Consult summary ready', `${doc.name} has completed your consult${rx ? ' and sent an e-prescription' : ''}.`));
@@ -4928,7 +4955,7 @@ function nearestHospitalTo(d, kiosk) {
 }
 
 // A kiosk login could otherwise walk through phone numbers / passport ids to enumerate patients.
-const identifyLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 120, key: (r) => r.headers.authorization || r.ip, message: 'Too many patient look-ups from this kiosk. Please wait a while.' });
+const identifyLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 120, key: (r) => r.user?.id || r.ip, message: 'Too many patient look-ups from this kiosk. Please wait a while.' });
 app.post('/api/kiosk/identify', auth, role('kiosk_operator'), identifyLimiter, (req, res) => {
   const q = String(req.body?.query || '').trim();
   const users = db().users;
@@ -6144,7 +6171,7 @@ function addStock(d, fid, row) {
   }
   const i = { id: store.id('inv'), facilityId: fid, drug: row.drug, batch: row.batch || null, expiry: row.expiry, qty: row.qty, safetyStock: row.safetyStock ?? 10, ...(row.gtin ? { gtin: row.gtin } : {}), updatedAt: nowIso() };
   d.inventory.push(i);
-  if (!d.drugMaster.includes(row.drug)) d.drugMaster.push(row.drug);
+  if (d.drugMaster.length < 5000 && d.facilities.find((f) => f.id === fid)?.verified && !d.drugMaster.includes(row.drug)) d.drugMaster.push(row.drug);
   return i;
 }
 
@@ -6292,11 +6319,11 @@ app.post('/api/gov/transfers', auth, role('official'), (req, res) => {
   if (!dest) return res.status(404).json({ error: `There's no verified chemist on Nexus in ${to.district} to receive it yet.` });
   let src = null;
   if (from?.district) {
-    src = d.facilities.filter((f) => f.verified && ['pharmacy', 'warehouse'].includes(f.type) && f.id !== dest.id && f.district === from.district && (!from.state || f.state === from.state))
+    src = d.facilities.filter((f) => f.verified && ['pharmacy', 'warehouse'].includes(f.type) && f.id !== dest.id && sc.inScope(f) && f.district === from.district && (!from.state || f.state === from.state))
       .map((f) => ({ f, spare: spareOf(d, f.id, drug) })).filter((x) => x.spare >= qty).sort((a, c) => c.spare - a.spare)[0]?.f || null;
     if (!src) return res.status(404).json({ error: `No verified chemist or warehouse in ${from.district} has ${qty} spare of ${drug} above its safety stock.` });
   } else {
-    const hit = engines.findStock(d, drug, to, qty).find((x) => x.facilityId !== dest.id && x.facility?.verified);
+    const hit = engines.findStock(d, drug, to, qty).find((x) => x.facilityId !== dest.id && x.facility?.verified && sc.inScope(x.facility));
     if (!hit) return res.status(404).json({ error: `No verified source on Nexus has ${qty} spare of ${drug}. Try a smaller quantity.` });
     src = hit.facility;
   }
@@ -6617,7 +6644,7 @@ const defaultPrice = (f, drug) => {
   if (!pr) return null;
   return f.type === 'warehouse' ? r2(pr.mrp * 0.7) : r2(pr.mrp * (f.priceFactor || 1));
 };
-const labTestPrice = (lab, code) => { const t = catalog.TESTS[code]; return t ? catalog.round(t.base * (lab.priceFactor || 1)) : null; };
+const labTestPrice = (lab, code) => { const t = own(catalog.TESTS, code) ? catalog.TESTS[code] : null; return t ? catalog.round(t.base * (lab.priceFactor || 1)) : null; };
 const labOrderBalance = (o) => (o.booking && o.booking.balance > 0 && !o.booking.balancePaid && !['cancelled'].includes(o.status) ? o.booking.balance : 0);
 const billView = (b) => b;
 
@@ -6714,7 +6741,7 @@ app.post('/api/billing/bills', auth, role('pharmacist', 'distributor', 'lab_tech
       }
       if (!Number.isInteger(qty) || qty < 1 || qty > 50) return res.status(400).json({ error: 'Enter how many of each test (1–50).' });
       const pkg = l.packageId && (f.packages || []).find((p) => p.id === l.packageId && p.active !== false);
-      const code = !pkg && l.code && catalog.TESTS[l.code] ? l.code : null;
+      const code = !pkg && l.code && own(catalog.TESTS, l.code) && (!Array.isArray(f.tests) || !f.tests.length || f.tests.includes(l.code)) ? l.code : null;
       if (!pkg && !code) return res.status(400).json({ error: 'Choose a test or package from your list.' });
       const listPrice = pkg ? pkg.price : labTestPrice(f, code);
       const price = l.price !== undefined && l.price !== '' ? r2(l.price) : listPrice;
@@ -6979,7 +7006,10 @@ app.post('/api/advisories', auth, role('official', 'super_admin'), (req, res) =>
   const b = req.body || {};
   const title = clean(b.title, 120); const body = clean(b.body, 2000); const publish = Boolean(b.publish);
   if (!title || !body) return res.status(400).json({ error: 'Title and message are required.' });
-  const a = { id: store.id('adv'), title, body, region: clean(b.region, 80) || 'All', languages: b.languages === undefined ? ['Hindi', 'English'] : cleanList(b.languages, 12), status: publish ? 'published' : 'draft', createdAt: nowIso(), by: req.user.name };
+  // A district / state official can't broadcast to the whole country: the region is pinned to their area.
+  const sc = req.user.role === 'official' ? govScope(req.user) : null;
+  const region = sc && sc.level !== 'national' ? (sc.level === 'state' ? sc.state : sc.district) : clean(b.region, 80) || 'All';
+  const a = { id: store.id('adv'), title, body, region, createdBy: req.user.id, languages: b.languages === undefined ? ['Hindi', 'English'] : cleanList(b.languages, 12), status: publish ? 'published' : 'draft', createdAt: nowIso(), by: req.user.name };
   db().advisories.unshift(a);
   if (publish) advisoryAudience(a).forEach((uid) => notify(uid, `Health advisory: ${title}`, body, 'alert'));
   store.save();
@@ -6990,6 +7020,11 @@ app.post('/api/advisories', auth, role('official', 'super_admin'), (req, res) =>
 app.put('/api/advisories/:id', auth, role('official', 'super_admin'), (req, res) => {
   const a = db().advisories.find((x) => x.id === req.params.id);
   if (!a) return res.status(404).json({ error: 'Advisory not found.' });
+  if (req.user.role === 'official') {
+    const sc = govScope(req.user);
+    const mine = a.createdBy === req.user.id || (sc.level !== 'national' && [sc.district, sc.state].includes(a.region)) || sc.level === 'national';
+    if (!mine) return res.status(403).json({ error: 'You can only change advisories for your own area.' });
+  }
   const b = req.body || {};
   if (b.title !== undefined && clean(b.title, 120)) a.title = clean(b.title, 120);
   if (b.body !== undefined && clean(b.body, 2000)) a.body = clean(b.body, 2000);
@@ -7377,6 +7412,7 @@ app.post('/api/consults/:id/scribe', auth, role('doctor'), scribeLimiter, async 
   const transcript = typeof req.body?.transcript === 'string' ? req.body.transcript.slice(0, scribe.MAX_TRANSCRIPT) : '';
   if (!transcript.trim()) return res.json(innovations.scribeDraft(d, c));
   if (transcript.trim().length < 20) return res.status(400).json({ error: 'The transcript is too short to draft from. Record a little more of the consultation.' });
+  if (scribe.aiOn() && req.body?.patientConsent !== true) return res.status(400).json({ error: 'Confirm the patient agreed before drafting — the AI scribe sends the transcript to an outside AI service.' });
   const patient = d.patients.find((p) => p.id === c.patientId) || {};
   const drugNames = [
     ...d.drugMaster.filter((x) => typeof x === 'string'),
@@ -7517,8 +7553,12 @@ app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.' }));
 app.use((err, _req, res, _next) => {
   if (err?.expose && err.status) return res.status(err.status).json({ error: err.message });
   if (err?.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'That file is too big. Please keep uploads under 10 MB.' });
+  if (typeof err?.code === 'string' && err.code.startsWith('LIMIT_')) return res.status(400).json({ error: 'Please attach one PDF or photo.' });
   if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid request.' });
-  console.error(err);
+  // A malformed %-encoded address (e.g. /lab-tests/%E0%A4%A) is a bad request, not a server fault.
+  if (err instanceof URIError || /^Failed to decode param/.test(err?.message || '')) return res.status(400).json({ error: 'That address isn’t valid.' });
+  // Message, code and route only: database errors carry the conflicting values (personal data) in their details.
+  console.error('[error]', _req.method, _req.path, err?.code || '', err?.message || err, process.env.NODE_ENV === 'production' ? '' : err?.stack || '');
   res.status(500).json({ error: 'Something went wrong on our side. Please try again.' });
 });
 

@@ -34,9 +34,11 @@ function addToCalendar(c) {
   const start = new Date(c.scheduledAt);
   const end = new Date(start.getTime() + 30 * 60000);
   const f = (d) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-  const where = c.mode === 'in_person' ? (c.location?.name || '') : 'Nexus Healthcare app (video)';
+  // Calendar text values: no line breaks (they would start new calendar properties) and RFC 5545 escaping.
+  const t = (v) => String(v || '').replace(/[\r\n]+/g, ' ').replace(/([\\;,])/g, '\\$1');
+  const where = t(c.mode === 'in_person' ? (c.location?.name || '') : 'Nexus Healthcare app (video)');
   const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Nexus Healthcare//EN', 'BEGIN:VEVENT', `UID:${c.id}@nexushealthcare`, `DTSTAMP:${f(new Date())}`, `DTSTART:${f(start)}`, `DTEND:${f(end)}`,
-    `SUMMARY:${c.followUp ? 'Follow-up' : 'Appointment'} with ${c.doctorName}`, `LOCATION:${where}`, `DESCRIPTION:${(c.triage?.symptoms || '').replace(/\n/g, ' ')}`,
+    `SUMMARY:${c.followUp ? 'Follow-up' : 'Appointment'} with ${t(c.doctorName)}`, `LOCATION:${where}`, `DESCRIPTION:${t(c.triage?.symptoms)}`,
     'BEGIN:VALARM', 'TRIGGER:-PT2H', 'ACTION:DISPLAY', 'DESCRIPTION:Doctor visit in 2 hours', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
   const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
   const a = document.createElement('a'); a.href = url; a.download = `nexus-visit-${fmtDate(c.scheduledAt).replace(/\s/g, '-')}.ics`; a.click();
