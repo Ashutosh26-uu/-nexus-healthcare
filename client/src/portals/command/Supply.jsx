@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { PackageX, Truck, AlertTriangle, ArrowRight, Pill, Check, Eye } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
-import { Card, Stat, Empty, StatusBadge, Button, Modal, Field, cx, fmtNum, timeAgo } from '../../components/ui';
+import { api } from '../../api';
+import { Card, Stat, Empty, StatusBadge, Button, Modal, Field, useAction, cx, fmtNum, timeAgo } from '../../components/ui';
 import { useGov, regionOptions, isOpen } from './shared';
 import AlertAction from './AlertAction';
 
@@ -12,25 +13,48 @@ function daysTone(d) {
 }
 
 export function StockMoveModal({ open, onClose, drug: initialDrug = '' }) {
-  const { data } = useGov();
+  const { data, reload } = useGov();
   const opts = regionOptions(data);
   const drugs = [...new Set([...(data.shortages || []).map((s) => s.drug), 'ORS sachet', 'Paracetamol 500mg', 'Dengue NS1 rapid kit'])];
-  const [form, setForm] = useState({ drug: initialDrug || drugs[0] || '', qty: 200, from: '', to: '', priority: 'urgent' });
+  // A district officer can only send stock into their own district, so it's preselected for them.
+  const ownDistrict = data.scope?.level === 'district' ? opts.find((o) => o.district === data.scope.district)?.label || '' : '';
+  const [form, setForm] = useState({ drug: initialDrug || drugs[0] || '', qty: 200, from: '', to: ownDistrict, priority: 'urgent' });
+  const [run, busy] = useAction();
+  const [done, setDone] = useState(null);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const region = (label) => { const o = opts.find((x) => x.label === label); return o ? { district: o.district, state: o.state } : null; };
 
-  // Transfers can only be requested by the receiving chemist (POST /api/transfers/request is pharmacist-only);
-  // there is no official-side "order a stock movement" endpoint yet, so this form can't be sent — it says so.
-  const submit = (e) => e.preventDefault();
+  // Creates an ordinary transfer request: the source chemist or warehouse accepts and dispatches it under
+  // Dispatch, the receiving chemist marks it received, and it shows below until then.
+  const submit = async (e) => {
+    e.preventDefault();
+    const r = await run('move', () => api.post('/gov/transfers', { drug: form.drug, qty: Number(form.qty), priority: form.priority, from: region(form.from), to: region(form.to) }), 'Stock move ordered');
+    if (r) { setDone(r); reload?.(); }
+  };
+
+  if (done) {
+    return (
+      <Modal open={open} onClose={onClose} title="Stock move ordered">
+        <div className="stack">
+          <div className="callout green small">
+            <strong>{fmtNum(done.qty)} × {done.drug}</strong> from <strong translate="no">{done.fromName}</strong> to <strong translate="no">{done.toName}</strong>, {done.toDistrict}.
+            The source has been notified to accept and dispatch it; you&apos;ll see it move under “Ordered and in transit”.
+          </div>
+          <div className="row" style={{ justifyContent: 'flex-end' }}><Button onClick={onClose}>Done</Button></div>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
-    <Modal open={open} onClose={onClose} title="Order stock movement" subtitle="Coming soon — moving stock between regions from here isn't live yet.">
+    <Modal open={open} onClose={onClose} title="Order stock movement" subtitle="Ask a chemist or warehouse with spare stock to send it where it's needed.">
       <form className="stack" onSubmit={submit}>
         <Field label="Medicine or kit">
           <input className="input" list="cc-drugs" value={form.drug} onChange={set('drug')} required />
           <datalist id="cc-drugs">{drugs.map((d) => <option key={d} value={d} />)}</datalist>
         </Field>
         <div className="grid two" style={{ gap: 12 }}>
-          <Field label="Quantity"><input className="input" type="number" min="1" value={form.qty} onChange={set('qty')} required /></Field>
+          <Field label="Quantity"><input className="input" type="number" min="1" max="100000" value={form.qty} onChange={set('qty')} required /></Field>
           <Field label="Priority">
             <select className="select" value={form.priority} onChange={set('priority')}>
               <option value="urgent">Urgent · within 24 h</option>
@@ -47,16 +71,16 @@ export function StockMoveModal({ open, onClose, drug: initialDrug = '' }) {
             </select>
           </Field>
           <Field label="To (destination)">
-            <select className="select" value={form.to} onChange={set('to')} required>
+            <select className="select" value={form.to} onChange={set('to')} required disabled={Boolean(ownDistrict)}>
               <option value="" disabled>Choose…</option>
               {opts.map((o) => <option key={o.label}>{o.label}</option>)}
             </select>
           </Field>
         </div>
-        <div className="callout sun small">Ordering stock moves from the command centre is coming soon. Today, chemists request stock themselves from their Stock alerts screen, and every transfer shows under “In transit”.</div>
+        <p className="tiny muted">Only spare stock above a source&apos;s safety level is used. It goes to the verified chemist in the destination with the least of this medicine.</p>
         <div className="row" style={{ justifyContent: 'flex-end', gap: 10 }}>
-          <Button type="button" variant="ghost" onClick={onClose}>Close</Button>
-          <Button type="submit" icon={Truck} disabled title="Not available yet">Coming soon</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button type="submit" icon={Truck} loading={busy === 'move'} disabled={Boolean(busy)}>Order move</Button>
         </div>
       </form>
     </Modal>
@@ -107,7 +131,7 @@ export default function Supply() {
         </Card>
 
         <div className="stack lg">
-          <Card title="In transit">
+          <Card title="Ordered and in transit">
             {transfers.length === 0 ? <Empty icon={Truck} title="Nothing moving">No dispatches on the road right now.</Empty> : (
               <div className="stack" style={{ gap: 12 }}>
                 {transfers.map((t) => (

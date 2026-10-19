@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Printer, Smartphone, Banknote, BadgeIndianRupee, ArrowRight, Check } from 'lucide-react';
+import { api } from '../../api';
 import { useLive } from '../../live';
-import { cx, PreviewBadge } from '../../components/ui';
+import QR from '../../components/QR';
+import { cx, useAction } from '../../components/ui';
 import { usePublicConfig } from '../../config';
 import { useKiosk } from './context';
 import { KButton, StepFrame } from './KUi';
@@ -35,8 +37,19 @@ function MockQR({ seed = 'omnicare', size = 29 }) {
 export default function StepPay() {
   const { t, say, flow, setFlow, kiosk } = useKiosk();
   const { data: c } = useLive(flow.consultId ? `/consults/${flow.consultId}` : null, ['prescriptions', 'consults', `consult:${flow.consultId}`]);
-  // Kiosk payments aren't wired to a gateway yet: on a live kiosk there is no UPI QR and nothing is "recorded".
-  const demo = usePublicConfig()?.demo === true;
+  // UPI is real when the network has its UPI ID set (UPI_VPA): a payable QR for the amount the operator enters,
+  // recorded once the operator sees success on the patient's phone. Without it, the demo network shows a
+  // look-alike QR and a live kiosk offers cash only.
+  const cfg = usePublicConfig();
+  const demo = cfg?.demo === true;
+  const realUpi = cfg?.upi === true;
+  const [amount, setAmount] = useState('');
+  const [upi, setUpi] = useState(null);
+  const [run, busy] = useAction();
+  const makeQr = async () => {
+    const r = await run('qr', () => api.post('/kiosk/upi', { consultId: flow.consultId, amount: Number(amount), note: 'Kiosk visit' }));
+    if (r) setUpi(r);
+  };
   const [method, setMethod] = useState(flow.payment?.method || 'pilot');
   const [paid, setPaid] = useState(Boolean(flow.payment?.done));
   const [printed, setPrinted] = useState(false);
@@ -46,7 +59,13 @@ export default function StepPay() {
   }, []);
 
   const doPrint = () => { setPrinted(true); setTimeout(() => window.print(), 50); };
-  const confirm = () => { setPaid(true); setFlow({ payment: { method, done: true } }); };
+  const confirm = async () => {
+    if (method === 'upi' && realUpi) {
+      const r = await run('confirm', () => api.post(`/kiosk/upi/${upi.id}/confirm`), 'Payment recorded');
+      if (!r) return;
+    }
+    setPaid(true); setFlow({ payment: { method, done: true, ...(upi && method === 'upi' ? { id: upi.id, amount: upi.amount } : {}) } });
+  };
 
   return (
     <StepFrame
@@ -73,16 +92,34 @@ export default function StepPay() {
           <div className="k-paymethods">
             {[
               { id: 'pilot', icon: BadgeIndianRupee, label: 'Nothing to pay', sub: 'No fee today' },
-              { id: 'upi', icon: Smartphone, label: 'UPI', sub: demo ? 'Any UPI app' : 'Coming soon', off: !demo },
+              { id: 'upi', icon: Smartphone, label: 'UPI', sub: realUpi || demo ? 'Any UPI app' : 'Not set up', off: !realUpi && !demo },
               { id: 'cash', icon: Banknote, label: 'Cash', sub: 'Give to operator' },
             ].map((m) => (
-              <button key={m.id} type="button" className={cx('k-paym', method === m.id && 'on')} disabled={m.off} aria-disabled={m.off || undefined} onClick={() => { if (m.off) return; setMethod(m.id); setPaid(false); }}>
+              <button key={m.id} type="button" className={cx('k-paym', method === m.id && 'on')} disabled={m.off} aria-disabled={m.off || undefined} onClick={() => { if (m.off) return; setMethod(m.id); setPaid(false); setUpi(null); }}>
                 <m.icon /><strong>{m.label}</strong><span>{m.sub}</span>
               </button>
             ))}
           </div>
-          {!demo && <p className="k-fine"><PreviewBadge>Coming soon</PreviewBadge> UPI payment at the kiosk isn&apos;t connected yet.</p>}
-          {demo && method === 'upi' && (
+          {!realUpi && !demo && <p className="k-fine">UPI isn&apos;t set up on this network yet — the admin adds the network&apos;s UPI ID to turn it on. Cash works meanwhile.</p>}
+          {realUpi && method === 'upi' && !paid && (
+            upi ? (
+              <div className="k-upi fade-in">
+                <QR value={upi.upi} size={180} label={`UPI QR for ₹${upi.amount}`} />
+                <div>
+                  <strong>Scan with any UPI app to pay ₹{upi.amount}</strong>
+                  <span className="k-fine">Operator: tap “Payment received” only after the patient&apos;s app shows success.</span>
+                  <button type="button" className="btn ghost sm" onClick={() => setUpi(null)}>Change amount</button>
+                </div>
+              </div>
+            ) : (
+              <div className="k-upi fade-in">
+                <label className="k-field-l" htmlFor="k-upi-amt">Amount (₹)</label>
+                <input id="k-upi-amt" className="input" type="number" inputMode="decimal" min="1" max="20000" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                <KButton icon={Smartphone} disabled={!(Number(amount) >= 1 && Number(amount) <= 20000) || busy === 'qr'} onClick={makeQr}>Show UPI QR</KButton>
+              </div>
+            )
+          )}
+          {!realUpi && demo && method === 'upi' && (
             <div className="k-upi fade-in">
               <MockQR seed={flow.consultId || 'oc'} />
               <div>
@@ -95,7 +132,7 @@ export default function StepPay() {
           {paid ? (
             <div className="k-paid fade-in"><Check />{method === 'pilot' ? 'All set — nothing to pay today.' : 'Noted. Thank you!'}</div>
           ) : (
-            <KButton icon={Check} onClick={confirm}>{method === 'pilot' ? 'Confirm' : method === 'upi' ? 'Payment received' : 'Cash collected'}</KButton>
+            <KButton icon={Check} disabled={method === 'upi' && realUpi && (!upi || busy === 'confirm')} onClick={confirm}>{method === 'pilot' ? 'Confirm' : method === 'upi' ? 'Payment received' : 'Cash collected'}</KButton>
           )}
         </div>
       </div>

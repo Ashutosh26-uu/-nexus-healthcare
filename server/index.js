@@ -461,7 +461,7 @@ const DATA_MODE = require('./seed').dataMode();
 app.get('/api/public/config', (_req, res) => {
   const o = otp.publicConfig();
   res.json({
-    appName: 'Nexus Healthcare', demo: DATA_MODE === 'demo', smsLive: o.live, emailLive: o.emailLive, version: require('../package.json').version,
+    appName: 'Nexus Healthcare', demo: DATA_MODE === 'demo', smsLive: o.live, emailLive: o.emailLive, upi: Boolean(process.env.UPI_VPA), version: require('../package.json').version,
     // The real support line / inbox, only when the operator configured them — null means "don't show a number".
     support: { phone: clean(process.env.SUPPORT_PHONE, 30) || null, email: clean(process.env.SUPPORT_EMAIL, 120) || null, hours: clean(process.env.SUPPORT_HOURS, 60) || null },
   });
@@ -5626,6 +5626,120 @@ app.post('/api/transfers/request', auth, role('pharmacist'), (req, res) => {
   res.json({ ...t, fromName: src.facility.name, tierName: src.tierName });
 });
 
+// ---------- stock moves started by an official or offered by a warehouse ----------
+// Both create an ordinary transfer, so the rest is the flow everyone already uses: the source accepts and
+// dispatches (Dispatch approvals), the receiving chemist marks it received, and the command centre sees it in
+// transit. Nothing moves on paper alone: stock leaves the source shelf only when it is dispatched.
+const sameDrug = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
+const spareOf = (d, fid, drug) => {
+  const inv = d.inventory.find((i) => i.facilityId === fid && sameDrug(i.drug, drug));
+  return inv ? Math.max(0, inv.qty - (inv.safetyStock || 0)) : 0;
+};
+// The verified chemist in a district that most needs a medicine: least stock above safety (none counts lowest).
+function neediestPharmacy(d, drug, { district, state }, excludeId) {
+  const list = d.facilities.filter((f) => f.type === 'pharmacy' && f.verified && f.id !== excludeId && f.district === district && (!state || f.state === state));
+  const level = (f) => {
+    const inv = d.inventory.find((i) => i.facilityId === f.id && sameDrug(i.drug, drug));
+    return inv ? inv.qty - (inv.safetyStock || 0) : -Infinity;
+  };
+  return list.sort((a, b) => level(a) - level(b))[0] || null;
+}
+const facilityUsers = (d, fid) => d.users.filter((u) => u.facilityId === fid).map((u) => u.id);
+const regionOf = (v) => (v && typeof v === 'object' ? { district: clean(v.district, 80), state: clean(v.state, 80) } : null);
+
+app.post('/api/gov/transfers', auth, role('official'), (req, res) => {
+  const d = db();
+  const b = req.body || {};
+  const drug = clean(b.drug, 80);
+  const qty = parseInt(b.qty, 10);
+  const to = regionOf(b.to);
+  const from = regionOf(b.from);
+  const priority = b.priority === 'routine' ? 'routine' : 'urgent';
+  if (drug.length < 2) return res.status(400).json({ error: 'Choose a medicine or kit.' });
+  if (!Number.isInteger(qty) || qty < 1 || qty > 100000) return res.status(400).json({ error: 'Enter a quantity between 1 and 100000.' });
+  if (!to?.district) return res.status(400).json({ error: 'Choose where the stock should go.' });
+  if (req.user.scope === 'district' && to.district !== req.user.region?.district) return res.status(403).json({ error: 'You can only send stock into your own district.' });
+  if (req.user.scope === 'state' && to.state && to.state !== req.user.region?.state) return res.status(403).json({ error: 'You can only send stock into your own state.' });
+  const dest = neediestPharmacy(d, drug, to);
+  if (!dest) return res.status(404).json({ error: `There's no verified chemist on Nexus in ${to.district} to receive it yet.` });
+  let src = null;
+  if (from?.district) {
+    src = d.facilities.filter((f) => f.verified && ['pharmacy', 'warehouse'].includes(f.type) && f.id !== dest.id && f.district === from.district && (!from.state || f.state === from.state))
+      .map((f) => ({ f, spare: spareOf(d, f.id, drug) })).filter((x) => x.spare >= qty).sort((a, c) => c.spare - a.spare)[0]?.f || null;
+    if (!src) return res.status(404).json({ error: `No verified chemist or warehouse in ${from.district} has ${qty} spare of ${drug} above its safety stock.` });
+  } else {
+    const hit = engines.findStock(d, drug, to, qty).find((x) => x.facilityId !== dest.id && x.facility?.verified);
+    if (!hit) return res.status(404).json({ error: `No verified source on Nexus has ${qty} spare of ${drug}. Try a smaller quantity.` });
+    src = hit.facility;
+  }
+  const realDrug = d.inventory.find((i) => i.facilityId === src.id && sameDrug(i.drug, drug))?.drug || drug;
+  const t = { id: store.id('tr'), drug: realDrug, qty, fromId: src.id, toId: dest.id, status: 'requested', priority,
+    reason: `Ordered by health official ${req.user.name} — ${priority === 'urgent' ? 'urgent, within 24 h' : 'routine, this week'}`, orderedBy: req.user.id, createdAt: nowIso() };
+  d.transfers.unshift(t);
+  facilityUsers(d, src.id).forEach((u) => notify(u, 'Stock move ordered by a health official', `Please send ${qty} × ${realDrug} to ${dest.name}, ${dest.district} (${priority}). Accept it under Dispatch.`));
+  facilityUsers(d, dest.id).forEach((u) => notify(u, 'Stock is being arranged for you', `A health official asked ${src.name} to send you ${qty} × ${realDrug}.`));
+  audit(req.user, 'gov_stock_move', null, 'supply', `${t.id} · ${qty} ${realDrug} · ${src.name} → ${dest.name}`);
+  touchFacility(src.id, dest.id);
+  store.save();
+  broadcast('supply', 'pharmacy', 'gov', 'dispatch');
+  res.json({ ...t, fromName: src.name, toName: dest.name, toDistrict: dest.district });
+});
+
+// A warehouse offers spare stock to a district flagged with a shortage. The warehouse has already agreed, so the
+// transfer starts as "accepted" — it goes on to Dispatch like any other.
+app.post('/api/supply/offers', auth, role('distributor'), (req, res) => {
+  const d = db();
+  const a = d.alerts.find((x) => x.id === req.body?.alertId && x.type === 'shortage');
+  if (!a || ['dismissed', 'resolved'].includes(a.status)) return res.status(404).json({ error: 'That shortage is no longer open.' });
+  const qty = parseInt(req.body?.qty, 10);
+  if (!Number.isInteger(qty) || qty < 1) return res.status(400).json({ error: 'Enter how many to offer.' });
+  const wh = d.facilities.find((f) => f.id === req.user.facilityId);
+  if (!wh) return res.status(404).json({ error: 'Warehouse not found.' });
+  const spare = spareOf(d, wh.id, a.drug);
+  if (qty > spare) return res.status(400).json({ error: `You have ${spare} spare above safety stock — offer that many or fewer.` });
+  const dest = neediestPharmacy(d, a.drug, a, wh.id);
+  if (!dest) return res.status(404).json({ error: `No verified chemist on Nexus in ${a.district} to receive it yet.` });
+  const drug = d.inventory.find((i) => i.facilityId === wh.id && sameDrug(i.drug, a.drug))?.drug || a.drug;
+  const t = { id: store.id('tr'), drug, qty, fromId: wh.id, toId: dest.id, status: 'accepted', reason: `Offered by ${wh.name} for the ${a.district} shortage`, alertId: a.id, createdAt: nowIso() };
+  d.transfers.unshift(t);
+  a.actions = a.actions || [];
+  a.actions.push({ at: nowIso(), by: wh.name, action: `Offered ${qty} × ${drug} to ${dest.name}` });
+  facilityUsers(d, dest.id).forEach((u) => notify(u, 'Stock on its way', `${wh.name} is sending you ${qty} × ${drug} for the shortage in ${a.district}. Mark it received when it arrives.`));
+  audit(req.user, 'supply_offer', null, 'supply', `${t.id} · ${qty} ${drug} → ${dest.name}`);
+  touchFacility(wh.id, dest.id);
+  store.save();
+  broadcast('supply', 'pharmacy', 'gov', 'dispatch', 'alerts');
+  res.json({ ...t, toName: dest.name });
+});
+
+// ---------- UPI at the kiosk ----------
+// A real UPI QR to the network's own UPI ID (UPI_VPA) for an amount the operator enters. UPI has no callback
+// without a payment gateway, so the operator confirms once the patient's app shows success; it's recorded as
+// operator-confirmed, never as gateway-verified.
+app.post('/api/kiosk/upi', auth, role('kiosk_operator'), (req, res) => {
+  const d = db();
+  const c = d.consults.find((x) => x.id === req.body?.consultId);
+  if (!c || c.kioskId !== req.user.facilityId) return res.status(404).json({ error: 'Visit not found at this kiosk.' });
+  const amount = Math.round(Number(req.body?.amount) * 100) / 100;
+  if (!Number.isFinite(amount) || amount < 1 || amount > 20000) return res.status(400).json({ error: 'Enter an amount between ₹1 and ₹20,000.' });
+  const note = clean(req.body?.note, 60) || 'Kiosk payment';
+  const pay = { id: store.id('pay'), purpose: 'kiosk_extra', refId: c.id, kioskId: req.user.facilityId, amount, status: 'created', provider: 'upi', method: 'upi', label: note, createdAt: nowIso() };
+  const upi = payments.upiUri({ amount, ref: pay.id, note });
+  if (!upi) return res.status(501).json({ error: 'UPI isn’t set up on this network yet — the admin needs to add the UPI ID (UPI_VPA). Take cash for now.' });
+  d.payments.push(pay);
+  store.save();
+  res.json({ id: pay.id, amount, upi, note });
+});
+app.post('/api/kiosk/upi/:id/confirm', auth, role('kiosk_operator'), (req, res) => {
+  const pay = db().payments.find((x) => x.id === req.params.id && x.purpose === 'kiosk_extra' && x.kioskId === req.user.facilityId);
+  if (!pay) return res.status(404).json({ error: 'Payment not found.' });
+  if (pay.status !== 'created') return res.json({ id: pay.id, status: pay.status });
+  Object.assign(pay, { status: 'operator_confirmed', paidAt: nowIso(), confirmedBy: req.user.id });
+  audit(req.user, 'kiosk_upi_confirmed', null, 'payment', `${pay.id} · ₹${pay.amount}`);
+  store.save();
+  res.json({ id: pay.id, status: pay.status, paidAt: pay.paidAt });
+});
+
 app.post('/api/transfers/:id/:action', auth, role('pharmacist', 'distributor'), (req, res) => {
   const d = db();
   const t = d.transfers.find((x) => x.id === req.params.id);
@@ -5878,7 +5992,7 @@ app.get('/api/gov/overview', auth, role('official'), (req, res) => {
     // Scoped on the server (the browser used to receive every region's corridors and filter them itself).
     corridors: scoped ? d.corridors.filter((c) => corridorTouches(c, req.user.region?.district)) : d.corridors,
     shortages: stockDays,
-    transfersInTransit: d.transfers.filter((t) => ['accepted', 'dispatched'].includes(t.status) && (!scoped || inScope(facilityById(t.fromId) || {}) || inScope(facilityById(t.toId) || {}))).map((t) => ({ ...t, fromName: facilityName(t.fromId), toName: facilityName(t.toId) })),
+    transfersInTransit: d.transfers.filter((t) => (['accepted', 'dispatched'].includes(t.status) || (t.status === 'requested' && t.orderedBy)) && (!scoped || inScope(facilityById(t.fromId) || {}) || inScope(facilityById(t.toId) || {}))).map((t) => ({ ...t, fromName: facilityName(t.fromId), toName: facilityName(t.toId) })),
     outbreakTrend: outbreakTrend(),
     advisories: d.advisories,
   });
