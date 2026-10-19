@@ -195,7 +195,7 @@ const PERSONAL_ROLES = new Set(['patient', 'caregiver', 'doctor', 'pharmacist', 
 // someone come online, go offline or lose a slot without refreshing.
 // 'stock' and 'labs' are derived (below): any pharmacy / supply or lab event can change what a chemist has free
 // or a lab can take, so open chemist and lab lists refresh — again only the topic name travels.
-const PUBLIC_TOPICS = new Set(['all', 'advisories', 'doctors', 'stock', 'labs']);
+const PUBLIC_TOPICS = new Set(['all', 'advisories', 'doctors', 'stock', 'labs', 'stories']);
 const DERIVED_TOPICS = { pharmacy: 'stock', supply: 'stock', lab: 'labs' };
 const requestCtx = new AsyncLocalStorage();
 let sseTimer = null;
@@ -497,6 +497,82 @@ function publicStats() {
 app.get('/api/public/stats', publicLimiter, (_req, res) => {
   res.set('Cache-Control', 'no-store');
   res.json(publicStats());
+});
+
+// ---------- Stories (the Testimonials page) ----------
+// Only real Nexus users can post, every story is approved by the team before it shows, and the badge on it
+// ("Verified patient", "Verified doctor"…) comes from the poster's actual account — never typed in. Nothing is
+// seeded: until someone shares a story and it's approved, the page says "coming soon".
+const STORY_ROLE = { patient: 'Patient', caregiver: 'Family caregiver', doctor: 'Doctor', pharmacist: 'Chemist', lab_tech: 'Lab', hospital_admin: 'Hospital', kiosk_operator: 'E-Clinic health worker', distributor: 'Medicine distributor', delivery: 'Delivery partner' };
+const storyLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 5, key: (r) => r.user?.id || r.ip, message: 'Too many stories at once — please try again later.' });
+const initialsName = (name) => String(name || '').replace(/^dr\.?\s+/i, '').split(/\s+/).filter(Boolean).map((w) => `${w[0].toUpperCase()}.`).join(' ');
+const storyName = (s) => (s.show === 'full' ? s.name : initialsName(s.name)) || 'A Nexus user';
+const publicStory = (s) => ({ id: s.id, name: storyName(s), role: STORY_ROLE[s.role] || 'Nexus user', place: s.place || null, text: s.text, rating: s.rating || null, at: s.approvedAt || s.createdAt, verified: true });
+
+app.get('/api/public/stories', publicLimiter, (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const shown = db().stories.filter((s) => s.status === 'approved').sort((a, b) => (b.approvedAt || '').localeCompare(a.approvedAt || ''));
+  res.json({ stories: shown.slice(0, 60).map(publicStory), total: shown.length, stats: publicStats() });
+});
+
+// The signed-in user's own story (to show "under review" instead of the form again).
+app.get('/api/stories/mine', auth, (req, res) => {
+  const mine = db().stories.filter((s) => s.userId === req.user.id && s.status !== 'withdrawn').sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  res.json({ story: mine ? { id: mine.id, status: mine.status, text: mine.text, show: mine.show, place: mine.place, rating: mine.rating, preview: publicStory(mine), reviewNote: mine.reviewNote || null } : null, role: STORY_ROLE[req.user.role] || 'Nexus user' });
+});
+
+app.post('/api/stories', auth, storyLimiter, (req, res) => {
+  const d = db();
+  if (req.user.role === 'super_admin' || req.user.role === 'official') return res.status(403).json({ error: 'Stories are for people who use Nexus for care or run a practice on it.' });
+  const b = req.body || {};
+  const text = clean(b.text, 600).replace(/\s+/g, ' ');
+  if (text.length < 30) return res.status(400).json({ error: 'Tell a little more — at least a couple of sentences (30 characters).' });
+  if (b.consent !== true) return res.status(400).json({ error: 'Please confirm we may publish your story.' });
+  if (d.stories.some((s) => s.userId === req.user.id && s.status === 'pending')) return res.status(409).json({ error: 'Your story is already with our team for review.' });
+  const rating = b.rating === undefined || b.rating === null || b.rating === '' ? null : Math.max(1, Math.min(5, parseInt(b.rating, 10) || 0)) || null;
+  const s = {
+    id: store.id('story'), userId: req.user.id, role: req.user.role, name: clean(req.user.name, 80), show: b.show === 'full' ? 'full' : 'initials',
+    place: clean(b.place, 60) || null, text, rating, status: 'pending', consentAt: nowIso(), createdAt: nowIso(),
+  };
+  d.stories.unshift(s);
+  d.users.filter((u) => u.role === 'super_admin').forEach((a) => notify(a.id, 'New story to review', `${STORY_ROLE[s.role] || 'A user'} · “${text.slice(0, 80)}${text.length > 80 ? '…' : ''}”`));
+  audit(req.user, 'story_submitted', null, 'story', s.id);
+  store.save();
+  broadcast('admin', 'stories');
+  res.json({ id: s.id, status: s.status, preview: publicStory(s) });
+});
+
+// Take your own story down at any time (pending or published).
+app.post('/api/stories/:id/withdraw', auth, (req, res) => {
+  const s = db().stories.find((x) => x.id === req.params.id && x.userId === req.user.id);
+  if (!s) return res.status(404).json({ error: 'Story not found.' });
+  Object.assign(s, { status: 'withdrawn', withdrawnAt: nowIso() });
+  audit(req.user, 'story_withdrawn', null, 'story', s.id);
+  store.save();
+  broadcast('admin', 'stories');
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/stories', auth, role('super_admin'), (_req, res) => {
+  const d = db();
+  const view = (s) => ({ ...publicStory(s), status: s.status, fullName: s.name, show: s.show, email: d.users.find((u) => u.id === s.userId)?.email || null, createdAt: s.createdAt, reviewNote: s.reviewNote || null });
+  res.json({ pending: d.stories.filter((s) => s.status === 'pending').map(view), recent: d.stories.filter((s) => ['approved', 'rejected', 'hidden'].includes(s.status)).slice(0, 50).map(view) });
+});
+
+app.post('/api/admin/stories/:id/:action', auth, role('super_admin'), (req, res) => {
+  const s = db().stories.find((x) => x.id === req.params.id);
+  if (!s || s.status === 'withdrawn') return res.status(404).json({ error: 'Story not found.' });
+  const to = { approve: 'approved', reject: 'rejected', hide: 'hidden' }[req.params.action];
+  if (!to) return res.status(400).json({ error: 'Unknown action.' });
+  const note = clean(req.body?.note, 200) || null;
+  Object.assign(s, { status: to, reviewedAt: nowIso(), reviewedBy: req.user.id, reviewNote: note, ...(to === 'approved' ? { approvedAt: s.approvedAt || nowIso() } : {}) });
+  if (to === 'approved') notify(s.userId, 'Your story is live 🎉', 'Thank you — it now appears on the Nexus Healthcare Testimonials page.');
+  if (to === 'rejected') notify(s.userId, 'About your story', note || 'We couldn\'t publish it as written. You can share a new one any time.');
+  audit(req.user, `story_${req.params.action}`, null, 'story', s.id);
+  touch(s.userId);
+  store.save();
+  broadcast('admin', 'stories');
+  res.json({ ok: true, status: s.status });
 });
 
 // Live home-page counters for signed-out visitors. One shared check every 5 s (doctors also come online by
@@ -6941,6 +7017,7 @@ app.get('/api/admin/home', auth, role('super_admin'), (_req, res) => {
       pendingVerification: d.doctors.filter((x) => !x.verified).length + d.facilities.filter((f) => !f.verified).length,
       breakGlassUnreviewed: d.audit.filter((a) => a.action === 'break_glass' && !a.reviewed).length,
       upiToConfirm: d.payments.filter((p) => p.status === 'claimed').length,
+      storiesPending: d.stories.filter((s) => s.status === 'pending').length,
     },
     carePlans: careplans.outcomes(d.carePlans, Date.now(), planProgress),
     // Only what the server actually knows, in every mode — no uptime / latency / call-quality monitoring exists yet.

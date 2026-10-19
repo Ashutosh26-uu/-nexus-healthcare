@@ -184,3 +184,4 @@
 .ad-fac-photos figure { margin: 0; display: grid; gap: 4px; }
 .ad-fac-photo { width: 140px; height: 96px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line-2); }
 .ad-fac-file { border: 0; padding: 0; background: none; cursor: pointer; }
+.ad-story { padding: 12px 14px; }

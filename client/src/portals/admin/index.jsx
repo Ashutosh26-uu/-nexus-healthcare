@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { LayoutDashboard, BadgeCheck, Users as UsersIcon, SlidersHorizontal, MonitorSmartphone, Activity, ScrollText, Languages, Network, Workflow, IndianRupee } from 'lucide-react';
+import { LayoutDashboard, BadgeCheck, Users as UsersIcon, SlidersHorizontal, MonitorSmartphone, Activity, ScrollText, Languages, Network, Workflow, IndianRupee, MessageSquareQuote } from 'lucide-react';
 import PortalLayout from '../../components/PortalLayout';
 import { useLive } from '../../live';
 import Overview from './Overview';
@@ -13,10 +13,11 @@ import Audit from './Audit';
 import Content from './Content';
 import Automations from './Automations';
 import Payments from './Payments';
+import Stories from './Stories';
 import './admin.css';
 
 export default function AdminApp() {
-  const { data } = useLive('/admin/home', ['admin', 'doctors', 'kiosks', 'audit', 'patients', 'consults', 'payments']);
+  const { data } = useLive('/admin/home', ['admin', 'doctors', 'kiosks', 'audit', 'patients', 'consults', 'payments', 'stories']);
   const c = data?.counts;
   const nav = [
     { to: '/admin', label: 'Overview', icon: LayoutDashboard, end: true },
@@ -30,6 +31,7 @@ export default function AdminApp() {
     { to: '/admin/federated', label: 'Federated AI', icon: Network },
     { to: '/admin/audit', label: 'Audit & compliance', icon: ScrollText, badge: c?.breakGlassUnreviewed || null },
     { to: '/admin/content', label: 'Content & languages', icon: Languages },
+    { to: '/admin/stories', label: 'Stories', icon: MessageSquareQuote, badge: c?.storiesPending || null },
   ];
   // Only facts the server knows: how long it has been up and how many consults are live.
   const m = data?.monitoring;
@@ -55,6 +57,7 @@ export default function AdminApp() {
           <Route path="automations" element={<Automations />} />
           <Route path="audit" element={<Audit />} />
           <Route path="content" element={<Content />} />
+          <Route path="stories" element={<Stories />} />
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Routes>
       </div>
