@@ -28,6 +28,9 @@ const PublicDoctors = lazy(() => import('./pages/public/Doctors'));
 const PublicLabs = lazy(() => import('./pages/public/Labs'));
 const PassportLanding = lazy(() => import('./pages/ScanLink').then((m) => ({ default: m.PassportLanding })));
 const VerifyDocument = lazy(() => import('./pages/ScanLink').then((m) => ({ default: m.VerifyDocument })));
+const VisitLanding = lazy(() => import('./pages/ScanLink').then((m) => ({ default: m.VisitLanding })));
+const PrivacyPolicy = lazy(() => import('./pages/Policies').then((m) => ({ default: m.PrivacyPolicy })));
+const CookiePolicy = lazy(() => import('./pages/Policies').then((m) => ({ default: m.CookiePolicy })));
 
 const PatientApp = lazy(() => import('./portals/patient'));
 const KioskApp = lazy(() => import('./portals/kiosk'));
@@ -144,6 +147,9 @@ function AppRoutes() {
         <Route path="/find/labs/:slug?" element={<Lazy><PublicLabs /></Lazy>} />
         <Route path="/s/p/:id" element={<Lazy><PassportLanding /></Lazy>} />
         <Route path="/v/:kind/:token" element={<Lazy><VerifyDocument /></Lazy>} />
+        <Route path="/s/v/:id/:code" element={<Lazy><VisitLanding /></Lazy>} />
+        <Route path="/privacy" element={<Lazy><PrivacyPolicy /></Lazy>} />
+        <Route path="/cookies" element={<Lazy><CookiePolicy /></Lazy>} />
         <Route path="/rx/:id" element={<RequireRole roles={['patient', 'caregiver', 'doctor', 'pharmacist', 'lab_tech', 'super_admin']}><Lazy><RxPrint /></Lazy></RequireRole>} />
         <Route path="/lab-label/:id" element={<RequireRole roles={['lab_tech']}><Lazy><SampleLabel /></Lazy></RequireRole>} />
         <Route path="/invoice/:orderId" element={<RequireRole roles={['patient', 'caregiver', 'pharmacist']}><Lazy><InvoicePrint /></Lazy></RequireRole>} />

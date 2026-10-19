@@ -51,6 +51,9 @@ function publicPayment(p, { dataMode }) {
     orderId: p.orderId || null, keyId: p.provider === 'razorpay' ? keyId() : null,
     upi: upiUri({ amount: p.amount, ref: p.id, note: p.label || 'Nexus Healthcare' }),
     demo: p.provider === 'demo', demoConfirmAllowed: p.provider === 'demo' && demoAllowed(dataMode), paidAt: p.paidAt || null,
+    // Live network, real UPI ID, no gateway: the patient sends the UTR and the admin confirms (see /payments/:id/claim).
+    manualConfirm: p.provider === 'demo' && Boolean(process.env.UPI_VPA) && !demoAllowed(dataMode),
+    utr: p.utr || null, claimedAt: p.claimedAt || null, rejectReason: p.rejectReason || null,
     // Nexus credit (credits.js): `amount` is what's left to pay; `gross` is the price before credit.
     gross: p.gross ?? p.amount, creditApplied: p.creditApplied || 0, method: p.method || null,
   };

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ShieldCheck, Smartphone, CreditCard, CheckCircle2, Info, Gift } from 'lucide-react';
-import { api } from '../../api';
+import { ShieldCheck, Smartphone, CreditCard, CheckCircle2, Info, Gift, Loader2 } from 'lucide-react';
+import { api, subscribe } from '../../api';
 import { Button, Switch, fmtMoney, safeUrl } from '../../components/ui';
 import QR from '../../components/QR';
 import { useAuth } from '../../auth';
@@ -65,6 +65,23 @@ export default function PaymentStep({ payment: initial, onPaid, onError, breakdo
     } catch (e) { setError(e.message); onError?.(e); } finally { setBusy(false); }
   };
 
+  // Real UPI without a gateway: the patient pays the QR, sends the reference (UTR) from their app, and the admin —
+  // who sees the money arrive — confirms. The booking is held meanwhile.
+  const [utr, setUtr] = useState('');
+  const claim = async (e) => {
+    e.preventDefault();
+    setBusy(true); setError('');
+    try { setPayment(await api.post(`/payments/${payment.id}/claim`, { utr })); } catch (e2) { setError(e2.message); if (e2.status === 409) onError?.(e2); } finally { setBusy(false); }
+  };
+  // While the reference is being checked, follow the payment live: confirmed → onPaid; sent back → the form again.
+  useEffect(() => {
+    if (payment.status !== 'claimed') return undefined;
+    let alive = true;
+    const load = () => api.get(`/payments/${payment.id}`).then((p) => { if (!alive) return; setPayment(p); if (p.status === 'paid') onPaid(p); }).catch(() => {});
+    const off = subscribe((topics) => { if (topics.includes('all') || topics.includes('payments') || topics.includes('notifications')) load(); });
+    return () => { alive = false; off(); };
+  }, [payment.id, payment.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const payRazorpay = async () => {
     if (busy) return; // a second tap while checkout.js loads would open two checkout windows
     setError(''); setBusy(true);
@@ -111,13 +128,26 @@ export default function PaymentStep({ payment: initial, onPaid, onError, breakdo
         <div className="pt-pay-upi">
           {payment.upi ? <QR value={payment.upi} size={176} label="UPI payment QR" /> : <div className="pt-pay-noqr tiny">UPI QR appears here once the clinic&apos;s UPI ID is set up</div>}
           <div className="stack" style={{ gap: 6 }}>
-            <strong className="small">{payment.upi ? 'Scan with any UPI app' : 'Pay by UPI'}</strong>
+            <strong className="small">{payment.upi ? `Scan with any UPI app to pay ${fmtMoney(payment.amount)}` : 'Pay by UPI'}</strong>
             <span className="tiny muted">Google Pay · PhonePe · Paytm · BHIM</span>
             {safeUrl(payment.upi, ['upi:']) && isMobile() && <a className="btn sm secondary" href={safeUrl(payment.upi, ['upi:'])}><Smartphone size={15} /> Open my UPI app</a>}
-            {payment.demo && (
-              <div className="pt-pay-demo tiny"><Info size={13} /> <span><strong>Demo payments</strong> — online payments aren&apos;t connected yet, so no money moves. {payment.demoConfirmAllowed ? 'Tap below to continue.' : 'Please contact support to complete this booking.'}</span></div>
-            )}
-            {payment.demoConfirmAllowed && <Button icon={CheckCircle2} loading={busy} onClick={() => confirm()}>I&apos;ve paid — continue</Button>}
+            {payment.status === 'claimed' ? (
+              <div className="pt-pay-demo tiny"><Loader2 size={13} className="spin" /> <span><strong>Reference {payment.utr} received.</strong> We match it against our UPI account and confirm — usually within a few minutes. This screen updates by itself, and you&apos;ll get a notification.</span></div>
+            ) : payment.manualConfirm ? (
+              <form className="stack" style={{ gap: 6 }} onSubmit={claim}>
+                {payment.rejectReason && <div className="form-error tiny">{payment.rejectReason}</div>}
+                <label className="tiny muted" htmlFor="pt-utr">After paying, enter the UPI reference (UTR) your app shows</label>
+                <div className="row" style={{ gap: 6 }}>
+                  <input id="pt-utr" className="input" inputMode="numeric" autoComplete="off" placeholder="12-digit reference" value={utr} onChange={(e) => setUtr(e.target.value)} />
+                  <Button type="submit" icon={CheckCircle2} loading={busy} disabled={utr.replace(/\s+/g, '').length < 10}>I&apos;ve paid</Button>
+                </div>
+              </form>
+            ) : payment.demo ? (
+              <>
+                <div className="pt-pay-demo tiny"><Info size={13} /> <span><strong>Demo payments</strong> — online payments aren&apos;t connected yet, so no money moves. {payment.demoConfirmAllowed ? 'Tap below to continue.' : 'Please contact support to complete this booking.'}</span></div>
+                {payment.demoConfirmAllowed && <Button icon={CheckCircle2} loading={busy} onClick={() => confirm()}>I&apos;ve paid — continue</Button>}
+              </>
+            ) : null}
           </div>
         </div>
       )}

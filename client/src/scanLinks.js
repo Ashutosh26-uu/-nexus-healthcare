@@ -4,6 +4,12 @@ const origin = () => (typeof window !== 'undefined' ? window.location.origin : '
 
 export const passportUrl = (patientId) => `${origin()}/s/p/${encodeURIComponent(patientId)}`;
 export const verifyUrl = (kind, id, sig) => (sig ? `${origin()}/v/${kind}/${encodeURIComponent(id)}.${sig}` : null);
+// A visit pass (NEXUS-VISIT:<consult>:<6-digit code>) as a link: reception's scanner reads it, and a phone camera
+// opens a page that checks the patient in (signed-in staff) or explains what the pass is (anyone else).
+export const visitUrl = (payload) => {
+  const m = /^NEXUS-VISIT:([\w-]+):(\d{6})$/.exec(String(payload || ''));
+  return m ? `${origin()}/s/v/${encodeURIComponent(m[1])}/${m[2]}` : payload;
+};
 
 const PATIENT_ID = /^OC-\d{4}-\d{4}$/i;
 
@@ -19,6 +25,7 @@ export function parseScan(raw) {
     const u = new URL(text);
     const parts = u.pathname.split('/').filter(Boolean).map(decodeURIComponent);
     if (parts[0] === 's' && parts[1] === 'p' && PATIENT_ID.test(parts[2] || '')) return { type: 'patient', id: parts[2].toUpperCase() };
+    if (parts[0] === 's' && parts[1] === 'v' && /^[\w-]+$/.test(parts[2] || '') && /^\d{6}$/.test(parts[3] || '')) return { type: 'visit', payload: `NEXUS-VISIT:${parts[2]}:${parts[3]}` };
     if (parts[0] === 'v' && ['rx', 'lab'].includes(parts[1]) && parts[2]) return { type: 'verify', kind: parts[1], token: parts[2], path: `/v/${parts[1]}/${parts[2]}` };
   } catch { /* not a link */ }
   const old = text.match(/^nexus:(rx|lab):(.+)$/i);

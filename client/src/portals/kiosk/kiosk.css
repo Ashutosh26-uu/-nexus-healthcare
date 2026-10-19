@@ -425,7 +425,6 @@ select.k-input { appearance: none; background-image: url("data:image/svg+xml,%3C
 .k-paym.on svg { color: var(--green); }
 .k-upi { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; padding: 16px; border-radius: 20px; background: var(--k-surface); border: 1px solid var(--k-line); }
 .k-upi > div { display: flex; flex-direction: column; gap: 4px; }
-.k-qrsvg { width: 150px; height: 150px; flex-shrink: 0; border-radius: 10px; shape-rendering: crispEdges; }
 .k-paid { display: flex; align-items: center; gap: 10px; padding: 16px 20px; border-radius: 18px; background: var(--green-soft); color: var(--green-ink); font-weight: 700; font-size: 1.05rem; }
 .k-paid svg { width: 24px; height: 24px; }
 

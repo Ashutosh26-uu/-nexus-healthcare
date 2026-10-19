@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
-import { ShieldCheck, ShieldAlert, Phone, LogIn, IdCard, FileText, FlaskConical, BadgeCheck, Loader2 } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, Phone, LogIn, IdCard, FileText, FlaskConical, BadgeCheck, Loader2, CalendarClock, CheckCircle2 } from 'lucide-react';
+import { api } from '../api';
 import { useAuth } from '../auth';
 import { PublicPage, Note } from './public/PublicShell';
 import { fmtDate, fmtDateTime } from '../components/ui';
@@ -90,6 +91,49 @@ export function VerifyDocument() {
             <div className="row" style={{ gap: 10, color: 'var(--rose)' }}><ShieldAlert size={28} /><h2 className="mb-0" style={{ color: 'var(--rose)' }}>Not verified</h2></div>
             <p className="mb-0">{d.error || 'This code doesn’t match any document on Nexus Healthcare.'}</p>
           </div>
+        )}
+      </div>
+    </PublicPage>
+  );
+}
+
+// /s/v/:id/:code — a visit pass scanned with a phone camera. Reception, the doctor or a kiosk operator who is
+// signed in checks the patient in on the spot (the same rules as the scanner at the desk); anyone else is told
+// what the pass is and where to show it. The code rotates every 30 s, so a forwarded screenshot soon stops working.
+export function VisitLanding() {
+  const { id, code } = useParams();
+  const { user } = useAuth();
+  const payload = `NEXUS-VISIT:${id}:${code}`;
+  const staff = ['doctor', 'hospital_admin', 'kiosk_operator'].includes(user?.role);
+  const [state, setState] = useState(staff ? 'checking' : 'idle');
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (!staff) return undefined;
+    let alive = true;
+    api.post('/visits/check-in', { payload }).then((r) => { if (alive) { setResult(r); setState('done'); } }).catch((e) => { if (alive) { setError(e.message); setState('error'); } });
+    return () => { alive = false; };
+  }, [payload, staff]);
+  const back = user?.role === 'doctor' ? '/doctor' : user?.role === 'hospital_admin' ? '/hospital/reception' : '/kiosk';
+  return (
+    <PublicPage>
+      <section className="pb-hero">
+        <span className="pb-eyebrow">Nexus Healthcare</span>
+        <h1 className="row" style={{ gap: 10 }}><CalendarClock size={30} /> Visit pass</h1>
+        <p className="mono" translate="no" dir="ltr" style={{ fontSize: '1.2rem' }}>{code}</p>
+      </section>
+      <div className="stack" style={{ maxWidth: 640 }}>
+        {state === 'checking' && <div className="callout"><Loader2 className="spin" /><span>Checking the patient in…</span></div>}
+        {state === 'done' && (
+          <div className="callout green"><CheckCircle2 /><span><strong translate="no">{result.patientName}</strong> is checked in{result.token ? <> — token <strong>{result.token}</strong></> : null}{result.doctorName ? <> for <span translate="no">{result.doctorName}</span></> : null}. They&apos;ve been told to wait to be called.</span></div>
+        )}
+        {state === 'error' && <div className="callout rose"><ShieldAlert /><span>{error}</span></div>}
+        {staff ? <Link className="btn" to={back}>Back to my screen</Link> : (
+          <>
+            <Note>This is a patient&apos;s pass for an in-person appointment booked on Nexus Healthcare. <strong>Show it at the reception desk</strong> — they scan it to check you in and give you a token. The 6-digit code above changes every 30 seconds.</Note>
+            {user ? <p className="small muted">You&apos;re signed in as a {user.role.replace('_', ' ')}, which can&apos;t check patients in.</p>
+              : <Link className="btn" to="/login" state={{ from: `/s/v/${encodeURIComponent(id)}/${code}` }}><LogIn size={16} /> Reception sign in to check in</Link>}
+          </>
         )}
       </div>
     </PublicPage>

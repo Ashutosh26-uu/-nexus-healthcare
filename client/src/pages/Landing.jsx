@@ -307,7 +307,7 @@ export default function Landing() {
           <div>
             <span className="eyebrow">Your data, your say</span>
             <h2>We built privacy in first — not bolted on later.</h2>
-            <p className="muted">Health data is personal. So the patient holds the keys, and everyone else has to ask.</p>
+            <p className="muted">Health data is personal. So the patient holds the keys, and everyone else has to ask. <Link to="/privacy">Read the full privacy policy</Link>.</p>
           </div>
           <div className="l-privacy-grid">
             <div className="card flat"><Users className="l-pv-icon" /><h4>Consent for every view</h4><p className="muted small mb-0">Doctors and hospitals request access. You approve what they see, and for how long. Revoke anytime.</p></div>
@@ -360,7 +360,7 @@ export default function Landing() {
         <div className="l-container l-footer-grid">
           <div>
             <Logo />
-            <p className="muted small" style={{ marginTop: 12, maxWidth: 300 }}>A national health network by Reasonate AI Pvt. Ltd. Built in India, for every Indian.</p>
+            <p className="muted small" style={{ marginTop: 12, maxWidth: 300 }}>An independent health-tech startup. Built in India, for every Indian.</p>
             <div className="l-social">
               <a href="https://www.linkedin.com/company/nexus-healthcare-official/" target="_blank" rel="noopener noreferrer" aria-label="Nexus Healthcare on LinkedIn" title="Follow us on LinkedIn">
                 {/* LinkedIn mark (brand icons aren't in our icon set) */}
@@ -372,7 +372,7 @@ export default function Landing() {
           <div>
             <h4>Product</h4>
             <Link to="/medicines">Medicine price checker</Link><Link to="/lab-tests">Lab test prices</Link><Link to="/find/doctors">Find a doctor</Link><Link to="/find/labs">Labs near you</Link>
-            <a href="#how">How it works</a><a href="#kiosk">E-Clinics</a><a href="#privacy">Privacy &amp; consent</a><button type="button" className="l-footer-link" onClick={openCookieSettings}>Cookie preferences</button>
+            <a href="#how">How it works</a><a href="#kiosk">E-Clinics</a><Link to="/privacy">Privacy policy</Link><Link to="/cookies">Cookie policy</Link><button type="button" className="l-footer-link" onClick={openCookieSettings}>Cookie preferences</button>
           </div>
           <div>
             <h4>Partners</h4>
@@ -384,7 +384,7 @@ export default function Landing() {
           </div>
         </div>
         <div className="l-container l-footer-bottom">
-          <span>© {new Date().getFullYear()} Reasonate AI Pvt. Ltd. · Proof of concept</span>
+          <span>© {new Date().getFullYear()} Nexus Healthcare · Made in India</span>
           <span>Nexus Healthcare gives guidance, not diagnosis. In an emergency, call 108.</span>
         </div>
       </footer>

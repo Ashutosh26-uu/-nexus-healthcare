@@ -3,6 +3,7 @@ import { MapPin, CalendarClock, CheckCircle2, RefreshCw } from 'lucide-react';
 import { api, subscribe } from '../../api';
 import { fmtDateTime, cx } from '../../components/ui';
 import QR from '../../components/QR';
+import { visitUrl } from '../../scanLinks';
 
 // Live visit pass for in-person appointments. The QR and 6-digit code change every 30 seconds
 // (signed on the server), so a forwarded screenshot stops working almost immediately.
@@ -53,7 +54,7 @@ export default function VisitPass({ consultId, compact }) {
   return (
     <div className={cx('pt-pass', compact && 'compact')}>
       {pass.bookingNo && <div className="pt-pass-no"><span className="tiny muted">Booking ID</span><strong className="mono" translate="no">{pass.bookingNo}</strong></div>}
-      <QR value={pass.payload} size={compact ? 180 : 220} label="Visit pass QR — show at reception" />
+      <QR value={visitUrl(pass.payload)} size={compact ? 180 : 220} label="Visit pass QR — show at reception" />
       <div className="pt-pass-code mono" aria-label={`Code ${pass.code}`}>{pass.code.slice(0, 3)} {pass.code.slice(3)}</div>
       <div className="pt-pass-timer">
         <span className="pt-pass-bar"><span style={{ width: `${(left / 30) * 100}%` }} /></span>

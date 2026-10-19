@@ -76,7 +76,7 @@ function demoSeed() {
     { id: 'u_rider1', name: 'Manoj Kushwaha', email: 'rider@omnicare.in', phone: '9876500080', role: 'delivery', status: 'active', region: { state: 'Uttar Pradesh', district: 'Barabanki' } },
     { id: 'u_gov1', name: 'Dr. A. K. Tripathi (CMO)', email: 'official@omnicare.in', phone: '9876500090', role: 'official', scope: 'district', status: 'active', region: { state: 'Uttar Pradesh', district: 'Barabanki' } },
     { id: 'u_gov2', name: 'Shalini Rao, IAS', email: 'national@omnicare.in', phone: '9876500091', role: 'official', scope: 'national', status: 'active', region: { state: 'Delhi', district: 'New Delhi' } },
-    { id: 'u_admin1', name: 'Ops Team · Reasonate', email: 'admin@omnicare.in', phone: '9876500099', role: 'super_admin', status: 'active', region: { state: 'Uttar Pradesh', district: 'Lucknow' } },
+    { id: 'u_admin1', name: 'Nexus Ops Team', email: 'admin@omnicare.in', phone: '9876500099', role: 'super_admin', status: 'active', region: { state: 'Uttar Pradesh', district: 'Lucknow' } },
   ].map((u) => ({ ...u, passwordHash: hash, createdAt: ago(60) }));
 
   const patients = [
@@ -222,10 +222,10 @@ function demoSeed() {
     outbreak: { multiplier: 3, minTests: 10 },
     supply: { radiusSteps: ['5 km', 'district', 'state', 'national'], preferNearExpiry: true },
     history: [
-      { version: 1, at: ago(90), by: 'Ops Team · Reasonate', note: 'Initial rule set signed off by medical advisor' },
-      { version: 2, at: ago(60), by: 'Ops Team · Reasonate', note: 'Added snake bite & poisoning to red flags' },
-      { version: 3, at: ago(30), by: 'Ops Team · Reasonate', note: 'Language weight 15 → 20 after pilot feedback' },
-      { version: 4, at: ago(7), by: 'Ops Team · Reasonate', note: 'Outbreak multiplier 2.5 → 3 to cut false alerts' },
+      { version: 1, at: ago(90), by: 'Nexus Ops Team', note: 'Initial rule set signed off by medical advisor' },
+      { version: 2, at: ago(60), by: 'Nexus Ops Team', note: 'Added snake bite & poisoning to red flags' },
+      { version: 3, at: ago(30), by: 'Nexus Ops Team', note: 'Language weight 15 → 20 after pilot feedback' },
+      { version: 4, at: ago(7), by: 'Nexus Ops Team', note: 'Outbreak multiplier 2.5 → 3 to cut false alerts' },
     ],
   };
 

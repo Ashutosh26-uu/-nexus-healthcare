@@ -2649,6 +2649,83 @@ app.post('/api/payments/:id/confirm', auth, (req, res) => {
   res.json(payments.publicPayment(pay, { dataMode: DATA_MODE }));
 });
 
+// ---------- UPI without a payment gateway ----------
+// A live network with its own UPI ID (UPI_VPA) but no Razorpay shows a real, payable QR. UPI gives us no callback,
+// so the patient enters the reference (UTR) their app shows, the booking is held, and the admin — who sees the
+// money land in that UPI account — confirms it. Only then does it go through finalizePayment like any other.
+const manualUpiOn = () => payments.provider() === 'demo' && Boolean(process.env.UPI_VPA) && !payments.demoAllowed(DATA_MODE);
+const UTR = /^[A-Za-z0-9]{10,30}$/;
+
+app.post('/api/payments/:id/claim', auth, role('patient', 'caregiver'), (req, res) => {
+  const d = db();
+  const pay = d.payments.find((x) => x.id === req.params.id);
+  if (!pay || pay.userId !== req.user.id) return res.status(404).json({ error: 'Payment not found.' });
+  if (!manualUpiOn()) return res.status(403).json({ error: 'UPI reference confirmation isn’t available on this network.' });
+  if (pay.status === 'claimed') return res.json(payments.publicPayment(pay, { dataMode: DATA_MODE }));
+  if (pay.status !== 'created') return res.status(409).json({ error: pay.status === 'paid' ? 'This is already paid.' : 'This payment was cancelled. Please book again.' });
+  const problem = payableProblem(d, pay);
+  if (problem) return res.status(409).json({ error: problem });
+  const utr = String(req.body?.utr || '').replace(/\s+/g, '');
+  if (!UTR.test(utr)) return res.status(400).json({ error: 'Enter the UPI reference / UTR shown in your payment app (usually 12 digits).' });
+  if (d.payments.some((x) => x.id !== pay.id && x.utr === utr && ['claimed', 'paid'].includes(x.status))) return res.status(409).json({ error: 'That reference has already been used for another payment.' });
+  Object.assign(pay, { status: 'claimed', method: 'upi', utr, claimedAt: nowIso(), rejectReason: null });
+  d.users.filter((u) => u.role === 'super_admin').forEach((a) => notify(a.id, 'UPI payment to confirm', `₹${pay.amount} · ${pay.label || pay.purpose} · UTR ${utr}. Check the UPI app, then confirm it under Payments.`));
+  audit(req.user, 'payment_claimed', pay.patientId || null, 'payment', `${pay.id} · ₹${pay.amount} · UTR ${utr}`);
+  store.save();
+  broadcast('payments', 'admin');
+  res.json(payments.publicPayment(pay, { dataMode: DATA_MODE }));
+});
+
+app.get('/api/admin/payments', auth, role('super_admin'), (_req, res) => {
+  const d = db();
+  const who = (p) => { const u = d.users.find((x) => x.id === p.userId); return u ? { name: u.name, email: u.email || null, phone: u.phone || null } : null; };
+  const row = (p) => ({ id: p.id, amount: p.amount, purpose: p.purpose, label: p.label || null, status: p.status, utr: p.utr || p.rejectedUtr || null, claimedAt: p.claimedAt || null, paidAt: p.paidAt || null, decidedAt: p.decidedAt || null, rejectReason: p.rejectReason || null, createdAt: p.createdAt, payer: who(p) });
+  const claimed = d.payments.filter((p) => p.status === 'claimed').sort((a, b) => Date.parse(a.claimedAt) - Date.parse(b.claimedAt)).map(row);
+  const decided = d.payments.filter((p) => p.decidedAt && (p.utr || p.rejectedUtr)).sort((a, b) => Date.parse(b.decidedAt) - Date.parse(a.decidedAt)).slice(0, 50).map(row);
+  res.json({ upiVpa: process.env.UPI_VPA || null, manualUpi: manualUpiOn(), claimed, decided });
+});
+
+app.post('/api/admin/payments/:id/:action', auth, role('super_admin'), (req, res) => {
+  const d = db();
+  const pay = d.payments.find((x) => x.id === req.params.id);
+  if (!pay || pay.status !== 'claimed') return res.status(404).json({ error: 'No payment is waiting for confirmation with that ID.' });
+  const payer = d.users.find((u) => u.id === pay.userId) || req.user;
+  touch(payer.id);
+  pay.decidedAt = nowIso(); pay.decidedBy = req.user.id;
+  if (req.params.action === 'confirm') {
+    const problem = payableProblem(d, pay);
+    if (problem) {
+      // The money arrived, but what it was for can no longer go ahead: it's a refund, never a silent loss.
+      pay.status = 'refund_pending'; pay.paidAt = nowIso(); pay.refundReason = problem;
+      audit(req.user, 'payment_refund_due', pay.patientId || null, 'payment', `${pay.id} · ₹${pay.amount} · ${problem}`);
+      automation.emit('payment.refund_due', { paymentId: pay.id, purpose: pay.purpose, amount: pay.amount, method: 'upi', utr: pay.utr, reason: problem, patientId: pay.patientId || null });
+      credits.sweep(d, payer);
+      notify(payer.id, 'Refund due', `${problem} Your ₹${pay.amount} (UTR ${pay.utr}) will be refunded.`);
+      store.save();
+      broadcast('payments', 'admin');
+      return res.status(409).json({ error: `${problem} The ₹${pay.amount} is now marked for refund.` });
+    }
+    pay.status = 'paid'; pay.paidAt = nowIso();
+    finalizePayment(d, pay, payer);
+    notify(payer.id, 'Payment confirmed', `Your ₹${pay.amount} UPI payment (UTR ${pay.utr}) is confirmed — ${pay.label || 'your booking'} is going ahead.`);
+    audit(req.user, 'payment_confirmed', pay.patientId || null, 'payment', `${pay.id} · ₹${pay.amount} · UTR ${pay.utr}`);
+    store.save();
+    broadcast('consults', 'queue', 'prescriptions', 'pharmacy', 'payments', 'lab', 'medorders', 'admin');
+    return res.json({ ok: true, status: pay.status });
+  }
+  if (req.params.action === 'reject') {
+    // Back to "created" with the reason: the patient can check their app and enter the reference again.
+    const reason = clean(req.body?.reason, 200) || 'We couldn’t find a payment with that reference in our UPI account.';
+    Object.assign(pay, { status: 'created', rejectedUtr: pay.utr, utr: null, claimedAt: null, rejectReason: reason });
+    notify(payer.id, 'Payment not found', `${reason} Please check the reference in your UPI app and enter it again — or write to us if money was deducted.`);
+    audit(req.user, 'payment_rejected', pay.patientId || null, 'payment', `${pay.id} · ₹${pay.amount} · UTR ${pay.rejectedUtr} · ${reason}`);
+    store.save();
+    broadcast('payments', 'admin');
+    return res.json({ ok: true, status: pay.status });
+  }
+  res.status(400).json({ error: 'Unknown action.' });
+});
+
 // ---------- Nexus credit + Refer & earn (rules and ledger in credits.js) ----------
 // Credit can cover up to 100% of a consult / lab advance / medicine advance. A part-covered payment leaves at
 // least ₹1 for the gateway; a fully covered one is confirmed right here through the same finalizePayment.
@@ -6119,6 +6196,7 @@ app.get('/api/admin/home', auth, role('super_admin'), (_req, res) => {
       kiosksOnline: kiosks.filter((k) => k.status === 'online').length, kiosksTotal: kiosks.length,
       pendingVerification: d.doctors.filter((x) => !x.verified).length + d.facilities.filter((f) => !f.verified).length,
       breakGlassUnreviewed: d.audit.filter((a) => a.action === 'break_glass' && !a.reviewed).length,
+      upiToConfirm: d.payments.filter((p) => p.status === 'claimed').length,
     },
     // Only what the server actually knows, in every mode — no uptime / latency / call-quality monitoring exists yet.
     monitoring: { uptime: null, apiErrorRate: null, p95LatencyMs: null, videoQuality: null, activeCalls: d.consults.filter((c) => c.status === 'in_progress').length, uptimeSeries: [], processUptimeHours: Math.round(process.uptime() / 360) / 10 },
@@ -6748,14 +6826,17 @@ function expireUnpaid() {
   const d = db();
   const cutoff = Date.now() - 30 * 60000;
   let changed = false;
+  // A UPI payment waiting for the admin to confirm it — or just sent back for a new reference — holds its booking.
+  const held = new Set();
+  for (const p of d.payments) if (p.status === 'claimed' || (p.status === 'created' && p.decidedAt && Date.parse(p.decidedAt) >= cutoff)) held.add(p.refId);
   for (const c of d.consults) {
-    if (c.status === 'awaiting_payment' && Date.parse(c.createdAt) < cutoff) { c.status = 'expired'; changed = true; }
+    if (c.status === 'awaiting_payment' && !held.has(c.id) && Date.parse(c.createdAt) < cutoff) { c.status = 'expired'; changed = true; }
   }
   for (const o of d.medOrders || []) {
-    if (o.status === 'awaiting_payment' && Date.parse(o.createdAt) < cutoff) { o.status = 'cancelled'; o.cancelledAt = nowIso(); o.cancelReason = 'Advance not paid in time'; changed = true; }
+    if (o.status === 'awaiting_payment' && !held.has(o.id) && Date.parse(o.createdAt) < cutoff) { o.status = 'cancelled'; o.cancelledAt = nowIso(); o.cancelReason = 'Advance not paid in time'; changed = true; }
   }
   for (const p of d.payments) {
-    if (p.status === 'created' && Date.parse(p.createdAt) < cutoff) { p.status = 'void'; changed = true; }
+    if (p.status === 'created' && Date.parse(p.decidedAt || p.createdAt) < cutoff) { p.status = 'void'; changed = true; }
   }
   if (credits.sweep(d)) changed = true; // credit on voided / refunded payments goes back
   if (changed) store.save();
@@ -6787,7 +6868,7 @@ function scrubLiveArtifacts() {
   const c = d.aiConfig;
   if (c && Array.isArray(c.history)) {
     const before = c.history.length;
-    c.history = c.history.filter((h) => !(h.by === 'Ops Team · Reasonate' && !h.snapshot));
+    c.history = c.history.filter((h) => !(h.by === 'Nexus Ops Team' && !h.snapshot));
     if (c.history.length !== before) {
       changed = true;
       if (!c.history.length) c.history.push({ version: c.version, at: nowIso(), by: 'System', note: 'Rule set in use — not yet reviewed by a medical advisor', snapshot: { triage: c.triage, routing: c.routing, outbreak: c.outbreak } });

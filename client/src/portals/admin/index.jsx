@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { LayoutDashboard, BadgeCheck, Users as UsersIcon, SlidersHorizontal, MonitorSmartphone, Activity, ScrollText, Languages, Network, Workflow } from 'lucide-react';
+import { LayoutDashboard, BadgeCheck, Users as UsersIcon, SlidersHorizontal, MonitorSmartphone, Activity, ScrollText, Languages, Network, Workflow, IndianRupee } from 'lucide-react';
 import PortalLayout from '../../components/PortalLayout';
 import { useLive } from '../../live';
 import Overview from './Overview';
@@ -12,15 +12,17 @@ import Monitoring from './Monitoring';
 import Audit from './Audit';
 import Content from './Content';
 import Automations from './Automations';
+import Payments from './Payments';
 import './admin.css';
 
 export default function AdminApp() {
-  const { data } = useLive('/admin/home', ['admin', 'doctors', 'kiosks', 'audit', 'patients', 'consults']);
+  const { data } = useLive('/admin/home', ['admin', 'doctors', 'kiosks', 'audit', 'patients', 'consults', 'payments']);
   const c = data?.counts;
   const nav = [
     { to: '/admin', label: 'Overview', icon: LayoutDashboard, end: true },
     { to: '/admin/onboarding', label: 'Onboarding', icon: BadgeCheck, badge: c?.pendingVerification || null },
     { to: '/admin/users', label: 'Users & roles', icon: UsersIcon },
+    { to: '/admin/payments', label: 'UPI payments', icon: IndianRupee, badge: c?.upiToConfirm || null },
     { to: '/admin/ai', label: 'AI configuration', icon: SlidersHorizontal },
     { to: '/admin/kiosks', label: 'Kiosk fleet', icon: MonitorSmartphone, badge: c ? (c.kiosksTotal - c.kiosksOnline) || null : null },
     { to: '/admin/monitoring', label: 'Monitoring', icon: Activity },
@@ -46,6 +48,7 @@ export default function AdminApp() {
           <Route path="federated" element={<Federated />} />
           <Route path="onboarding" element={<Onboarding />} />
           <Route path="users" element={<Users />} />
+          <Route path="payments" element={<Payments />} />
           <Route path="ai" element={<AIConfig />} />
           <Route path="kiosks" element={<Kiosks />} />
           <Route path="monitoring" element={<Monitoring />} />
