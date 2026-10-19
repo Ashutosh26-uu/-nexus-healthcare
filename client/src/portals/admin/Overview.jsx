@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Users, UserRound, Stethoscope, Building2, BadgeCheck, ShieldAlert, ArrowRight, Server, PhoneCall, CheckCircle2 } from 'lucide-react';
+import { Users, UserRound, Stethoscope, Building2, BadgeCheck, ShieldAlert, ArrowRight, Server, PhoneCall, CheckCircle2, ClipboardCheck } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Card, Stat, StatusBadge, fmtNum, timeAgo, cx } from '../../components/ui';
 import { useLive } from '../../live';
@@ -18,13 +18,34 @@ function Health({ icon: Icon, label, value, unit, ok, hint }) {
   );
 }
 
+// Chronic care plans across the network: how many run, and of the patients measured at the start and now (30+ days
+// on a plan, enough readings at both ends), how many were at their doctor's target then vs now. Real counts only.
+function CareOutcomes({ cp }) {
+  const pct = (a, n) => (n ? `${Math.round((a / n) * 100)}%` : '—');
+  const row = (label, o) => (
+    <div className="row between small" style={{ gap: 8 }}>
+      <span>{label}</span>
+      <span>{o.n ? <><span className="muted">{pct(o.before, o.n)} at start</span> → <strong>{pct(o.now, o.n)} now</strong> <span className="tiny muted">({o.n} patient{o.n === 1 ? '' : 's'})</span></> : <span className="muted">not enough data yet</span>}</span>
+    </div>
+  );
+  return (
+    <Card className="mb-2" title={<h3 className="row" style={{ gap: 8 }}><ClipboardCheck size={18} /> Care plans · outcomes</h3>} action={<span className="tiny muted">{fmtNum(cp.active)} active · {fmtNum(cp.invited)} invited · {fmtNum(cp.lapsed)} paused</span>}>
+      <div className="stack" style={{ gap: 6 }}>
+        {row('Blood pressure at target', cp.bp)}
+        {row('Fasting sugar at target', cp.fasting)}
+        <p className="tiny muted mb-0">Patients 30+ days on a plan with readings at the start and now. {cp.reviewDue ? `${cp.reviewDue} plan${cp.reviewDue === 1 ? '' : 's'} waiting for a doctor review.` : ''}</p>
+      </div>
+    </Card>
+  );
+}
+
 export default function Overview() {
-  const home = useLive('/admin/home', ['admin', 'doctors', 'kiosks', 'audit', 'patients', 'consults']);
+  const home = useLive('/admin/home', ['admin', 'doctors', 'kiosks', 'audit', 'patients', 'consults', 'careplans', 'payments']);
   const audit = useLive('/admin/audit', ['audit', 'admin']);
 
   return (
     <LiveGate live={home}>
-      {({ counts: c, monitoring: m }) => {
+      {({ counts: c, monitoring: m, carePlans: cp }) => {
         const recent = (audit.data || []).slice(0, 6);
         return (
           <>
@@ -55,6 +76,8 @@ export default function Overview() {
                 <ArrowRight />
               </Link>
             </div>
+
+            {cp && <CareOutcomes cp={cp} />}
 
             <div className="grid side">
               <Card title="System health" action={<Link to="/admin/monitoring" className="small">Monitoring →</Link>}>

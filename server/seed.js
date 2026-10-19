@@ -265,7 +265,7 @@ function demoSeed() {
     careTransfers: [],
     credits: [], // Nexus credit ledger (credits.js)
     vitalsLog: [],
-    monitorAlerts: [], // remote-monitoring alerts (monitoring.js)
+    monitorAlerts: [], carePlans: [], // remote-monitoring alerts (monitoring.js)
   };
 }
 
@@ -277,7 +277,7 @@ const dataMode = () => (process.env.DATA_MODE || (process.env.NODE_ENV === 'prod
 function liveSeed({ withAdmin = true } = {}) {
   const full = demoSeed();
   const crypto = require('crypto');
-  const empty = ['reviews', 'medOrders', 'careTransfers', 'payments', 'patients', 'doctors', 'facilities', 'consults', 'prescriptions', 'labOrders', 'inventory', 'beds', 'roster', 'referrals', 'opdSlots', 'transfers', 'deliveries', 'alerts', 'corridors', 'consents', 'audit', 'notifications', 'advisories', 'regions', 'records', 'pharmacyReturns', 'purchaseOrders', 'credits', 'vitalsLog', 'monitorAlerts'];
+  const empty = ['carePlans', 'reviews', 'medOrders', 'careTransfers', 'payments', 'patients', 'doctors', 'facilities', 'consults', 'prescriptions', 'labOrders', 'inventory', 'beds', 'roster', 'referrals', 'opdSlots', 'transfers', 'deliveries', 'alerts', 'corridors', 'consents', 'audit', 'notifications', 'advisories', 'regions', 'records', 'pharmacyReturns', 'purchaseOrders', 'credits', 'vitalsLog', 'monitorAlerts'];
   // The rule set is reference data, but the demo's change history ("signed off by medical advisor", "after
   // pilot feedback") never happened on a live network: start at v1 with one honest entry (and a snapshot,
   // so an admin can roll back to the defaults).

@@ -446,3 +446,27 @@ table { max-width: 100%; }
 .nx-dist-custom { display: inline-flex; align-items: center; gap: 6px; }
 .nx-dist-custom .input { width: 78px; min-height: 32px; padding: 4px 10px; }
 .nx-dist-custom .input.invalid { border-color: var(--rose); }
+
+/* ---------- Chronic care plans (doctor Care plans page + patient Health tracker card) ---------- */
+.cp-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.cp-metric { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--line); background: #fff; }
+.cp-metric strong { font-size: 1.25rem; line-height: 1.2; }
+.cp-metric.green { background: var(--green-soft); border-color: transparent; }
+.cp-metric.rose { background: var(--rose-soft); border-color: transparent; }
+.cp-card.due { border-color: var(--rose); box-shadow: 0 0 0 1px var(--rose-soft); }
+.cp-trend { display: grid; gap: 2px; font-size: 0.85rem; }
+.cp-trend-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 8px; padding: 4px 8px; border-radius: 8px; }
+.cp-trend-row.head { font-weight: 600; color: var(--ink); background: var(--paper); }
+.cp-trend-row span.off { color: var(--rose); font-weight: 600; }
+.cp-renew { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; cursor: pointer; }
+.cp-renew input { margin-top: 3px; width: 18px; height: 18px; flex-shrink: 0; }
+.cp-list { margin: 0 0 12px; padding-left: 18px; }
+.cp-list li { margin-bottom: 4px; }
+.cp-invite { border-color: var(--sky); background: var(--sky-soft); }
+.cp-patient.lapsed { opacity: 0.95; border-color: var(--sun); }
+.cp-due { color: var(--rose); font-weight: 600; }
+.cp-note { padding: 8px 10px; background: var(--paper); border-radius: 10px; }
+@media (max-width: 520px) {
+  .cp-metrics { grid-template-columns: 1fr 1fr; }
+  .cp-metric strong { font-size: 1.1rem; }
+}

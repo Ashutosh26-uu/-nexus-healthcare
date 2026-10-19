@@ -7,6 +7,7 @@ import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, usePatientLive, firstName, localISO, PageSkeleton } from './shared';
 import { READING_KINDS, SUGAR_WHEN, FlagBadge, FlagNote, readingValue } from './health';
 import { getLocale } from '../../i18n';
+import CarePlanCard from './CarePlanCard';
 
 const RANGES = [{ value: 7, label: '7 days' }, { value: 30, label: '30 days' }, { value: 90, label: '90 days' }];
 const KIND_OPTIONS = Object.entries(READING_KINDS).map(([value, k]) => ({ value, label: k.short }));
@@ -64,6 +65,7 @@ export default function Tracker() {
       <PageHeader eyebrow="Health tracker" title={isSelf ? 'Your home readings' : `${firstName(patient?.name)}’s home readings`}
         subtitle="Log BP, sugar, weight, oxygen and temperature at home. We'll show the trend and tell you plainly when something needs a doctor." />
 
+      <CarePlanCard who={who} />
       <MonitoringPanel who={who} />
 
       {latest.length > 0 && (

@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-10-19T10:33:10.730Z",
+ "generatedAt": "2026-10-19T10:51:25.906Z",
  "strings": [
   "% advance confirms the order. If the chemist can't fulfil it, the advance is refunded.",
   "% complete",
@@ -1289,7 +1289,6 @@
   "Email address",
   "Email code",
   "Email code on your phone, or your Health Passport QR at the E-Clinic.",
-  "Email or mobile number",
   "Emergencies first, then \"see doctor now\", routine and self-care — and within each, whoever has waited longest.",
   "Emergencies, carefully",
   "Emergencies.",
@@ -4177,7 +4176,6 @@
   "We run",
   "We sell generic / Jan Aushadhi medicines",
   "We sent a 6-digit code to the patient's",
-  "We use the email or mobile so the doctor can claim their profile and get their own login later.",
   "We usually finish verification within 48 hours.",
   "We usually verify within 48 hours. You'll get a notification the moment you're approved.",
   "We'll email you a 6-digit code to set a new password.",
@@ -4252,6 +4250,7 @@
   "When breathless (max 4×/day)",
   "When medicines are packed, on the way, or delivered",
   "When needed, gap of 6 hrs",
+  "When the doctor signs up with this email, the profile becomes theirs. A mobile number is only for contacting them.",
   "When this policy changes, we update the date at the top and, for significant changes, tell you in the app. This policy applies alongside the",
   "When to take it",
   "When was it taken?",

@@ -21,6 +21,7 @@ const monitoring = require('./monitoring');
 const { availabilityOf, isEClinicDoctor, timingsOf, DAYS: WEEK_DAYS } = require('./availability');
 const catalog = require('./catalog');
 const payments = require('./payments');
+const careplans = require('./careplans');
 const geo = require('./geo');
 const automation = require('./automation');
 const aadhaarQr = require('./aadhaarQr');
@@ -2586,6 +2587,17 @@ function pickRider(d, district) {
 }
 
 function finalizePayment(d, pay, user) {
+  if (pay.purpose === 'care_plan') {
+    const pl = d.carePlans.find((x) => x.id === pay.refId);
+    if (!pl) return;
+    const joining = pl.status === 'invited';
+    activatePlan(d, pl);
+    const p = patientById(pl.patientId);
+    doctorInbox(d, doctorById(pl.doctorId)).forEach((u) => notify(u, joining ? `${p?.name || 'A patient'} joined your care plan` : `${p?.name || 'A patient'} renewed their care plan`, `Paid ₹${pay.gross ?? pay.amount} · runs to ${new Date(pl.paidUntil).toLocaleDateString('en-IN', { timeZone: APP_TZ, day: 'numeric', month: 'short' })}.`));
+    touchPlan(pl);
+    broadcast('careplans', 'consents');
+    return;
+  }
   if (pay.purpose === 'consult') {
     const c = d.consults.find((x) => x.id === pay.refId);
     const doc = c && d.doctors.find((x) => x.id === c.doctorId);
@@ -2632,6 +2644,11 @@ function finalizePayment(d, pay, user) {
 // Is the thing being paid for still waiting for this payment? (Not cancelled, expired or already paid.)
 function payableProblem(d, pay) {
   if (pay.status === 'void') return 'This payment was cancelled.';
+  if (pay.purpose === 'care_plan') {
+    const pl = d.carePlans.find((x) => x.id === pay.refId);
+    if (!pl || pl.status === 'ended') return 'This care plan has ended.';
+    if (!doctorById(pl.doctorId)) return 'This doctor is no longer on Nexus.';
+  }
   if (pay.purpose === 'consult') {
     const c = d.consults.find((x) => x.id === pay.refId);
     if (!c || c.status !== 'awaiting_payment') return 'This booking was cancelled or has expired. Please book again.';
@@ -2768,6 +2785,251 @@ app.post('/api/admin/payments/:id/:action', auth, role('super_admin'), (req, res
   }
   res.status(400).json({ error: 'Unknown action.' });
 });
+
+// ---------- Chronic care plans (BP / diabetes) — maths in careplans.js ----------
+// A doctor enrols a patient they already have consent for; the patient accepts (and pays the monthly fee, if any).
+// Accepting gives that doctor access to readings, prescriptions and labs for as long as the plan runs. The sweep
+// then reminds, flags off-target readings, queues the monthly review and warns before a paid month ends.
+const PLAN_ACCESS_SCOPE = ['history', 'prescriptions', 'labs', 'allergies'];
+const labsOf = (patientId) => db().labOrders.filter((o) => o.patientId === patientId);
+const planProgress = (pl) => careplans.progress(pl, vitalsOf(pl.patientId), labsOf(pl.patientId));
+const planOf = (patientId) => db().carePlans.filter((x) => x.patientId === patientId && x.status !== 'ended').sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0] || null;
+
+// Keep the plan doctor's access running with the plan (created on activation, extended on renewal / review).
+function grantPlanAccess(d, pl, until) {
+  const doc = doctorById(pl.doctorId);
+  if (!doc) return;
+  const existing = d.consents.find((c) => c.patientId === pl.patientId && c.granteeId === doc.id && c.status === 'active' && c.purpose === 'Care plan');
+  if (existing) { if (!existing.expiry || existing.expiry < until) existing.expiry = until; return; }
+  d.consents.push({ id: store.id('cst'), patientId: pl.patientId, granteeType: 'doctor', granteeId: doc.id, granteeName: doc.name, scope: PLAN_ACCESS_SCOPE, purpose: 'Care plan', start: nowIso(), expiry: until, status: 'active' });
+}
+const planAccessUntil = (pl) => new Date(Math.max(Date.now(), Date.parse(pl.paidUntil || 0) || 0) + (pl.fee > 0 ? 7 : 45) * careplans.DAY).toISOString();
+
+function activatePlan(d, pl) {
+  const now = Date.now();
+  if (pl.status !== 'active') {
+    pl.status = 'active';
+    pl.startedAt = pl.startedAt || nowIso();
+    pl.baseline = pl.baseline || careplans.snapshot(pl, vitalsOf(pl.patientId), labsOf(pl.patientId), now);
+  }
+  if (pl.fee > 0) pl.paidUntil = new Date(Math.max(now, Date.parse(pl.paidUntil || 0) || 0) + careplans.PLAN_DAYS * careplans.DAY).toISOString();
+  pl.flags = { ...(pl.flags || {}), lapseNoticeFor: null, renewNoticeFor: null };
+  grantPlanAccess(d, pl, planAccessUntil(pl));
+}
+
+function planView(pl, { forDoctor = false } = {}) {
+  const p = patientById(pl.patientId) || {};
+  const doc = doctorById(pl.doctorId) || {};
+  const pr = pl.status === 'active' || pl.status === 'lapsed' ? planProgress(pl) : null;
+  const base = {
+    id: pl.id, status: pl.status, conditions: pl.conditions, conditionLabels: pl.conditions.map((c) => careplans.CONDITION_LABEL[c]),
+    targets: pl.targets, perWeek: pl.perWeek, fee: pl.fee, paidUntil: pl.paidUntil || null, createdAt: pl.createdAt, startedAt: pl.startedAt || null,
+    lastReviewAt: pl.lastReviewAt || null, endedAt: pl.endedAt || null, endReason: pl.endReason || null,
+    doctor: { id: doc.id, name: doc.name, specialty: doc.specialty || null },
+    progress: pr, baseline: pl.baseline || null,
+    reviews: (pl.reviews || []).slice(-6).reverse().map((r) => ({ at: r.at, note: r.note, renewedRxId: r.renewedRxId || null, byName: r.byName })),
+  };
+  if (!forDoctor) return base;
+  // The prescription the doctor would renew: their latest one for this patient.
+  const rx = db().prescriptions.filter((r) => r.patientId === pl.patientId && r.doctorId === pl.doctorId && (r.items || []).length).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+  return { ...base, patient: { id: p.id, name: p.name, age: ageOf(p.dob), gender: p.gender || null }, lastRx: rx ? { id: rx.id, createdAt: rx.createdAt, diagnosis: rx.diagnosis || null, items: rx.items.map((i) => ({ drug: i.drug, dose: i.dose, freq: i.freq, days: i.days })) } : null };
+}
+const touchPlan = (pl) => { touch(patientOwnerUserIds(patientById(pl.patientId))); touch(doctorById(pl.doctorId)?.userId); };
+
+app.get('/api/doctor/care-plans', auth, role('doctor'), (req, res) => {
+  const d = db();
+  const doc = doctorFor(req.user);
+  const mine = d.carePlans.filter((x) => x.doctorId === doc.id && x.status !== 'ended');
+  const plans = mine.map((pl) => planView(pl, { forDoctor: true }));
+  // Who can be enrolled: patients this doctor currently has consent for, not already on one of their plans.
+  const onPlan = new Set(mine.map((x) => x.patientId));
+  const candidates = [...consentedPatientIds(doc)].filter((id) => !onPlan.has(id)).map((id) => patientById(id)).filter(Boolean)
+    .map((p) => ({ id: p.id, name: p.name, age: ageOf(p.dob), conditions: p.conditions || [], defaults: careplans.defaultTargets(ageOf(p.dob)) }));
+  res.json({ plans, candidates, reviewDue: plans.filter((x) => x.progress?.reviewDue).length, defaults: careplans.defaultTargets(null), conditions: careplans.CONDITION_LABEL });
+});
+
+app.post('/api/doctor/care-plans', auth, role('doctor'), (req, res) => {
+  const d = db();
+  const doc = doctorFor(req.user);
+  const p = patientById(req.body?.patientId);
+  if (!p) return res.status(404).json({ error: 'Patient not found.' });
+  if (!hasConsent(p.id, [doc.id], 'history')) return res.status(403).json({ error: 'You need the patient\'s consent to their history before starting a care plan.' });
+  if (d.carePlans.some((x) => x.patientId === p.id && x.doctorId === doc.id && x.status !== 'ended')) return res.status(409).json({ error: 'This patient already has a care plan with you.' });
+  const setup = careplans.cleanSetup(req.body, ageOf(p.dob));
+  if (!setup.conditions.length) return res.status(400).json({ error: 'Choose blood pressure, diabetes or both.' });
+  const pl = { id: store.id('cp'), patientId: p.id, doctorId: doc.id, ...setup, status: 'invited', createdAt: nowIso(), reviews: [], flags: {} };
+  d.carePlans.unshift(pl);
+  patientOwnerUserIds(p).forEach((u) => notify(u, `${doc.name} invited you to a care plan`, `${pl.conditions.map((c) => careplans.CONDITION_LABEL[c]).join(' & ')} · ${pl.fee ? `₹${pl.fee}/month` : 'no fee'}. Open Health tracker to see the targets and join.`));
+  audit(req.user, 'care_plan_invited', p.id, 'care_plan', `${pl.id} · ${pl.conditions.join('+')} · ₹${pl.fee}`);
+  touchPlan(pl);
+  store.save();
+  broadcast('careplans');
+  res.json(planView(pl, { forDoctor: true }));
+});
+
+app.put('/api/doctor/care-plans/:id', auth, role('doctor'), (req, res) => {
+  const pl = db().carePlans.find((x) => x.id === req.params.id && x.doctorId === doctorFor(req.user)?.id && x.status !== 'ended');
+  if (!pl) return res.status(404).json({ error: 'Care plan not found.' });
+  const setup = careplans.cleanSetup({ conditions: req.body?.conditions || pl.conditions, targets: { ...pl.targets, ...(req.body?.targets || {}) }, perWeek: { ...pl.perWeek, ...(req.body?.perWeek || {}) }, fee: pl.fee }, ageOf(patientById(pl.patientId)?.dob));
+  if (!setup.conditions.length) return res.status(400).json({ error: 'A plan needs at least one condition.' });
+  Object.assign(pl, { conditions: setup.conditions, targets: setup.targets, perWeek: setup.perWeek, updatedAt: nowIso() }); // the fee can't change mid-plan
+  patientOwnerUserIds(patientById(pl.patientId)).forEach((u) => notify(u, 'Your care plan targets changed', `New targets from ${doctorById(pl.doctorId)?.name}: ${pl.conditions.includes('bp') ? `BP ${pl.targets.bpSys}/${pl.targets.bpDia}` : ''}${pl.conditions.length > 1 ? ', ' : ''}${pl.conditions.includes('diabetes') ? `fasting sugar ${pl.targets.fasting} mg/dL, HbA1c ${pl.targets.hba1c}%` : ''}.`));
+  audit(req.user, 'care_plan_updated', pl.patientId, 'care_plan', pl.id);
+  touchPlan(pl);
+  store.save();
+  broadcast('careplans');
+  res.json(planView(pl, { forDoctor: true }));
+});
+
+// Monthly / off-target review. Optionally renews the doctor's latest prescription as a new one, so the patient
+// can order the refill straight away (same medicines; any change is a normal new prescription instead).
+app.post('/api/doctor/care-plans/:id/review', auth, role('doctor'), (req, res) => {
+  const d = db();
+  const doc = doctorFor(req.user);
+  const pl = d.carePlans.find((x) => x.id === req.params.id && x.doctorId === doc.id && x.status === 'active');
+  if (!pl) return res.status(404).json({ error: 'Active care plan not found.' });
+  const p = patientById(pl.patientId);
+  if (!hasConsent(p.id, [doc.id], 'history')) return res.status(403).json({ error: 'The patient\'s consent has ended, so this plan can\'t be reviewed.' });
+  const note = clean(req.body?.note, 1000);
+  let renewed = null;
+  if (req.body?.renewRxId) {
+    const src = d.prescriptions.find((r) => r.id === req.body.renewRxId && r.patientId === p.id && r.doctorId === doc.id);
+    if (!src || !(src.items || []).length) return res.status(404).json({ error: 'That prescription can\'t be renewed.' });
+    renewed = {
+      id: store.id('rx'), consultId: null, patientId: p.id, doctorId: doc.id, items: src.items.map((i) => ({ ...i })), advice: src.advice || '', diagnosis: src.diagnosis || '',
+      complaint: 'Care plan review', dos: src.dos || [], donts: src.donts || [], status: 'issued', pharmacyId: null, fulfilment: null, createdAt: nowIso(),
+      signature: crypto.createHash('sha256').update(`${doc.id}|${p.id}|${Date.now()}`).digest('hex').slice(0, 16), warnings: [], source: 'care_plan_renewal', renewedFrom: src.id,
+    };
+    d.prescriptions.push(renewed);
+    audit(req.user, 'created_prescription', p.id, 'prescription', `${renewed.id} · renewed from ${src.id} (care plan)`);
+  }
+  pl.reviews = [...(pl.reviews || []), { at: nowIso(), by: req.user.id, byName: doc.name, note, renewedRxId: renewed?.id || null, snapshot: careplans.snapshot(pl, vitalsOf(p.id), labsOf(p.id)) }].slice(-24);
+  pl.lastReviewAt = nowIso();
+  pl.flags = { ...(pl.flags || {}), reviewNotifiedFor: null };
+  if (!pl.fee) grantPlanAccess(d, pl, planAccessUntil(pl)); // free plans run on from review to review
+  patientOwnerUserIds(p).forEach((u) => notify(u, 'Your doctor reviewed your care plan', `${note ? `${doc.name}: ${note.slice(0, 160)}` : `${doc.name} looked at your readings.`}${renewed ? ' Your medicines were renewed — order the refill from Medicines.' : ''}`, renewed ? 'refill' : undefined));
+  audit(req.user, 'care_plan_reviewed', p.id, 'care_plan', `${pl.id}${renewed ? ` · renewed ${renewed.id}` : ''}`);
+  touchPlan(pl);
+  store.save();
+  broadcast('careplans', 'prescriptions');
+  res.json({ plan: planView(pl, { forDoctor: true }), renewedRxId: renewed?.id || null });
+});
+
+app.post('/api/doctor/care-plans/:id/end', auth, role('doctor'), (req, res) => {
+  const pl = db().carePlans.find((x) => x.id === req.params.id && x.doctorId === doctorFor(req.user)?.id && x.status !== 'ended');
+  if (!pl) return res.status(404).json({ error: 'Care plan not found.' });
+  Object.assign(pl, { status: 'ended', endedAt: nowIso(), endReason: clean(req.body?.reason, 200) || 'Ended by the doctor' });
+  patientOwnerUserIds(patientById(pl.patientId)).forEach((u) => notify(u, 'Your care plan has ended', `${doctorById(pl.doctorId)?.name} ended the plan: ${pl.endReason}.`));
+  audit(req.user, 'care_plan_ended', pl.patientId, 'care_plan', `${pl.id} · ${pl.endReason}`);
+  touchPlan(pl);
+  store.save();
+  broadcast('careplans');
+  res.json({ ok: true });
+});
+
+app.get('/api/patient/care-plan', auth, role('patient', 'caregiver'), (req, res) => {
+  const p = activePatient(req);
+  const pl = planOf(p.id);
+  if (!pl) return res.json({ plan: null });
+  const pay = pl.paymentId && db().payments.find((x) => x.id === pl.paymentId && ['created', 'claimed'].includes(x.status));
+  res.json({ plan: planView(pl), payment: pay ? payments.publicPayment(pay, { dataMode: DATA_MODE }) : null });
+});
+
+// Join (invited) or renew (active / lapsed). A free plan starts at once; a paid one returns the payment to complete.
+app.post('/api/patient/care-plan/:id/pay', auth, role('patient', 'caregiver'), async (req, res) => {
+  const d = db();
+  const p = activePatient(req);
+  const pl = d.carePlans.find((x) => x.id === req.params.id && x.patientId === p.id && ['invited', 'active', 'lapsed'].includes(x.status));
+  if (!pl) return res.status(404).json({ error: 'Care plan not found.' });
+  if (!pl.fee) {
+    if (pl.status === 'active') return res.json({ plan: planView(pl) });
+    activatePlan(d, pl);
+    doctorInbox(d, doctorById(pl.doctorId)).forEach((u) => notify(u, `${p.name} joined your care plan`, `${pl.conditions.map((c) => careplans.CONDITION_LABEL[c]).join(' & ')} — readings will appear under Care plans.`));
+    audit(req.user, 'care_plan_joined', p.id, 'care_plan', pl.id);
+    touchPlan(pl); store.save(); broadcast('careplans', 'consents');
+    return res.json({ plan: planView(pl) });
+  }
+  if (pl.status === 'active' && Date.parse(pl.paidUntil) - Date.now() > 7 * careplans.DAY) return res.status(409).json({ error: 'Your plan is paid up — you can renew in the last week of the month.' });
+  d.payments.filter((x) => x.purpose === 'care_plan' && x.refId === pl.id && x.status === 'created').forEach((x) => { x.status = 'void'; });
+  const doc = doctorById(pl.doctorId);
+  const pay = { id: store.id('pay'), purpose: 'care_plan', refId: pl.id, amount: pl.fee, status: 'created', provider: payments.provider(), label: `Care plan · 1 month · ${doc?.name || 'your doctor'}`, userId: req.user.id, patientId: p.id, createdAt: nowIso() };
+  try {
+    const order = await payments.createOrder({ amount: pay.amount, receipt: pay.id, notes: { payment: pay.id, carePlan: pl.id } });
+    pay.orderId = order?.orderId || null;
+  } catch (e) { return res.status(502).json({ error: e.message }); }
+  d.payments.push(pay);
+  pl.paymentId = pay.id;
+  store.save();
+  res.json({ plan: planView(pl), payment: payments.publicPayment(pay, { dataMode: DATA_MODE }) });
+});
+
+app.post('/api/patient/care-plan/:id/leave', auth, role('patient', 'caregiver'), (req, res) => {
+  const p = activePatient(req);
+  const pl = db().carePlans.find((x) => x.id === req.params.id && x.patientId === p.id && x.status !== 'ended');
+  if (!pl) return res.status(404).json({ error: 'Care plan not found.' });
+  const wasInvite = pl.status === 'invited';
+  Object.assign(pl, { status: 'ended', endedAt: nowIso(), endReason: wasInvite ? 'Invitation declined' : 'Left by the patient' });
+  // Leaving also ends the plan's access; other consents (bookings etc.) are untouched.
+  db().consents.filter((c) => c.patientId === p.id && c.granteeId === pl.doctorId && c.status === 'active' && c.purpose === 'Care plan').forEach((c) => { c.status = 'revoked'; c.revokedAt = nowIso(); });
+  doctorInbox(db(), doctorById(pl.doctorId)).forEach((u) => notify(u, wasInvite ? `${p.name} declined the care plan` : `${p.name} left the care plan`, 'Their plan is closed.'));
+  audit(req.user, 'care_plan_left', p.id, 'care_plan', pl.id);
+  touchPlan(pl);
+  store.save();
+  broadcast('careplans', 'consents');
+  res.json({ ok: true });
+});
+
+// The monthly loop. Runs with the other sweeps; every message is de-duplicated through plan.flags.
+function sweepCarePlans(now = Date.now()) {
+  const d = db();
+  const today = istDay(now);
+  const hour = Number(new Date(now).toLocaleString('en-GB', { timeZone: APP_TZ, hour: '2-digit', hour12: false }));
+  const daytime = hour >= 9 && hour < 20; // nudges to patients only during the day
+  let changed = false;
+  for (const pl of d.carePlans) {
+    if (!['active', 'lapsed'].includes(pl.status)) continue;
+    const p = patientById(pl.patientId);
+    const doc = doctorById(pl.doctorId);
+    if (!p || !doc) { Object.assign(pl, { status: 'ended', endedAt: nowIso(), endReason: !p ? 'Patient record removed' : 'Doctor no longer on Nexus' }); changed = true; continue; }
+    pl.flags = pl.flags || {};
+    const owners = patientOwnerUserIds(p);
+    // Paid month over: lapse after a 3-day grace, once.
+    if (pl.fee > 0 && pl.paidUntil) {
+      const left = Date.parse(pl.paidUntil) - now;
+      if (pl.status === 'active' && left < -3 * careplans.DAY) {
+        pl.status = 'lapsed'; changed = true;
+        owners.forEach((u) => notify(u, 'Your care plan has paused', `The month with ${doc.name} ended. Renew from Health tracker to keep your doctor watching your readings.`));
+        doctorInbox(d, doc).forEach((u) => notify(u, `${p.name}'s care plan paused`, 'The monthly fee wasn\'t renewed.'));
+      } else if (pl.status === 'active' && left > 0 && left < 3 * careplans.DAY && pl.flags.renewNoticeFor !== pl.paidUntil && daytime) {
+        pl.flags.renewNoticeFor = pl.paidUntil; changed = true;
+        owners.forEach((u) => notify(u, 'Care plan renews soon', `Your month with ${doc.name} ends on ${new Date(pl.paidUntil).toLocaleDateString('en-IN', { timeZone: APP_TZ, day: 'numeric', month: 'short' })}. Renew from Health tracker.`, 'reminder'));
+      }
+    }
+    if (pl.status !== 'active') continue;
+    // Consent gone (patient revoked it): the plan can't run without it.
+    if (!hasConsent(p.id, [doc.id], 'history')) {
+      Object.assign(pl, { status: 'ended', endedAt: nowIso(), endReason: 'Consent withdrawn' }); changed = true;
+      doctorInbox(d, doc).forEach((u) => notify(u, `${p.name}'s care plan ended`, 'The patient withdrew access to their records.'));
+      continue;
+    }
+    const pr = planProgress(pl);
+    if (pr.missing.length && pl.flags.readingNudgeDay !== today && daytime) {
+      pl.flags.readingNudgeDay = today; changed = true;
+      const what = pr.missing.map((k) => (k === 'bp' ? 'blood pressure' : 'sugar')).join(' and ');
+      owners.forEach((u) => notify(u, `Time to check your ${what}`, `${doc.name} is following your care plan — add today's reading in Health tracker.`, 'reminder'));
+    }
+    // One "please review" per episode: re-armed when the doctor reviews.
+    if (pr.reviewDue && !pl.flags.reviewNotifiedFor) {
+      pl.flags.reviewNotifiedFor = pr.offTarget.length ? 'off_target' : pr.reviewDueOn; changed = true;
+      doctorInbox(d, doc).forEach((u) => notify(u, pr.offTarget.length ? `${p.name} is off target` : `${p.name}'s monthly review is due`, pr.offTarget.length ? pr.offTarget.join(' · ') : 'Review their readings under Care plans.', pr.offTarget.length ? 'alert' : undefined));
+    }
+    if (pr.hba1cDue && (!pl.flags.hba1cNudgedAt || now - Date.parse(pl.flags.hba1cNudgedAt) > 14 * careplans.DAY) && daytime) {
+      pl.flags.hba1cNudgedAt = nowIso(); changed = true;
+      owners.forEach((u) => notify(u, 'HbA1c test due', 'It shows your average sugar over 3 months. Book it from Tests — your doctor will see the result in your care plan.', 'reminder'));
+    }
+  }
+  if (changed) { store.save(); broadcast('careplans', 'notifications'); }
+}
 
 // ---------- Nexus credit + Refer & earn (rules and ledger in credits.js) ----------
 // Credit can cover up to 100% of a consult / lab advance / medicine advance. A part-covered payment leaves at
@@ -3580,6 +3842,7 @@ app.get('/api/doctor/home', auth, role('doctor'), (req, res) => {
       };
     }),
     // Patients who moved their care to this doctor (records copied in).
+    carePlansDue: d.carePlans.filter((pl) => pl.doctorId === doc.id && pl.status === 'active' && planProgress(pl).reviewDue).length,
     monitoringOpen: (() => { const ids = consentedPatientIds(doc); return (d.monitorAlerts || []).filter((a) => a.status === 'open' && ids.has(a.patientId)).length; })(),
     transfersIn: d.careTransfers.filter((t) => t.toDoctorId === doc.id && !t.seenByNew).map((t) => ({ id: t.id, patientId: t.patientId, patientName: d.patients.find((x) => x.id === t.patientId)?.name, fromName: t.fromName, reason: t.reason, at: t.at, copied: t.copied })),
     clinic: doc.ownsFacilityId ? (() => { const f = d.facilities.find((x) => x.id === doc.ownsFacilityId); return f ? { id: f.id, name: f.name, verified: !!f.verified, doctors: d.doctors.filter((x) => x.facilityId === f.id && x.id !== doc.id).length } : null; })() : null,
@@ -6309,6 +6572,7 @@ app.get('/api/admin/home', auth, role('super_admin'), (_req, res) => {
       breakGlassUnreviewed: d.audit.filter((a) => a.action === 'break_glass' && !a.reviewed).length,
       upiToConfirm: d.payments.filter((p) => p.status === 'claimed').length,
     },
+    carePlans: careplans.outcomes(d.carePlans, Date.now(), planProgress),
     // Only what the server actually knows, in every mode — no uptime / latency / call-quality monitoring exists yet.
     monitoring: { uptime: null, apiErrorRate: null, p95LatencyMs: null, videoQuality: null, activeCalls: d.consults.filter((c) => c.status === 'in_progress').length, uptimeSeries: [], processUptimeHours: Math.round(process.uptime() / 360) / 10 },
   });
@@ -7011,9 +7275,10 @@ function scrubLiveArtifacts() {
   remind();
   const refills = () => { try { sweepRefills(); } catch (e) { console.error('[refills]', e); } };
   refills();
+  try { sweepCarePlans(); } catch (e) { console.error('[carePlans]', e); }
   // Each sweep in its own try: one bad record must never stop the others — or, via uncaughtException, the server.
   const guarded = (name, fn) => () => { try { fn(); } catch (e) { console.error(`[${name}]`, e); } };
-  setInterval(() => { guarded('expireUnpaid', expireUnpaid)(); guarded('expireConsents', expireConsents)(); remind(); refills(); }, 5 * 60000).unref();
+  setInterval(() => { guarded('expireUnpaid', expireUnpaid)(); guarded('expireConsents', expireConsents)(); remind(); refills(); guarded('carePlans', sweepCarePlans)(); }, 5 * 60000).unref();
   pruneNotifications();
   setInterval(guarded('pruneNotifications', pruneNotifications), 6 * 3600000).unref();
   await i18n.init({ broadcast });
