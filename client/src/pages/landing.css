@@ -62,10 +62,15 @@
 .l-step-icon svg { width: 22px; height: 22px; }
 .l-step h4 { margin-bottom: 6px; font-size: 0.98rem; }
 
-.l-caps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
-.l-cap { background: #fff; border: 1px solid var(--line); border-radius: 22px; padding: 30px; }
-.l-cap h3 { font-size: 1.3rem; margin: 18px 0 10px; }
-.l-cap p { margin: 0; }
+/* "Four promises" as a path: nodes on a dashed line with arrows between them; a vertical timeline on phones. */
+.l-path { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 36px; position: relative; }
+.l-path::before { content: ''; position: absolute; top: 32px; inset-inline-start: 10%; inset-inline-end: 10%; border-top: 2px dashed #d6c9b2; }
+.l-path-node { position: relative; text-align: center; padding: 0 6px; }
+.l-path-node:not(:last-child)::after { content: ''; position: absolute; top: 25px; inset-inline-end: -26px; width: 14px; height: 14px; border-top: 2px solid #c4b69c; border-inline-end: 2px solid #c4b69c; transform: rotate(45deg); }
+.l-path-icon { width: 66px; height: 66px; border-radius: 50%; margin: 0 auto 16px; position: relative; box-shadow: 0 0 0 6px var(--paper-2, #f6f1e8); }
+.l-path-icon svg { width: 28px; height: 28px; }
+.l-path-num { position: absolute; top: -4px; inset-inline-end: -4px; width: 22px; height: 22px; border-radius: 50%; background: var(--ink); color: #fff; font-size: 0.72rem; font-weight: 700; display: grid; place-items: center; }
+.l-path-node h3 { font-size: 1.08rem; margin: 0 0 6px; }
 .l-cap-icon { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; }
 .l-cap-icon svg { width: 25px; height: 25px; }
 .l-cap-icon.green { background: var(--green-soft); color: var(--green); }
@@ -132,7 +137,8 @@
   .l-journey::before { display: none; }
   .l-portals { grid-template-columns: repeat(2, 1fr); }
 }
-@media (max-width: 860px) {
+/* Up to 1020px (covers phones in "desktop site" mode too) the links live in the burger menu, never wrapped. */
+@media (max-width: 1020px) {
   .l-burger { display: inline-grid; }
   .l-links { position: fixed; top: 72px; inset-inline-start: 0; inset-inline-end: 0; background: var(--paper); flex-direction: column; align-items: stretch; gap: 0; padding: 10px 24px 24px; border-bottom: 1px solid var(--line); box-shadow: var(--shadow-lg); transform: translateY(-120%); transition: transform 0.35s var(--ease); }
   .l-links.open { transform: none; }
@@ -146,7 +152,15 @@
   .l-stats { grid-template-columns: 1fr 1fr; }
   .l-stats div:nth-child(2) { border-inline-end: 0; }
   .l-stats div:nth-child(-n+2) { border-bottom: 1px solid var(--line-2); }
-  .l-journey, .l-caps, .l-portals, .l-privacy-grid { grid-template-columns: 1fr; }
+  .l-journey, .l-portals, .l-privacy-grid { grid-template-columns: 1fr; }
+  /* Promises path turns into a vertical timeline: icons down the left, a dashed line through them, arrows pointing down. */
+  .l-path { grid-template-columns: 1fr; gap: 0; }
+  .l-path::before { top: 10px; bottom: 10px; inset-inline-start: 32px; inset-inline-end: auto; border-top: 0; border-inline-start: 2px dashed #d6c9b2; }
+  .l-path-node { display: grid; grid-template-columns: 66px 1fr; column-gap: 16px; align-items: center; text-align: start; padding: 12px 0; }
+  .l-path-node h3 { grid-column: 2; margin: 0 0 4px; }
+  .l-path-node p { grid-column: 2; }
+  .l-path-icon { grid-row: 1 / span 2; margin: 0; }
+  .l-path-node:not(:last-child)::after { top: auto; bottom: -1px; inset-inline-end: auto; inset-inline-start: 26px; transform: rotate(135deg); }
   .l-footer-grid { grid-template-columns: 1fr 1fr; }
   .l-cta { padding: 34px 24px; }
   /* Phones: the floating collage overlapped itself — stack the cards in a tidy column instead. */

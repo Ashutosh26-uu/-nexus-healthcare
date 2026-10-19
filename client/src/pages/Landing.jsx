@@ -76,8 +76,6 @@ export default function Landing() {
             <a href="#how">How it works</a>
             <a href="#kiosk">E-Clinics</a>
             <a href="#partners">For partners</a>
-            <Link to="/join">Join us</Link>
-            <a href="#privacy">Privacy</a>
             <a href="#faq">FAQ</a>
             <div className="l-links-cta" onClick={(e) => e.stopPropagation()}>
               <LanguagePicker />
@@ -197,15 +195,15 @@ export default function Landing() {
           <div className="l-section-head">
             <span className="eyebrow">How it works</span>
             <h2>From “I don&apos;t feel well” to medicine in hand.</h2>
-            <p className="muted">Whether you&apos;re at home on your phone or at an E-Clinic near you, here&apos;s what a visit looks like.</p>
+            <p className="muted">Five steps — on your phone, or at an E-Clinic near you.</p>
           </div>
           <ol className="l-journey">
             {[
-              { icon: MapPin, t: 'Start on your phone or at an E-Clinic', d: 'Sign in with an email code, or let the E-Clinic staff scan your Health Passport QR. Your history comes with you.' },
-              { icon: Activity, t: 'Vitals, if you\'re at an E-Clinic', d: 'BP, oxygen, temperature and weight are read from the devices and shared with your doctor.' },
-              { icon: HeartPulse, t: 'Check symptoms in your language', d: 'Saathi asks a few simple questions and tells you whether to see a doctor now, book a visit, or call 108.' },
-              { icon: Video, t: 'See a verified doctor', d: 'Choose a doctor near you or online. They see your notes and allergies (only with your consent) and write an e-prescription.' },
-              { icon: Pill, t: 'Medicines and tests, sorted', d: 'Order from a nearby verified chemist with cheaper generic options, and book lab tests with prices shown upfront.' },
+              { icon: MapPin, t: 'Start anywhere', d: 'Email code on your phone, or your Health Passport QR at the E-Clinic.' },
+              { icon: Activity, t: 'Vitals at the E-Clinic', d: 'BP, oxygen, temperature and weight go straight to the doctor.' },
+              { icon: HeartPulse, t: 'Check symptoms', d: 'Saathi asks a few questions: see a doctor now, book, or call 108.' },
+              { icon: Video, t: 'See a verified doctor', d: 'Near you or online. They see only what you allow.' },
+              { icon: Pill, t: 'Medicines and tests', d: 'Nearby chemists, cheaper generics, lab prices upfront.' },
             ].map((s, i) => (
               <li key={s.t} className="l-step">
                 <span className="l-step-num">{i + 1}</span>
@@ -223,30 +221,23 @@ export default function Landing() {
         <div className="l-container">
           <div className="l-section-head">
             <span className="eyebrow">One network, four promises</span>
-            <h2>What changes when every clinic is connected</h2>
+            <h2>What one connected network gives you</h2>
           </div>
-          <div className="l-caps">
-            <div className="l-cap">
-              <div className="l-cap-icon green"><Stethoscope /></div>
-              <h3>The nearest free doctor — even in another state</h3>
-              <p className="muted">Our symptom checker tells you how urgent it is, then shows verified doctors near you and online — filter by language, see who is free now, and book.</p>
-            </div>
-            <div className="l-cap">
-              <div className="l-cap-icon clay"><QrCode /></div>
-              <h3>One Health Passport for life</h3>
-              <p className="muted">Allergies, prescriptions, reports, vaccinations — in one place, readable by any doctor you allow. Add your ABHA number to keep it with you.</p>
-            </div>
-            <div className="l-cap">
-              <div className="l-cap-icon sky"><Truck /></div>
-              <h3>Medicines that find you</h3>
-              <p className="muted">See which verified chemists near you have your medicine, compare cheaper generics, and order for pickup or home delivery.</p>
-            </div>
-            <div className="l-cap">
-              <div className="l-cap-icon sun"><Activity /></div>
-              <h3>Outbreaks spotted early</h3>
-              <p className="muted">Anonymous lab results by pin code help health officials notice rising dengue or flu early — no names are ever shared.</p>
-            </div>
-          </div>
+          {/* A walkthrough path, not four paragraphs: one line per promise, joined left to right (top to bottom on phones). */}
+          <ol className="l-path">
+            {[
+              { icon: Stethoscope, tone: 'green', t: 'A doctor near you', d: 'Verified, in your language, free now or booked.' },
+              { icon: QrCode, tone: 'clay', t: 'One record for life', d: 'Allergies, prescriptions, reports — shared only with your OK.' },
+              { icon: Truck, tone: 'sky', t: 'Medicines that find you', d: 'Nearby chemists, cheaper generics, pickup or delivery.' },
+              { icon: Activity, tone: 'sun', t: 'Outbreaks spotted early', d: 'Anonymous pin-code signals for health officials. No names.' },
+            ].map((s, i) => (
+              <li key={s.t} className="l-path-node">
+                <div className={cx('l-cap-icon l-path-icon', s.tone)}><s.icon /><span className="l-path-num">{i + 1}</span></div>
+                <h3>{s.t}</h3>
+                <p className="muted small mb-0">{s.d}</p>
+              </li>
+            ))}
+          </ol>
         </div>
       </section>
 
@@ -276,7 +267,7 @@ export default function Landing() {
           <div className="l-section-head">
             <span className="eyebrow">Built for everyone in the chain</span>
             <h2>Eight portals. One shared record.</h2>
-            <p className="muted">Each role sees exactly what it needs — nothing more. Everything flows through one secure platform, so no hospital, lab or pharmacy becomes an island again.</p>
+            <p className="muted">Each role sees exactly what it needs — nothing more.</p>
           </div>
           <div className="l-portals">
             {PORTALS.map((p) => (
