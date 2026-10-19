@@ -403,3 +403,7 @@
 /* Statement link on Earnings */
 .dr-statement-pick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .dr-statement-pick .input { width: auto; min-width: 170px; }
+/* Scribe panel: a full-width card once it holds a transcript or a draft. */
+.dr-scribe-full { display: block; }
+.dr-scribe-med { padding: 8px 10px; border-radius: 10px; background: #fff; border: 1px solid var(--line); align-items: flex-start; }
+.dr-scribe-med.on { border-color: var(--green-2); }

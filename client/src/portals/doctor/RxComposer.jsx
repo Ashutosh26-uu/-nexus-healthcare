@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, Plus, Trash2, Pill, AlertTriangle, ShieldAlert, FlaskConical, Hospital, BedDouble, CalendarClock, PenLine, CheckCircle2, ArrowLeft, Package, Printer, ShieldCheck, Sparkles } from 'lucide-react';
+import { Search, Plus, Trash2, Pill, AlertTriangle, ShieldAlert, FlaskConical, Hospital, BedDouble, CalendarClock, PenLine, CheckCircle2, ArrowLeft, Package, Printer, ShieldCheck } from 'lucide-react';
 import { api } from '../../api';
 import { Button, Card, Field, Modal, Pills, useAction, useToast, fmtDate, cx } from '../../components/ui';
 import { TimingPicker, freqText, parseFreq } from './medTiming';
 import { MedicineForm, blankMed } from './Medicines';
 import DosDonts from './DosDonts';
 import RxTemplateTools from './RxTemplates';
+import AmbientScribe from './AmbientScribe';
 import { rowsFrom, mergeList, mergeText } from './rxTemplateUtils';
 import { useDebounced, LAB_TESTS } from './shared';
 
@@ -282,7 +283,12 @@ export default function RxComposer({ consult, record, override, done, onDone, on
           <textarea className="textarea" rows={notes.includes('\n') ? 5 : 2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Findings, reasoning, what you asked the patient" />
         </Field>
       </div>
-      <AmbientScribe consultId={consult.id} onDraft={(draft) => setNotes((n) => (n ? `${n}\n${draft}` : draft))} />
+      <AmbientScribe consultId={consult.id} onUse={({ notes: drafted, diagnosis: dx, medicines }) => {
+        if (drafted) setNotes((n) => (n ? `${n}\n${drafted}` : drafted));
+        if (dx) setDiagnosis((cur) => cur || dx);
+        if (medicines?.length) addItems(medicines);
+        if (drafted) toast('Draft added — check every line before you sign');
+      }} />
       <div style={{ marginBottom: 14 }} />
 
       <div className="dr-rx-section">
@@ -419,19 +425,3 @@ export default function RxComposer({ consult, record, override, done, onDone, on
   );
 }
 
-function AmbientScribe({ consultId, onDraft }) {
-  const [run, busy] = useAction();
-  const draftIt = () => run('scribe', async () => {
-    const r = await api.post(`/consults/${consultId}/scribe`, {});
-    onDraft(r.draft);
-  }, 'Draft note added — edit and sign before saving');
-  return (
-    <div className="dr-scribe">
-      <div className="row" style={{ gap: 8 }}>
-        <Sparkles size={16} className="dr-scribe-ic" />
-        <span className="small"><strong>Note starter</strong> — fill a SOAP outline from the triage and vitals, then complete it yourself.</span>
-      </div>
-      <Button size="sm" variant="secondary" loading={busy === 'scribe'} onClick={draftIt}>Draft note</Button>
-    </div>
-  );
-}

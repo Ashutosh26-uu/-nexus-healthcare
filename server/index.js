@@ -16,6 +16,7 @@ const otp = require('./otp');
 const i18n = require('./i18n');
 const security = require('./security');
 const innovations = require('./innovations');
+const scribe = require('./scribe');
 const { availabilityOf, isEClinicDoctor, timingsOf, DAYS: WEEK_DAYS } = require('./availability');
 const catalog = require('./catalog');
 const payments = require('./payments');
@@ -6174,12 +6175,28 @@ app.post('/api/medicine/scan', auth, (req, res) => res.json(innovations.authenti
 // 13 Federated Learning network (admin).
 app.get('/api/admin/federated', auth, role('super_admin'), (_req, res) => res.json(innovations.federatedStatus(db())));
 
-// 9 AI ambient scribe (doctor).
-app.post('/api/consults/:id/scribe', auth, role('doctor'), (req, res) => {
-  const c = db().consults.find((x) => x.id === req.params.id);
+// 9 Ambient scribe (doctor). With a transcript: draft a SOAP note, codes and medicines (rules on our server, or
+// the AI model only when an admin has turned SCRIBE_AI on). The transcript is used for this request and never
+// stored; only the fact that a draft was made is audited. Without one: the old triage + vitals note starter.
+const scribeLimiter = security.rateLimit({ windowMs: 10 * 60000, max: 40, key: (r) => `scribe:${r.user?.id || r.ip}`, message: 'Too many drafts in a short time. Please wait a few minutes.' });
+app.post('/api/consults/:id/scribe', auth, role('doctor'), scribeLimiter, async (req, res) => {
+  const d = db();
+  const c = d.consults.find((x) => x.id === req.params.id);
   if (!c) return res.status(404).json({ error: 'Consult not found.' });
-  if (doctorFor(req.user)?.id !== c.doctorId) return res.status(403).json({ error: 'Not your consult.' });
-  res.json(innovations.scribeDraft(db(), c));
+  const doc = doctorFor(req.user);
+  if (doc?.id !== c.doctorId) return res.status(403).json({ error: 'Not your consult.' });
+  const transcript = typeof req.body?.transcript === 'string' ? req.body.transcript.slice(0, scribe.MAX_TRANSCRIPT) : '';
+  if (!transcript.trim()) return res.json(innovations.scribeDraft(d, c));
+  if (transcript.trim().length < 20) return res.status(400).json({ error: 'The transcript is too short to draft from. Record a little more of the consultation.' });
+  const patient = d.patients.find((p) => p.id === c.patientId) || {};
+  const drugNames = [
+    ...d.drugMaster.filter((x) => typeof x === 'string'),
+    ...Object.keys(catalog.DRUG_PRICES),
+    ...(doc.myMedicines || []).map((m) => [m.name, m.strength].filter(Boolean).join(' ')),
+  ];
+  const out = await scribe.draft({ transcript, patient, consult: c, drugNames });
+  audit(req.user, 'scribe_draft', c.patientId, 'consult', `${c.id} · ${out.engine}`);
+  res.json({ ...out, draft: scribe.soapText(out.soap) });
 });
 
 // ---------- public no-login pages: medicine prices, lab test prices, doctor & lab profiles, sitemap, robots ----------
