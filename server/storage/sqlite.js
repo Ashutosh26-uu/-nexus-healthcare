@@ -104,6 +104,8 @@ module.exports = function sqliteAdapter(file) {
       db.prepare('INSERT INTO files (id, owner_patient_id, uploaded_by, name, mime, size, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
         .run(f.id, f.ownerPatientId, f.uploadedBy, f.name, f.mime, f.size, f.data, new Date().toISOString());
     },
+    // Account erasure: every upload that belongs to one Health Passport. Returns how many were removed.
+    async fileDeleteByOwner(patientId) { return db.prepare('DELETE FROM files WHERE owner_patient_id = ?').run(patientId).changes; },
     async fileGet(id) {
       const r = db.prepare('SELECT * FROM files WHERE id = ?').get(id);
       return r ? { id: r.id, ownerPatientId: r.owner_patient_id, uploadedBy: r.uploaded_by, name: r.name, mime: r.mime, size: r.size, data: Buffer.from(r.data) } : null;

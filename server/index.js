@@ -13,6 +13,7 @@ const { AsyncLocalStorage } = require('async_hooks');
 const multer = require('multer');
 const compression = require('compression');
 const otp = require('./otp');
+const mfa = require('./mfa');
 const i18n = require('./i18n');
 const security = require('./security');
 const innovations = require('./innovations');
@@ -89,7 +90,8 @@ const APP_TZ = process.env.APP_TZ || 'Asia/Kolkata';
 const istDay = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: APP_TZ }); // YYYY-MM-DD in the network's time zone
 const ageOf = (dob) => (dob ? Math.floor((Date.now() - new Date(dob)) / (365.25 * 86400000)) : null);
 // tokenVersion is session-revocation state — never part of what a screen (or the admin list) sees.
-const publicUser = ({ passwordHash: _h, tokenVersion: _tv, aadhaarRefHash: _ar, ...u }) => u;
+// The two-step login secret and backup-code hashes never leave the server — screens only learn whether it's on.
+const publicUser = ({ passwordHash: _h, tokenVersion: _tv, aadhaarRefHash: _ar, mfa: m, ...u }) => ({ ...u, mfaEnabled: Boolean(m?.enabledAt) });
 
 function sign(user) {
   return jwt.sign({ sub: user.id, role: user.role, tv: user.tokenVersion || 0 }, JWT_SECRET, { algorithm: 'HS256', expiresIn: '7d' });
@@ -131,8 +133,10 @@ function auth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Please sign in to continue.' });
   try {
     const payload = jwt.verify(token, JWT_SECRET, JWT_VERIFY);
+    // Only session tokens open the API: sign-up, two-step and reset tickets all carry a purpose.
+    if (payload.purpose) throw new Error('not a session');
     const user = userById(payload.sub);
-    if (!user) return res.status(401).json({ error: 'Account not found.' });
+    if (!user || user.status === 'deleted') return res.status(401).json({ error: 'Account not found.' });
     if (user.status === 'suspended') return res.status(403).json({ error: 'This account is suspended. Contact support.' });
     if (user.status === 'pending') return res.status(403).json({ error: 'Your account is awaiting verification by our team.' });
     if ((payload.tv || 0) !== (user.tokenVersion || 0)) return res.status(401).json({ error: 'Your session has expired. Please sign in again.' });
@@ -169,7 +173,7 @@ function optionalAuth(req, _res, next) {
     try {
       const payload = jwt.verify(header.slice(7), JWT_SECRET, JWT_VERIFY);
       const u = userById(payload.sub);
-      if (u && u.status !== 'suspended' && (payload.tv || 0) === (u.tokenVersion || 0)) req.user = u;
+      if (u && !payload.purpose && !['suspended', 'deleted'].includes(u.status) && (payload.tv || 0) === (u.tokenVersion || 0)) req.user = u;
     } catch { /* anonymous */ }
   }
   next();
@@ -752,6 +756,12 @@ app.post('/api/dev/run-reminders', auth, role('super_admin'), (_req, res) => {
   const at = Date.parse(_req.body?.refillAt || '');
   res.json({ ok: true, sent: sweepReminders(), refills: sweepRefills(Number.isFinite(at) ? at : undefined) });
 });
+// Run the deletion sweep as if it were `at` (testing the 90-day erasure without waiting). Same guard.
+app.post('/api/dev/run-deletions', auth, role('super_admin'), async (req, res) => {
+  if ((process.env.NODE_ENV === 'production' || DATA_MODE !== 'demo') && process.env.ALLOW_RESET !== 'true') return res.status(403).json({ error: 'Disabled on a live network.' });
+  const at = Date.parse(req.body?.at || '');
+  res.json({ ok: true, erased: await sweepDeletions(Number.isFinite(at) ? at : undefined) });
+});
 
 // ---------- auth ----------
 const findUserByPhone = (phone) => db().users.find((u) => u.phone && samePhone(u.phone, phone));
@@ -781,9 +791,7 @@ app.post('/api/auth/login', loginIpLimiter, loginLimiter, async (req, res) => {
   if (user.status === 'suspended') return res.status(403).json({ error: 'This account is suspended. Contact support.' });
   if (user.status === 'pending') return res.status(403).json({ error: 'Your account is awaiting verification by our team. You can sign in as soon as it is approved.' });
   loginFails.delete(fk);
-  user.lastLoginAt = nowIso();
-  store.save();
-  res.json({ token: sign(user), user: publicUser(user) });
+  finishLogin(res, user);
 });
 
 app.get('/api/auth/otp/config', (_req, res) => res.json(otp.publicConfig()));
@@ -812,10 +820,9 @@ app.post('/api/auth/otp/verify', otpVerifyLimiter, async (req, res) => {
       // email + password (and MFA in production), so a leaked phone can't become a staff login.
       if (!['patient', 'caregiver'].includes(user.role)) return res.status(403).json({ error: 'Staff accounts sign in with email and password, not a one-time code.' });
       if (user.status === 'suspended') return res.status(403).json({ error: 'This account is suspended. Contact support.' });
+      if (user.status === 'deleted') return res.status(403).json({ error: 'This account was deleted at the owner\'s request.' });
       if (!user.emailVerifiedAt) user.emailVerifiedAt = nowIso(); // the code just proved they own this inbox
-      user.lastLoginAt = nowIso();
-      store.save();
-      return res.json({ token: sign(user), user: publicUser(user) });
+      return finishLogin(res, user);
     }
     // New person — a short-lived ticket proves they own this number/email while they fill in the passport.
     const ticket = jwt.sign({ [ok.channel === 'email' ? 'email' : 'phone']: ok.target, purpose: 'signup' }, JWT_SECRET, { algorithm: 'HS256', expiresIn: '30m' });
@@ -952,6 +959,130 @@ app.post('/api/auth/logout-all', auth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- two-step login (authenticator app) ----------
+// Optional for every account; recommended for admins and officials. After the password (or a patient's email
+// code) the server hands back a 5-minute ticket instead of a session; POST /api/auth/mfa swaps ticket + 6-digit
+// code for the session. Tickets carry `uid` + `purpose`, never `sub`, and `auth` refuses anything with a purpose.
+function finishLogin(res, user) {
+  user.lastLoginAt = nowIso();
+  store.save();
+  if (user.mfa?.enabledAt) {
+    const ticket = jwt.sign({ uid: user.id, purpose: 'mfa', tv: user.tokenVersion || 0 }, JWT_SECRET, { algorithm: 'HS256', expiresIn: '5m' });
+    return res.json({ mfaRequired: true, ticket });
+  }
+  return res.json({ token: sign(user), user: publicUser(user) });
+}
+function readTicket(ticket, purpose) {
+  try {
+    const t = jwt.verify(String(ticket || ''), JWT_SECRET, JWT_VERIFY);
+    return t.purpose === purpose && t.uid ? t : null;
+  } catch { return null; }
+}
+// Wrong codes per account: 8 in 15 minutes locks two-step for the rest of that window (6 digits ≈ 1-in-a-million
+// per guess; this keeps it there). Counted per user, so a new ticket or a new IP doesn't reset it.
+const mfaFails = new Map();
+const MFA_FAIL_MAX = 8;
+const MFA_FAIL_WINDOW_MS = 15 * 60000;
+// Checks an authenticator code (refusing a code already used) or a one-time backup code. Saves on success.
+function checkMfa(user, code) {
+  const fails = (mfaFails.get(user.id) || []).filter((t) => Date.now() - t < MFA_FAIL_WINDOW_MS);
+  if (fails.length >= MFA_FAIL_MAX) return { status: 429, error: 'Too many wrong codes. Please wait 15 minutes and try again.' };
+  const raw = clean(code, 20);
+  let how = null;
+  if (/^\d{6}$/.test(raw.replace(/\s/g, ''))) {
+    let secret = null;
+    try { secret = mfa.open(user.mfa.secret); } catch { /* key changed — only a backup code can work */ }
+    const k = secret && mfa.verifyTotp(secret, raw, { lastCounter: user.mfa.lastCounter ?? -1 });
+    if (typeof k === 'number') { user.mfa.lastCounter = k; how = 'app'; } else if (secret && mfa.verifyTotp(secret, raw) !== null) {
+      // Right code, already used (each code works once): not a guess, so it doesn't count against the limit.
+      return { status: 400, error: 'That code was just used. Wait a few seconds for the next code in your app, then enter it.' };
+    }
+  } else if (raw) {
+    const left = mfa.useRecoveryCode(user.mfa.recovery, raw);
+    if (left) { user.mfa.recovery = left; how = 'backup'; }
+  }
+  if (!how) {
+    mfaFails.set(user.id, [...fails, Date.now()]);
+    if (mfaFails.size > 50000) mfaFails.delete(mfaFails.keys().next().value);
+    return { status: 400, error: 'That code didn’t match. Check the 6-digit code in your authenticator app and try again.' };
+  }
+  mfaFails.delete(user.id);
+  if (how === 'backup') {
+    audit(user, 'mfa_backup_code_used', null, 'account', `${user.mfa.recovery.length} backup codes left`);
+    notify(user.id, 'Backup code used', `A backup code was used for two-step login. ${user.mfa.recovery.length} left — make new ones from your account menu if you're running low.`);
+  }
+  store.save();
+  return { how };
+}
+const mfaLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 30, message: 'Too many attempts. Please wait a few minutes.' });
+
+app.post('/api/auth/mfa', mfaLimiter, (req, res) => {
+  const t = readTicket(req.body?.ticket, 'mfa');
+  const user = t && userById(t.uid);
+  if (!user || (t.tv || 0) !== (user.tokenVersion || 0) || !user.mfa?.enabledAt) return res.status(401).json({ error: 'Your sign-in expired. Please start again.' });
+  if (['suspended', 'deleted'].includes(user.status)) return res.status(403).json({ error: 'This account is suspended. Contact support.' });
+  if (user.status === 'pending') return res.status(403).json({ error: 'Your account is awaiting verification by our team.' });
+  const r = checkMfa(user, req.body?.code);
+  if (r.error) return res.status(r.status).json({ error: r.error });
+  res.json({ token: sign(user), user: publicUser(user), backupCodesLeft: user.mfa.recovery?.length ?? 0, usedBackup: r.how === 'backup' });
+});
+
+app.get('/api/auth/mfa', auth, (req, res) => {
+  const m = req.user.mfa || {};
+  res.json({ enabled: Boolean(m.enabledAt), enabledAt: m.enabledAt || null, backupCodesLeft: m.enabledAt ? (m.recovery || []).length : 0, recommended: ['super_admin', 'official'].includes(req.user.role) });
+});
+
+// Step 1: a fresh secret (held as "pending" until a code from the app proves it was scanned correctly).
+app.post('/api/auth/mfa/setup', auth, passwordChangeLimiter, (req, res) => {
+  if (req.user.mfa?.enabledAt) return res.status(409).json({ error: 'Two-step login is already on.' });
+  const secret = mfa.newSecret();
+  req.user.mfa = { pending: mfa.seal(secret), pendingAt: nowIso() };
+  store.save();
+  res.json({ secret, otpauth: mfa.otpauthUrl(secret, req.user.email), issuer: mfa.ISSUER, account: req.user.email });
+});
+
+// Step 2: the first code turns it on and returns 10 backup codes — shown this once, stored only as hashes.
+// Other devices are signed out (they never passed the second step); this one gets a fresh session.
+app.post('/api/auth/mfa/enable', auth, passwordChangeLimiter, (req, res) => {
+  const m = req.user.mfa;
+  if (m?.enabledAt) return res.status(409).json({ error: 'Two-step login is already on.' });
+  if (!m?.pending || Date.now() - Date.parse(m.pendingAt) > 30 * 60000) return res.status(400).json({ error: 'Setup expired. Please start again.' });
+  let secret;
+  try { secret = mfa.open(m.pending); } catch { return res.status(400).json({ error: 'Setup expired. Please start again.' }); }
+  const k = mfa.verifyTotp(secret, req.body?.code);
+  if (k === null) return res.status(400).json({ error: 'That code didn’t match. Make sure your phone’s time is set automatically, then try the newest code.' });
+  const { codes, hashes } = mfa.newRecoveryCodes();
+  req.user.mfa = { secret: m.pending, enabledAt: nowIso(), lastCounter: k, recovery: hashes };
+  req.user.tokenVersion = (req.user.tokenVersion || 0) + 1;
+  audit(req.user, 'mfa_enabled', null, 'account', 'Authenticator app');
+  notify(req.user.id, 'Two-step login is on 🔐', 'Signing in now needs your password and a code from your authenticator app. Keep your backup codes somewhere safe.');
+  store.save();
+  res.json({ ok: true, backupCodes: codes, token: sign(req.user), user: publicUser(req.user) });
+});
+
+// Turning it off, or making new backup codes, needs a current code — a stolen session alone can't do either.
+app.post('/api/auth/mfa/disable', auth, passwordChangeLimiter, (req, res) => {
+  if (!req.user.mfa?.enabledAt) { delete req.user.mfa; store.save(); return res.json({ ok: true, user: publicUser(req.user) }); }
+  const r = checkMfa(req.user, req.body?.code);
+  if (r.error) return res.status(r.status).json({ error: r.error });
+  delete req.user.mfa;
+  audit(req.user, 'mfa_disabled', null, 'account', 'Turned off by the account holder');
+  notify(req.user.id, 'Two-step login turned off', 'Your account now signs in with just your password. If this wasn\'t you, change your password and contact support.');
+  store.save();
+  res.json({ ok: true, user: publicUser(req.user) });
+});
+
+app.post('/api/auth/mfa/backup-codes', auth, passwordChangeLimiter, (req, res) => {
+  if (!req.user.mfa?.enabledAt) return res.status(400).json({ error: 'Two-step login is off.' });
+  const r = checkMfa(req.user, req.body?.code);
+  if (r.error) return res.status(r.status).json({ error: r.error });
+  const { codes, hashes } = mfa.newRecoveryCodes();
+  req.user.mfa.recovery = hashes;
+  audit(req.user, 'mfa_backup_codes_renewed', null, 'account', '10 new backup codes');
+  store.save();
+  res.json({ ok: true, backupCodes: codes });
+});
+
 // ---------- forgot / change password with an email code (every role) ----------
 // 1) POST …/request { email } mails a 6-digit code (purpose 'reset' — it can't be used to sign in).
 // 2) POST …/confirm { email, code, password } sets the new password on the one account behind that email,
@@ -980,21 +1111,36 @@ app.post('/api/auth/password-reset/confirm', resetVerifyLimiter, async (req, res
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase().slice(0, 160) : '';
   const { code, password } = req.body || {};
   if (typeof password !== 'string' || password.length < 8 || password.length > 200) return res.status(400).json({ error: 'Choose a password of at least 8 characters.' });
-  try {
-    await otp.verifyCode({ target: email, code: String(code || ''), purpose: 'reset' });
-  } catch (e) {
-    if (e instanceof OtpError) return res.status(e.status).json({ error: e.message });
-    throw e;
+  let user;
+  if (req.body?.resetTicket) {
+    // Second step for an account with two-step login: the email code was already used up, the ticket proves it.
+    const t = readTicket(req.body.resetTicket, 'mfa-reset');
+    user = t && userById(t.uid);
+    if (!user || (t.tv || 0) !== (user.tokenVersion || 0)) return res.status(400).json({ error: 'This reset expired. Please request a new code.' });
+  } else {
+    try {
+      await otp.verifyCode({ target: email, code: String(code || ''), purpose: 'reset' });
+    } catch (e) {
+      if (e instanceof OtpError) return res.status(e.status).json({ error: e.message });
+      throw e;
+    }
+    user = findUserByEmail(email);
   }
-  const user = findUserByEmail(email);
-  if (!user || user.status === 'suspended') return res.status(400).json({ error: 'Please request a new code.' });
+  if (!user || ['suspended', 'deleted'].includes(user.status)) return res.status(400).json({ error: 'Please request a new code.' });
+  // With two-step login on, an inbox alone can't take the account: the authenticator (or a backup code) must agree.
+  if (user.mfa?.enabledAt) {
+    const resetTicket = jwt.sign({ uid: user.id, purpose: 'mfa-reset', tv: user.tokenVersion || 0 }, JWT_SECRET, { algorithm: 'HS256', expiresIn: '10m' });
+    if (!req.body?.mfaCode) return res.json({ mfaRequired: true, resetTicket, message: 'Enter the 6-digit code from your authenticator app, or one of your backup codes.' });
+    const how = checkMfa(user, req.body.mfaCode);
+    if (how.error) return res.status(how.status).json({ error: how.error, mfaRequired: true });
+  }
   user.passwordHash = await bcrypt.hash(password, 10);
   user.tokenVersion = (user.tokenVersion || 0) + 1; // every other session ends; the new password is the only one
   user.passwordChangedAt = nowIso();
   notify(user.id, 'Password changed', 'Your password was changed using a code sent to your email. If this wasn\'t you, contact support right away.');
   audit(user, 'password_reset', null, 'account', 'Password set with an email code');
   store.save();
-  loginFails.delete(loginFailKey(email)); // a reset ends any lock-out on this account
+  loginFails.delete(loginFailKey(user.email)); // a reset ends any lock-out on this account
   if (user.status === 'pending') return res.json({ ok: true, message: 'Password changed. You can sign in as soon as your account is approved.' });
   // An inbox alone shouldn't open a staff or admin account: they sign in again with the new password.
   if (!['patient', 'caregiver'].includes(user.role)) return res.json({ ok: true, message: 'Password changed. Please sign in with your new password.' });
@@ -3440,12 +3586,18 @@ app.put('/api/patient/privacy', auth, role('patient', 'caregiver'), (req, res) =
   res.json(p.privacy);
 });
 
+// Deletion is carried out automatically DELETION_GRACE_DAYS after the request (the patient can cancel until
+// then — a mistaken tap or a change of heart costs nothing). See erasePatient() for exactly what is removed.
+const DELETION_GRACE_DAYS = 90;
 app.post('/api/patient/deletion-request', auth, role('patient', 'caregiver'), (req, res) => {
   const p = activePatient(req);
-  if (p.deletionRequest?.status === 'requested') return res.status(409).json({ error: 'A deletion request is already pending. Our team will contact you.' });
+  if (p.deletionRequest?.status === 'requested') return res.status(409).json({ error: 'A deletion request is already pending. You can cancel it any time before the date shown.' });
   const reason = clean(req.body?.reason, 200);
-  p.deletionRequest = { at: nowIso(), reason, status: 'requested', by: req.user.id };
-  db().users.filter((u) => u.role === 'super_admin').forEach((a) => notify(a.id, 'Account deletion requested', `${p.name} (${p.id})${reason ? ` — ${reason}` : ''}. Review it in Users.`));
+  const at = nowIso();
+  p.deletionRequest = { at, reason, status: 'requested', by: req.user.id, scheduledFor: new Date(Date.parse(at) + DELETION_GRACE_DAYS * 86400000).toISOString() };
+  const when = new Date(p.deletionRequest.scheduledFor).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: APP_TZ });
+  patientOwnerUserIds(p).forEach((uid) => notify(uid, 'Deletion request received', `${p.name}'s Health Passport will be permanently deleted on ${when}. Changed your mind? Cancel any time before then from Settings.`));
+  db().users.filter((u) => u.role === 'super_admin').forEach((a) => notify(a.id, 'Account deletion requested', `${p.name} (${p.id})${reason ? ` — ${reason}` : ''}. It will be erased automatically on ${when} unless cancelled.`));
   audit(req.user, 'deletion_requested', p.id, 'patient', reason);
   store.save();
   broadcast('patients', 'admin');
@@ -3460,6 +3612,92 @@ app.delete('/api/patient/deletion-request', auth, role('patient', 'caregiver'), 
   store.save();
   broadcast('patients', 'admin');
   res.json({ ok: true });
+});
+
+// ---- erasure (runs from the daily sweep once a request reaches its date) ----
+// What goes: everything that identifies the person — name, birth date, contacts, IDs, addresses, location,
+// uploads and their files, vitals, monitoring alerts, notes they wrote, stories, notifications, consents, and
+// (when it's their own passport) the login itself. What stays, de-identified under the same passport number:
+// consult, prescription, lab, order and payment rows — doctors, labs and chemists must keep clinical and tax
+// records for years, and those rows no longer carry anything that points back to the person.
+const ERASED_NAME = 'Erased member';
+async function erasePatient(p, { by = 'system' } = {}) {
+  const d = db();
+  const req0 = p.deletionRequest || {};
+  const self = req0.by && p.userId === req0.by ? userById(p.userId) : null;
+  // A self passport takes along the family profiles only that login could reach (no login of their own).
+  const family = self ? d.patients.filter((x) => x.id !== p.id && x.guardianUserId === self.id && !x.userId && !x.erasedAt) : [];
+  const ids = new Set([p.id, ...family.map((x) => x.id)]);
+  let files = 0;
+  for (const pid of ids) {
+    try { files += (await store.adapter().fileDeleteByOwner?.(pid)) || 0; } catch (e) { console.error('[erase] files', pid, e.message); throw e; }
+  }
+  const drop = (name, test) => { if (Array.isArray(d[name])) d[name] = d[name].filter((x) => !test(x)); };
+  const mine = (x) => ids.has(x?.patientId);
+  drop('vitalsLog', mine);
+  drop('records', mine);
+  drop('monitorAlerts', mine);
+  drop('consents', mine);
+  drop('careTransfers', mine);
+  for (const pl of d.carePlans || []) if (mine(pl) && !['ended', 'cancelled', 'expired'].includes(pl.status)) { pl.status = 'ended'; pl.endedAt = nowIso(); pl.endReason = 'Account deleted'; }
+  for (const r of d.prescriptions || []) if (mine(r)) { r.address = null; r.paperFileId = null; }
+  for (const o of d.medOrders || []) if (mine(o)) { o.address = null; o.rxFileId = null; o.note = ''; }
+  for (const o of d.labOrders || []) if (mine(o)) { o.reportFileId = null; if (o.booking) o.booking = { ...o.booking, address: null }; }
+  for (const r of d.referrals || []) if (mine(r)) { r.patientName = ERASED_NAME; r.age = null; }
+  // Nothing may stay waiting for a person who no longer exists here: open visits and unfilled orders are cancelled.
+  const gone = { cancelledAt: nowIso(), cancelReason: 'Patient account deleted' };
+  for (const c of d.consults || []) if (mine(c) && ['awaiting_payment', 'queued', 'scheduled', 'in_progress'].includes(c.status)) Object.assign(c, { status: 'cancelled', cancelledBy: 'system' }, gone);
+  for (const o of d.medOrders || []) if (mine(o) && ['awaiting_payment', 'requested', 'accepted', 'processing'].includes(o.status)) Object.assign(o, { status: 'cancelled' }, gone);
+  for (const o of d.labOrders || []) if (mine(o) && o.status === 'ordered') Object.assign(o, { status: 'cancelled' }, gone);
+  const orderIds = new Set([...(d.medOrders || []).filter(mine), ...(d.prescriptions || []).filter(mine)].map((x) => x.id));
+  for (const x of d.deliveries || []) if (orderIds.has(x.refId)) { x.drop = ERASED_NAME; x.proofFileId = null; }
+  // The passport itself: keep the row (old consults/prescriptions still point at it), empty everything personal.
+  for (const pid of ids) {
+    const x = patientById(pid);
+    if (!x) continue;
+    const keep = { id: x.id, createdAt: x.createdAt, country: x.country || 'IN', deletionRequest: { ...(x.deletionRequest || {}), status: 'completed', completedAt: nowIso() } };
+    for (const k of Object.keys(x)) delete x[k];
+    Object.assign(x, keep, { name: ERASED_NAME, userId: null, guardianUserId: null, dob: null, gender: 'Prefer not to say', language: 'English', bloodGroup: 'Unknown', allergies: [], conditions: [], currentMeds: [], emergencyContacts: [], vaccinations: [], abha: '', pincode: '', district: '', state: '', erasedAt: nowIso() });
+  }
+  // The login: only when this was the person's own passport — a caregiver deleting a parent's profile keeps their account.
+  if (self) {
+    const others = d.patients.some((x) => !x.erasedAt && (x.userId === self.id || x.guardianUserId === self.id));
+    if (!others) {
+      const uid = self.id;
+      drop('notifications', (n) => n.userId === uid);
+      notifCounts.list = null;
+      drop('stories', (s) => s.userId === uid);
+      const keep = { id: uid, role: self.role, createdAt: self.createdAt, tokenVersion: (self.tokenVersion || 0) + 1 };
+      for (const k of Object.keys(self)) delete self[k];
+      Object.assign(self, keep, { name: ERASED_NAME, email: '', phone: '', status: 'deleted', passwordHash: null, region: {}, erasedAt: nowIso() });
+    }
+  }
+  audit({ id: by, name: by === 'system' ? 'Automatic deletion' : by, role: 'system' }, 'account_erased', p.id, 'patient', `requested ${req0.at || '?'} · ${ids.size} passport(s) · ${files} file(s)${self ? ' · login closed' : ''}`);
+  return { passports: ids.size, files, loginClosed: Boolean(self && self.status === 'deleted') };
+}
+
+let erasing = false;
+async function sweepDeletions(nowMs = Date.now()) {
+  if (erasing) return 0;
+  erasing = true;
+  let n = 0;
+  try {
+    const due = db().patients.filter((p) => p.deletionRequest?.status === 'requested' && !p.erasedAt
+      && (Date.parse(p.deletionRequest.scheduledFor) || Date.parse(p.deletionRequest.at) + DELETION_GRACE_DAYS * 86400000) <= nowMs);
+    for (const p of due) {
+      if (p.deletionRequest?.status !== 'requested') continue; // cancelled meanwhile
+      try { await erasePatient(p); n += 1; } catch (e) { console.error('[erase] failed for', p.id, e.message); }
+    }
+    if (n) { store.save(); broadcast('patients', 'admin', 'stories'); }
+  } finally { erasing = false; }
+  return n;
+}
+
+// The admin sees what is scheduled (and what was done) — no early erase from here, the 90 days are the patient's.
+app.get('/api/admin/deletions', auth, role('super_admin'), (_req, res) => {
+  res.json(db().patients.filter((p) => p.deletionRequest && ['requested', 'completed'].includes(p.deletionRequest.status))
+    .map((p) => ({ patientId: p.id, name: p.erasedAt ? ERASED_NAME : p.name, status: p.deletionRequest.status, requestedAt: p.deletionRequest.at, reason: p.erasedAt ? '' : p.deletionRequest.reason || '', scheduledFor: p.deletionRequest.scheduledFor || new Date(Date.parse(p.deletionRequest.at) + DELETION_GRACE_DAYS * 86400000).toISOString(), completedAt: p.deletionRequest.completedAt || null }))
+    .sort((a, b) => String(a.scheduledFor).localeCompare(String(b.scheduledFor))));
 });
 
 app.get('/api/geo/districts', (_req, res) => res.json(geo.DISTRICTS.map(({ district, state }) => ({ district, state }))));
@@ -4956,22 +5194,66 @@ function nearestHospitalTo(d, kiosk) {
 
 // A kiosk login could otherwise walk through phone numbers / passport ids to enumerate patients.
 const identifyLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 120, key: (r) => r.user?.id || r.ip, message: 'Too many patient look-ups from this kiosk. Please wait a while.' });
-app.post('/api/kiosk/identify', auth, role('kiosk_operator'), identifyLimiter, (req, res) => {
-  const q = String(req.body?.query || '').trim();
-  const users = db().users;
-  const asPhone = q.replace(/\D/g, '').length >= 6 ? normalizePhone(q, req.body?.dialCode) : null;
-  // The phone's owner is looked up once — not a scan of every user for every patient.
-  const owner = asPhone ? users.find((u) => ['patient', 'caregiver'].includes(u.role) && u.phone && samePhone(u.phone, asPhone)) : null;
-  const p = db().patients.find((x) => x.id.toLowerCase() === q.toLowerCase()
-    || (owner && x.userId === owner.id)
-    || (asPhone && x.emergencyContacts?.some((e) => e.relation === 'Mobile' && samePhone(e.phone, asPhone))));
-  if (!p) return res.status(404).json({ error: 'No Health Passport found. You can register this patient now.' });
+// Mobile-number look-ups: a number is easy to know, so when the passport has an email (and the patient hasn't
+// switched "Ask for a code at the kiosk" off) the record opens only after the 6-digit code we email them.
+// The QR card is the proof itself (the patient is holding it), so a scanned / typed passport number opens directly.
+function kioskEmailOf(p) {
+  const dev = otp.publicConfig().devMode;
+  for (const uid of patientOwnerUserIds(p)) {
+    const e = userById(uid)?.email;
+    if (e && EMAIL_RE.test(e) && (!DEMO_EMAIL.test(e) || dev)) return e.toLowerCase();
+  }
+  return null;
+}
+const kioskPatientView = (p) => ({ id: p.id, name: p.name, age: ageOf(p.dob), dob: p.dob, gender: p.gender, language: p.language, bloodGroup: p.bloodGroup, allergies: p.allergies || [], conditions: p.conditions || [], currentMeds: p.currentMeds || [], district: p.district,
+  aadhaarVerification: p.aadhaarVerification?.verified ? { verified: true, last4: p.aadhaarVerification.last4, yob: p.aadhaarVerification.yob } : null });
+function kioskOpen(req, res, p, how) {
   p.kioskSeen = { kioskId: req.user.facilityId, at: nowIso() };
-  audit(req.user, 'identified_patient', p.id, 'passport', 'Kiosk check-in');
+  audit(req.user, 'identified_patient', p.id, 'passport', `Kiosk check-in · ${how}`);
   store.save();
   // Only what the kiosk needs for triage — no government IDs, address or contacts.
-  res.json({ id: p.id, name: p.name, age: ageOf(p.dob), dob: p.dob, gender: p.gender, language: p.language, bloodGroup: p.bloodGroup, allergies: p.allergies || [], conditions: p.conditions || [], currentMeds: p.currentMeds || [], district: p.district,
-    aadhaarVerification: p.aadhaarVerification?.verified ? { verified: true, last4: p.aadhaarVerification.last4, yob: p.aadhaarVerification.yob } : null });
+  res.json(kioskPatientView(p));
+}
+const kioskTicket = (req, p) => jwt.sign({ uid: req.user.id, pid: p.id, purpose: 'kiosk-checkin' }, JWT_SECRET, { algorithm: 'HS256', expiresIn: '15m' });
+app.post('/api/kiosk/identify', auth, role('kiosk_operator'), identifyLimiter, async (req, res) => {
+  const q = String(req.body?.query || '').trim().slice(0, 40);
+  const users = db().users;
+  const byId = db().patients.find((x) => !x.erasedAt && x.id.toLowerCase() === q.toLowerCase());
+  const asPhone = !byId && q.replace(/\D/g, '').length >= 6 ? normalizePhone(q, req.body?.dialCode) : null;
+  // The phone's owner is looked up once — not a scan of every user for every patient.
+  const owner = asPhone ? users.find((u) => ['patient', 'caregiver'].includes(u.role) && u.phone && samePhone(u.phone, asPhone)) : null;
+  const p = byId || (asPhone ? db().patients.find((x) => !x.erasedAt && ((owner && x.userId === owner.id)
+    || x.emergencyContacts?.some((e) => e.relation === 'Mobile' && samePhone(e.phone, asPhone)))) : null);
+  if (!p) return res.status(404).json({ error: 'No Health Passport found. You can register this patient now.' });
+  if (byId) return kioskOpen(req, res, p, 'Health Passport card');
+  const email = p.privacy?.kioskOtp === false ? null : kioskEmailOf(p);
+  if (!email) return kioskOpen(req, res, p, p.privacy?.kioskOtp === false ? 'mobile number (patient turned the code off)' : 'mobile number (no email on the passport for a code)');
+  try {
+    const sent = await otp.sendCode({ channel: 'email', email, lang: 'en', ip: req.ip, purpose: 'kiosk' });
+    audit(req.user, 'kiosk_code_sent', p.id, 'passport', 'Check-in code emailed');
+    store.save();
+    res.json({ needsCode: true, ticket: kioskTicket(req, p), masked: sent.masked, expiresIn: sent.expiresIn, resendIn: sent.resendIn, devCode: sent.devCode, emailPreview: sent.emailPreview });
+  } catch (e) {
+    if (!(e instanceof OtpError)) throw e;
+    // A code sent a moment ago is still valid: keep waiting for that one rather than failing the check-in.
+    if (e.status === 429 && e.retryAfter) return res.json({ needsCode: true, ticket: kioskTicket(req, p), masked: otp.maskEmail(email), resendIn: e.retryAfter });
+    res.status(e.status || 400).json({ error: e.status === 503 ? 'Email codes aren\'t working right now. Scan the patient\'s Health Passport card instead.' : e.message });
+  }
+});
+
+// Second step of a mobile look-up: the code the patient reads out from their email.
+app.post('/api/kiosk/identify/verify', auth, role('kiosk_operator'), identifyLimiter, async (req, res) => {
+  const t = readTicket(req.body?.ticket, 'kiosk-checkin');
+  const p = t && t.uid === req.user.id ? patientById(t.pid) : null;
+  const email = p && !p.erasedAt ? kioskEmailOf(p) : null;
+  if (!email) return res.status(400).json({ error: 'This check-in expired. Please search for the patient again.' });
+  try {
+    await otp.verifyCode({ target: email, code: String(req.body?.code || ''), purpose: 'kiosk' });
+  } catch (e) {
+    if (e instanceof OtpError) return res.status(e.status).json({ error: e.message });
+    throw e;
+  }
+  kioskOpen(req, res, p, 'mobile number + emailed code');
 });
 
 app.post('/api/kiosk/register', auth, role('kiosk_operator'), (req, res) => {
@@ -7157,11 +7439,28 @@ app.put('/api/admin/users/:id/status', auth, role('super_admin'), (req, res) => 
   const u = db().users.find((x) => x.id === req.params.id);
   if (!u) return res.status(404).json({ error: 'User not found.' });
   if (u.id === req.user.id) return res.status(400).json({ error: 'You can\'t suspend your own account.' });
+  if (u.status === 'deleted') return res.status(409).json({ error: 'This account was erased at the owner\'s request and can\'t be reactivated.' });
   const status = req.body?.status;
   if (!['active', 'suspended', 'pending'].includes(status)) return res.status(400).json({ error: 'Status must be active, suspended or pending.' });
   u.status = status;
   if (status === 'suspended') u.tokenVersion = (u.tokenVersion || 0) + 1; // ends their open sessions on every device
   audit(req.user, `user_${status}`, null, 'user', u.name);
+  store.save();
+  broadcast('admin', 'audit');
+  res.json(publicUser(u));
+});
+
+// Lost phone and no backup codes: an admin (after checking who they're talking to) switches two-step login off.
+// Every session ends, so the person signs in again with their password and can set it up afresh.
+app.delete('/api/admin/users/:id/mfa', auth, role('super_admin'), (req, res) => {
+  const u = db().users.find((x) => x.id === req.params.id);
+  if (!u) return res.status(404).json({ error: 'User not found.' });
+  if (u.id === req.user.id) return res.status(400).json({ error: 'Turn off your own two-step login from your account menu.' });
+  if (!u.mfa?.enabledAt) return res.status(400).json({ error: 'Two-step login is already off for this account.' });
+  delete u.mfa;
+  u.tokenVersion = (u.tokenVersion || 0) + 1;
+  audit(req.user, 'mfa_reset_by_admin', null, 'user', u.name);
+  notify(u.id, 'Two-step login was reset', 'Our team switched off two-step login on your account at your request. Sign in with your password and set it up again from your account menu.');
   store.save();
   broadcast('admin', 'audit');
   res.json(publicUser(u));
@@ -7768,6 +8067,10 @@ function scrubLiveArtifacts() {
   setInterval(() => { guarded('expireUnpaid', expireUnpaid)(); guarded('expireConsents', expireConsents)(); remind(); refills(); guarded('carePlans', sweepCarePlans)(); }, 5 * 60000).unref();
   pruneNotifications();
   setInterval(guarded('pruneNotifications', pruneNotifications), 6 * 3600000).unref();
+  // Deletion requests that reached their 90-day date: at start-up, then every 6 hours (a day late at most).
+  const deletions = () => sweepDeletions().then((n) => n && console.log(`[deletions] erased ${n} passport(s)`)).catch((e) => console.error('[deletions]', e));
+  deletions();
+  setInterval(deletions, 6 * 3600000).unref();
   await i18n.init({ broadcast });
   const server = app.listen(PORT, () => {
     const o = otp.publicConfig();

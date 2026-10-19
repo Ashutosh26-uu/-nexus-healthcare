@@ -99,7 +99,7 @@ export default function Settings() {
     await api.post('/patient/deletion-request', { reason: reason.trim() || undefined });
     await reloadHome();
     setDeleting(false); setReason('');
-  }, 'Deletion requested. An admin will confirm it within 30 days.');
+  }, 'Deletion scheduled for 90 days from today. You can cancel it any time before then.');
   const cancelDeletion = () => run('undelete', async () => { await api.del('/patient/deletion-request'); await reloadHome(); }, 'Deletion request cancelled. Nothing will be removed.');
 
   return (
@@ -204,8 +204,8 @@ export default function Settings() {
               <Switch checked={privacy.research} onChange={(v) => setPrivacy('research', v, 'Preference saved')} label="Share anonymised data for outbreak detection" />
             </div>
             <div className="list-item">
-              <div className="grow"><div className="small strong">Ask for OTP at kiosks <PreviewBadge>Coming soon</PreviewBadge></div><div className="tiny muted">An E-Clinic can only open your passport after you share the OTP. E-Clinics aren&apos;t open yet — your choice is saved for when they are.</div></div>
-              <Switch checked={privacy.kioskOtp} onChange={(v) => setPrivacy('kioskOtp', v, 'Preference saved')} label="Require OTP at kiosks" />
+              <div className="grow"><div className="small strong">Ask for a code at kiosks</div><div className="tiny muted">When an E-Clinic finds you by mobile number, we email you a 6-digit code and your passport opens only after you tell it to the operator. Showing your Health Passport card always works without a code.</div></div>
+              <Switch checked={privacy.kioskOtp} onChange={(v) => setPrivacy('kioskOtp', v, 'Preference saved')} label="Ask for an emailed code at kiosks" />
             </div>
           </div>
         </Card>
@@ -216,8 +216,8 @@ export default function Settings() {
           <div className="grow">
             <strong>Delete {isSelf ? 'my account' : `${firstName(patient.name)}’s profile`}</strong>
             {deletion
-              ? <p className="small mb-0">Deletion requested on <strong>{fmtDate(deletion.at)}</strong> — an admin will confirm within 30 days. Until then nothing is removed.</p>
-              : <p className="small muted mb-0">Removes the passport and all records from Nexus Healthcare after a 30-day grace period.</p>}
+              ? <p className="small mb-0">Deletion requested on <strong>{fmtDate(deletion.at)}</strong>. Everything will be erased on <strong>{fmtDate(deletion.scheduledFor || new Date(Date.parse(deletion.at) + 90 * 86400000).toISOString())}</strong>. Until then nothing is removed and you can cancel.</p>
+              : <p className="small muted mb-0">Erases the passport and its records from Nexus Healthcare 90 days after you ask — you can change your mind until then.</p>}
           </div>
           {deletion
             ? <Button variant="secondary" loading={busy === 'undelete'} onClick={cancelDeletion}>Cancel request</Button>
@@ -233,10 +233,10 @@ export default function Settings() {
         <div className="stack">
           <p className="mb-0">Here&apos;s what happens:</p>
           <ul className="small pt-plain-list">
-            <li>An admin reviews the request and confirms it within <strong>30 days</strong>. Until then nothing is lost — you can cancel it from this page.</li>
-            <li>After that, {isSelf ? 'your' : 'this'} passport, records and consents are permanently erased.</li>
-            <li>Prescriptions already with a pharmacy, and records hospitals are legally required to keep, stay with them.</li>
-            {isSelf && profiles.length > 1 && <li>Family profiles you manage ({profiles.filter((x) => !x.self).map((x) => firstName(x.name)).join(', ')}) will need a new guardian.</li>}
+            <li>Deletion happens automatically <strong>90 days</strong> after today. Until then nothing is lost — you can cancel it from this page.</li>
+            <li>On that day {isSelf ? 'your' : 'this'} name, contacts, uploads, health readings, consents and {isSelf ? 'your sign-in' : 'profile details'} are permanently erased.</li>
+            <li>Visit, prescription, lab and payment entries that doctors, labs and chemists must legally keep stay with them — with nothing left that identifies {isSelf ? 'you' : 'them'}.</li>
+            {isSelf && profiles.length > 1 && <li>Family profiles you manage that don&apos;t have their own login ({profiles.filter((x) => !x.self).map((x) => firstName(x.name)).join(', ')}) are erased with your account.</li>}
           </ul>
           <Field label="Why are you leaving? (optional)">
             <input className="input" value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} placeholder="Anything we could do better" />

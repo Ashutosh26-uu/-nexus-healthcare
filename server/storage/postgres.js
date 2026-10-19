@@ -129,6 +129,8 @@ module.exports = function postgresAdapter(url) {
     },
     async trStats() { return (await q('SELECT lang, COUNT(*)::int n FROM translations GROUP BY lang')).rows; },
     async filePut(f) { await q('INSERT INTO files (id, owner_patient_id, uploaded_by, name, mime, size, data) VALUES ($1,$2,$3,$4,$5,$6,$7)', [f.id, f.ownerPatientId, f.uploadedBy, f.name, f.mime, f.size, f.data]); },
+    // Account erasure: every upload that belongs to one Health Passport. Returns how many were removed.
+    async fileDeleteByOwner(patientId) { return (await q('DELETE FROM files WHERE owner_patient_id = $1', [patientId])).rowCount || 0; },
     async fileGet(id) {
       const r = (await q('SELECT * FROM files WHERE id = $1', [id])).rows[0];
       return r ? { id: r.id, ownerPatientId: r.owner_patient_id, uploadedBy: r.uploaded_by, name: r.name, mime: r.mime, size: r.size, data: r.data } : null;

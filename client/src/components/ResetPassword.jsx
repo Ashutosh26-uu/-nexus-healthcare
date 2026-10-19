@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, KeyRound } from 'lucide-react';
+import { ArrowRight, KeyRound, ShieldCheck } from 'lucide-react';
 import { api } from '../api';
 import { useI18n } from '../i18n';
 import { Button, Field } from './ui';
@@ -24,6 +24,9 @@ export default function ResetPassword({ initialEmail = '', accountEmail = '', on
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [timer, setTimer] = useState(0);
+  // Accounts with two-step login: the email code is used up, and the server hands back a ticket + asks for the app code.
+  const [mfa, setMfa] = useState(null); // { resetTicket, message }
+  const [mfaCode, setMfaCode] = useState('');
 
   useEffect(() => {
     if (timer <= 0) return undefined;
@@ -47,15 +50,42 @@ export default function ResetPassword({ initialEmail = '', accountEmail = '', on
 
   const confirm = async (e) => {
     e?.preventDefault();
+    if (mfa) {
+      if (!mfaCode.trim()) { setError('Enter the code from your authenticator app, or a backup code.'); return; }
+      setBusy(true); setError('');
+      try {
+        const r = await api.post('/auth/password-reset/confirm', { resetTicket: mfa.resetTicket, mfaCode: mfaCode.trim(), password: pw });
+        await onDone(r);
+      } catch (err) { setError(err.message); setMfaCode(''); } finally { setBusy(false); }
+      return;
+    }
     if (code.length !== 6) { setError('Please enter all 6 digits of the code.'); return; }
     if (pw.length < 8) { setError('Choose a password of at least 8 characters.'); return; }
     if (pw !== pw2) { setError('The two passwords don\'t match.'); return; }
     setBusy(true); setError('');
     try {
       const r = await api.post('/auth/password-reset/confirm', { email: sent.email, code, password: pw });
+      if (r.mfaRequired) { setMfa({ resetTicket: r.resetTicket, message: r.message }); setMfaCode(''); return; }
       await onDone(r);
     } catch (err) { setError(err.message); setCode(''); } finally { setBusy(false); }
   };
+
+  if (sent && mfa) {
+    return (
+      <form className="stack" onSubmit={confirm}>
+        <div className="row" style={{ gap: 10, alignItems: 'flex-start' }}>
+          <ShieldCheck size={22} style={{ flex: 'none', marginTop: 2, color: 'var(--green)' }} />
+          <p className="small mb-0">Your email code was right. This account has two-step login, so one more step: {mfa.message}</p>
+        </div>
+        {error && <div className="form-error">{error}</div>}
+        <Field label="Authenticator or backup code" hint="6 digits from the app, or a backup code like abcd-2345">
+          <input className="input mono" dir="ltr" value={mfaCode} onChange={(e) => setMfaCode(e.target.value.slice(0, 12))} autoComplete="one-time-code" autoCapitalize="none" spellCheck={false} autoFocus />
+        </Field>
+        <Button type="submit" size="lg" block loading={busy} icon={KeyRound}>Save new password</Button>
+        <p className="small muted center mb-0">No phone and no backup codes? Contact support — after checking it&apos;s you, they can switch two-step login off.</p>
+      </form>
+    );
+  }
 
   if (!sent) {
     return (

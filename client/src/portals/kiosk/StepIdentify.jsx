@@ -134,6 +134,14 @@ export default function StepIdentify() {
   const [fresh, setFresh] = useState(false);
   const [scanState, setScanState] = useState('idle'); // finger: idle | scanning | done
   const timer = useRef(null);
+  const [pending, setPending] = useState(null); // { ticket, masked, devCode, query, dialCode } while waiting for the emailed code
+  const [code, setCode] = useState('');
+  const [resendIn, setResendIn] = useState(0);
+  useEffect(() => {
+    if (resendIn <= 0) return undefined;
+    const id = setTimeout(() => setResendIn((s) => s - 1), 1000);
+    return () => clearTimeout(id);
+  }, [resendIn]);
   // The thumb reader is a demo stand-in (no biometric store); on a live network the tab is hidden.
   const demo = !!usePublicConfig()?.demo;
 
@@ -148,6 +156,8 @@ export default function StepIdentify() {
     setBusy(true); setErr(''); setNotFound(false);
     try {
       const p = await api.post('/kiosk/identify', dialCode ? { query, dialCode } : { query });
+      // Found by mobile number: the passport opens only with the code we just emailed the patient.
+      if (p.needsCode) { setPending({ ...p, query, dialCode }); setCode(''); setResendIn(p.resendIn || 30); return; }
       setFound(p);
       say('is_this_you');
     } catch (e) {
@@ -175,8 +185,42 @@ export default function StepIdentify() {
     timer.current = setTimeout(() => identify('9876500002', '+91', true), 2200);
   };
 
+  const verifyCode = async () => {
+    if (code.length !== 6 || !pending) return;
+    setBusy(true); setErr('');
+    try {
+      const p = await api.post('/kiosk/identify/verify', { ticket: pending.ticket, code });
+      setPending(null); setCode('');
+      setFound(p);
+      say('is_this_you');
+    } catch (e) { setErr(e.message); setCode(''); } finally { setBusy(false); }
+  };
+
   const accept = () => { setFlow({ patient: found, step: 2 }); };
-  const again = () => { setFound(null); setFresh(false); setQr(''); setPhone(''); setFlow({ patient: null }); };
+  const again = () => { setFound(null); setFresh(false); setQr(''); setPhone(''); setPending(null); setFlow({ patient: null }); };
+
+  if (pending) {
+    return (
+      <StepFrame title={t('code_title')} onBack={() => { setPending(null); setErr(''); }}>
+        <div className="k-mobile fade-in">
+          <div className="k-mobile-left">
+            <p className="k-sub">{t('code_sub', { email: pending.masked || 'your email' })}</p>
+            <div className={cx('k-phone', code.length === 6 && 'full')} dir="ltr" aria-label="Code">
+              <span className="k-phone-num mono">{code.padEnd(6, '•').split('').join(' ')}</span>
+            </div>
+            {pending.devCode && <div className="dev-otp">Demo mode — the code is <strong className="mono" translate="no">{pending.devCode}</strong></div>}
+            <KError>{err}</KError>
+            <KButton icon={Check} className="xl" loading={busy} disabled={code.length !== 6} onClick={verifyCode}>{t('code_open')}</KButton>
+            <div className="row wrap" style={{ gap: 10 }}>
+              <KButton variant="ghost" disabled={resendIn > 0 || busy} onClick={() => identify(pending.query, pending.dialCode)}>{resendIn > 0 ? `${t('code_resend')} (${resendIn}s)` : t('code_resend')}</KButton>
+              <KButton variant="ghost" icon={QrCode} onClick={() => { setPending(null); setErr(''); setTab('qr'); }}>{t('code_card')}</KButton>
+            </div>
+          </div>
+          <Keypad value={code} onChange={setCode} max={6} />
+        </div>
+      </StepFrame>
+    );
+  }
 
   if (registering) {
     return (
@@ -250,7 +294,7 @@ export default function StepIdentify() {
                 <span className="k-phone-num">{fmtPhone(phone) || <em>98765 43210</em>}</span>
               </div>
               <KButton icon={Search} className="xl" loading={busy} disabled={phone.length !== 10} onClick={() => identify(phone, '+91')}>{t('find')}</KButton>
-              <p className="k-fine">We'll only use this number to find the passport. No OTP is needed when the ASHA operator is present.</p>
+              <p className="k-fine">We'll only use this number to find the passport. If the passport has an email, we send the patient a 6-digit code first — showing the Health Passport card needs no code.</p>
             </div>
             <Keypad value={phone} onChange={setPhone} />
           </div>

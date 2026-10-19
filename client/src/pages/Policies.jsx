@@ -102,7 +102,7 @@ export function PrivacyPolicy() {
           <li><strong>See and correct</strong> your information from your Health Passport and profile.</li>
           <li><strong>Download</strong> prescriptions and reports as PDF from the app.</li>
           <li><strong>Withdraw consent</strong> for any doctor or facility from the Consents screen, and switch off location sharing at any time.</li>
-          <li><strong>Delete your account</strong> from your profile. We action deletion requests within 30 days, keeping only what medical-record rules require for their retention period.</li>
+          <li><strong>Delete your account</strong> from Settings. It is carried out automatically 90 days after you ask (cancel any time before then): your identifying details, uploads and sign-in are erased, and only the de-identified visit, prescription and payment entries that medical and tax rules require are kept.</li>
           <li><strong>Raise a concern.</strong> To ask a question or make a complaint, <Contact />. If you are not satisfied with our response, you may approach the Data Protection Board of India.</li>
         </ul>
 

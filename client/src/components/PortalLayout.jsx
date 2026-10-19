@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Bell, LogOut, Menu, X, ChevronDown, KeyRound, Cookie, MapPin } from 'lucide-react';
+import { Bell, LogOut, Menu, X, ChevronDown, KeyRound, Cookie, MapPin, ShieldCheck } from 'lucide-react';
 import Logo from './Logo';
 import LanguagePicker from './LanguagePicker';
 import { LocationChip, openCookieSettings, openLocationSettings } from '../consent';
@@ -12,6 +12,7 @@ import './portal.css';
 
 // Only needed once someone opens "Change password".
 const ResetPassword = lazy(() => import('./ResetPassword'));
+const TwoStepModal = lazy(() => import('./TwoStep'));
 
 /**
  * Shared shell for every portal.
@@ -24,6 +25,9 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
   const [bellOpen, setBellOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
+  const [mfaOpen, setMfaOpen] = useState(false);
+  // Admins and officials can see many people's data: until two-step login is on, the menu button carries a dot.
+  const nudgeMfa = ['super_admin', 'official'].includes(user?.role) && user?.mfaEnabled === false;
   const [notes, setNotes] = useState([]);
   const location = useLocation();
   const navigate = useNavigate();
@@ -131,11 +135,13 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
                 <span className="tiny muted">{ROLE_LABEL[user?.role]}</span>
               </span>
               <ChevronDown size={16} className="muted" />
+              {nudgeMfa && <span className="bell-dot" title="Turn on two-step login" aria-label="Two-step login is off">!</span>}
             </button>
             {menuOpen && (
               <div className="popover menu-pop">
                 <div className="pop-head"><div><strong className="small">{user?.name}</strong><div className="tiny muted">{user?.email}</div></div></div>
                 <button className="menu-item" onClick={() => { setPwOpen(true); setMenuOpen(false); }}><KeyRound size={16} /> Change password</button>
+                <button className="menu-item" onClick={() => { setMfaOpen(true); setMenuOpen(false); }}><ShieldCheck size={16} /> Two-step login <span className={cx('badge tiny', user?.mfaEnabled ? 'green' : nudgeMfa ? 'sun' : '')} style={{ marginInlineStart: 'auto' }}>{user?.mfaEnabled ? 'On' : 'Off'}</span></button>
                 {['patient', 'caregiver'].includes(user?.role) && <button className="menu-item" onClick={() => { openLocationSettings(); setMenuOpen(false); }}><MapPin size={16} /> My location</button>}
                 <button className="menu-item" onClick={() => { openCookieSettings(); setMenuOpen(false); }}><Cookie size={16} /> Cookie preferences</button>
                 <button className="menu-item" onClick={() => { signOut(); navigate('/'); }}><LogOut size={16} /> Sign out</button>
@@ -148,6 +154,7 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
         <main className="portal-content" key={location.pathname}>{children}</main>
       </div>
       <PasswordModal open={pwOpen} onClose={() => setPwOpen(false)} />
+      {mfaOpen && <Suspense fallback={null}><TwoStepModal open={mfaOpen} onClose={() => setMfaOpen(false)} /></Suspense>}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { Mail, ArrowRight, ArrowLeft, Lock, ShieldCheck, ChevronRight, Eye, EyeO
 import Logo from '../components/Logo';
 import LanguagePicker from '../components/LanguagePicker';
 import OtpFlow from '../components/OtpFlow';
+import MfaPrompt from '../components/MfaPrompt';
 import { api } from '../api';
 import { useAuth, ROLE_HOME, ROLE_LABEL } from '../auth';
 import { Button, Field, cx } from '../components/ui';
@@ -44,6 +45,8 @@ export default function Login() {
   const [showPw, setShowPw] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // Two-step login: after the password / email code the server may ask for the authenticator code.
+  const [mfaTicket, setMfaTicket] = useState(null);
 
   useEffect(() => {
     if (!user) return;
@@ -60,12 +63,14 @@ export default function Login() {
     setBusy(true); setError('');
     try {
       const r = await api.post('/auth/login', { identifier: identifier.trim(), password });
-      await signIn(r.token);
+      if (r.mfaRequired) setMfaTicket(r.ticket);
+      else await signIn(r.token);
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
 
   const onOtp = async (r, who) => {
     if (r.newUser) navigate('/signup', { state: { ticket: r.ticket, email: who.email, country: who.country?.iso, from: location.state?.from } });
+    else if (r.mfaRequired) setMfaTicket(r.ticket);
     else await signIn(r.token);
   };
 
@@ -85,13 +90,15 @@ export default function Login() {
           <p className="muted">Sign in to your Nexus Healthcare account.</p>
 
           <div className="pills auth-pills" role="tablist">
-            <button type="button" role="tab" aria-selected={mode === 'patient'} className={cx('pill', mode === 'patient' && 'active')} onClick={() => { setMode('patient'); setError(''); }}><Mail size={15} /> Email code</button>
-            <button type="button" role="tab" aria-selected={mode === 'staff'} className={cx('pill', mode === 'staff' && 'active')} onClick={() => { setMode('staff'); setError(''); }}><Lock size={15} /> Password</button>
+            <button type="button" role="tab" aria-selected={mode === 'patient'} className={cx('pill', mode === 'patient' && 'active')} onClick={() => { setMode('patient'); setError(''); setMfaTicket(null); }}><Mail size={15} /> Email code</button>
+            <button type="button" role="tab" aria-selected={mode === 'staff'} className={cx('pill', mode === 'staff' && 'active')} onClick={() => { setMode('staff'); setError(''); setMfaTicket(null); }}><Lock size={15} /> Password</button>
           </div>
 
           {error && <div className="form-error mb-2">{error}</div>}
 
-          {mode === 'staff' && (
+          {mfaTicket && <MfaPrompt ticket={mfaTicket} onDone={(r) => signIn(r.token)} onCancel={() => { setMfaTicket(null); setPassword(''); }} />}
+
+          {!mfaTicket && mode === 'staff' && (
             <form className="stack" onSubmit={loginPassword}>
               <Field label="Email">
                 <div className="input-wrap"><Mail /><input className="input" type="email" inputMode="email" value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="you@hospital.in" autoComplete="username" aria-label="Email" required /></div>
@@ -111,7 +118,7 @@ export default function Login() {
             </form>
           )}
 
-          {mode === 'patient' && (
+          {!mfaTicket && mode === 'patient' && (
             <>
               <OtpFlow onDone={onOtp} />
             </>

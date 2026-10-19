@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, UserPlus, Ban, RotateCcw, Globe2, Lock } from 'lucide-react';
+import { Search, UserPlus, Ban, RotateCcw, Globe2, Lock, ShieldCheck, ShieldOff, Trash2 } from 'lucide-react';
 import { api } from '../../api';
 import { PageHeader } from '../../components/PortalLayout';
 import { Card, Empty, Button, Modal, Field, Avatar, StatusBadge, useAction, fmtDate, cx } from '../../components/ui';
@@ -101,6 +101,7 @@ function CreateUserModal({ open, onClose, facilities, onCreated }) {
 export default function Users() {
   const live = useLive('/admin/users', ['admin']);
   const onboarding = useLive('/admin/onboarding', ['admin']);
+  const deletions = useLive('/admin/deletions', ['admin', 'patients']);
   const { user: me } = useAuth();
   const [q, setQ] = useState('');
   const [role, setRole] = useState('');
@@ -120,6 +121,12 @@ export default function Users() {
   const setUserStatus = async (u, next) => {
     const r = await run(u.id, () => api.put(`/admin/users/${u.id}/status`, { status: next }), next === 'suspended' ? `${u.name} suspended` : `${u.name} reactivated`);
     if (r) { setConfirm(null); live.reload(); }
+  };
+  // Lost phone, no backup codes: after checking who is asking, switch their two-step login off.
+  const resetMfa = async (u) => {
+    if (!window.confirm(`Turn off two-step login for ${u.name}? Only do this after confirming it is really them. They will be signed out everywhere and can set it up again.`)) return;
+    const r = await run(`mfa-${u.id}`, () => api.del(`/admin/users/${u.id}/mfa`), `Two-step login turned off for ${u.name}`);
+    if (r) live.reload();
   };
   const roleCounts = useMemo(() => { const m = {}; for (const u of users) m[u.role] = (m[u.role] || 0) + 1; return m; }, [users]);
 
@@ -146,6 +153,7 @@ export default function Users() {
                 <option value="active">Active</option>
                 <option value="pending">Pending</option>
                 <option value="suspended">Suspended</option>
+                <option value="deleted">Deleted</option>
               </select>
             </div>
             {rows.length === 0 ? <Empty title="No one matches">Try a different search or clear the filters.</Empty> : (
@@ -154,12 +162,12 @@ export default function Users() {
                   <thead><tr><th>Person</th><th>Role</th><th>Scope / workplace</th><th>Status</th><th>Joined</th><th aria-label="Actions" /></tr></thead>
                   <tbody>
                     {rows.map((u) => (
-                      <tr key={u.id} className={cx(u.status === 'suspended' && 'ad-row-muted')}>
+                      <tr key={u.id} className={cx(['suspended', 'deleted'].includes(u.status) && 'ad-row-muted')}>
                         <td>
                           <div className="row" style={{ gap: 10 }}>
                             <Avatar name={u.name} size="sm" />
                             <div style={{ minWidth: 0 }}>
-                              <div style={{ fontWeight: 600 }}>{u.name}{u.id === me?.id && <span className="tiny muted"> (you)</span>}</div>
+                              <div style={{ fontWeight: 600 }}>{u.name}{u.id === me?.id && <span className="tiny muted"> (you)</span>}{u.mfaEnabled && <span className="badge green tiny" title="Two-step login is on" style={{ marginInlineStart: 6 }}><ShieldCheck size={11} style={{ verticalAlign: '-1px' }} /> 2-step</span>}</div>
                               <div className="tiny muted" translate="no">{u.email}</div>
                             </div>
                           </div>
@@ -173,7 +181,8 @@ export default function Users() {
                         <td><StatusBadge status={u.status} /></td>
                         <td className="small muted nowrap">{fmtDate(u.createdAt)}</td>
                         <td className="right">
-                          {u.id !== me?.id && (u.status === 'active'
+                          {u.id !== me?.id && u.mfaEnabled && <Button size="sm" variant="ghost" icon={ShieldOff} loading={busy === `mfa-${u.id}`} onClick={() => resetMfa(u)}>Reset 2-step</Button>}
+                          {u.id !== me?.id && u.status !== 'deleted' && (u.status === 'active'
                             ? <Button size="sm" variant="ghost" icon={Ban} onClick={() => setConfirm(u)}>Suspend</Button>
                             : <Button size="sm" variant="soft" icon={RotateCcw} loading={busy === u.id} onClick={() => setUserStatus(u, 'active')}>{u.status === 'pending' ? 'Activate' : 'Reactivate'}</Button>)}
                         </td>
@@ -184,6 +193,8 @@ export default function Users() {
               </div>
             )}
           </Card>
+
+          <DeletionSchedule rows={deletions.data} />
 
           <CreateUserModal open={creating} onClose={() => setCreating(false)} facilities={facilities} onCreated={live.reload} />
           <Modal
@@ -198,5 +209,34 @@ export default function Users() {
         </>
       )}
     </LiveGate>
+  );
+}
+
+// Patients' deletion requests: each is carried out automatically 90 days after it was made, unless the patient
+// cancels first. Read-only here — the waiting period belongs to the patient.
+function DeletionSchedule({ rows }) {
+  if (!rows?.length) return null;
+  const pending = rows.filter((r) => r.status === 'requested');
+  const done = rows.filter((r) => r.status === 'completed');
+  const daysLeft = (iso) => Math.max(0, Math.ceil((Date.parse(iso) - Date.now()) / 86400000));
+  return (
+    <Card title={<h4 className="row mb-0" style={{ gap: 8 }}><Trash2 size={17} />Account deletions</h4>}>
+      <p className="small muted">Carried out automatically 90 days after the request. The patient can cancel any time before then.</p>
+      <div className="table-wrap">
+        <table className="table">
+          <thead><tr><th>Health Passport</th><th>Requested</th><th>Erased on</th><th>Status</th></tr></thead>
+          <tbody>
+            {[...pending, ...done].map((r) => (
+              <tr key={r.patientId} className={cx(r.status === 'completed' && 'ad-row-muted')}>
+                <td><div style={{ fontWeight: 600 }} translate="no">{r.name}</div><div className="tiny muted mono" translate="no">{r.patientId}</div>{r.reason && <div className="tiny muted">“{r.reason}”</div>}</td>
+                <td className="small nowrap">{fmtDate(r.requestedAt)}</td>
+                <td className="small nowrap">{fmtDate(r.completedAt || r.scheduledFor)}</td>
+                <td>{r.status === 'completed' ? <span className="badge tiny">Erased</span> : <span className="badge sun tiny">In {daysLeft(r.scheduledFor)} day{daysLeft(r.scheduledFor) === 1 ? '' : 's'}</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }

@@ -104,13 +104,15 @@ const MESSAGES = {
 };
 const messageFor = (code, lang, purpose = 'login') => (purpose === 'consent'
   ? `${code} is your Nexus Healthcare approval code. Share it only with the doctor in front of you to let them see your records and write a prescription. It cannot be used to sign in. Valid ${Math.round(TTL / 60000)} min.`
+  : purpose === 'kiosk'
+    ? `${code} is your Nexus Healthcare kiosk check-in code. Tell it to the kiosk operator only if you are at the kiosk right now — it opens your Health Passport there. Valid ${Math.round(TTL / 60000)} min. Not you? Ignore this email; nothing is shared without the code.`
   : purpose === 'reset'
     ? `${code} is your Nexus Healthcare code to set a new password. It expires in ${Math.round(TTL / 60000)} minutes. If you didn't ask to change your password, ignore this email — your password stays the same.`
     : (MESSAGES[String(lang || 'en').split('-')[0]] || MESSAGES.en)(code, Math.round(TTL / 60000)));
-const SUBJECTS = { consent: (c) => `${c} — approve your doctor (Nexus Healthcare)`, reset: (c) => `${c} — set a new password (Nexus Healthcare)`, login: (c) => `${c} — your Nexus Healthcare code` };
+const SUBJECTS = { kiosk: (c) => `${c} — check in at the kiosk (Nexus Healthcare)`, consent: (c) => `${c} — approve your doctor (Nexus Healthcare)`, reset: (c) => `${c} — set a new password (Nexus Healthcare)`, login: (c) => `${c} — your Nexus Healthcare code` };
 // Codes are stored per purpose, so a code sent for one thing (e.g. a patient approving a doctor, or
 // changing a password) can never be redeemed for another (e.g. signing in as that patient).
-const PURPOSES = new Set(['login', 'consent', 'reset']);
+const PURPOSES = new Set(['login', 'consent', 'reset', 'kiosk']);
 // Addresses that are not real inboxes: demo accounts (and phone-only patients' "…@patient.omnicare.in")
 // plus the reserved example/test domains. A real mail server must never send codes there.
 const DEMO_EMAIL = /@(([a-z0-9-]+\.)*omnicare\.in|example\.(com|org|net)|[a-z0-9.-]+\.(test|invalid|example|localhost))$/i;
@@ -364,4 +366,4 @@ async function sendMail({ to, subject, text, html }) {
   }
 }
 
-module.exports = { sendCode, verifyCode, normalizePhone, samePhone, publicConfig, OtpError, sendMail };
+module.exports = { sendCode, verifyCode, normalizePhone, samePhone, publicConfig, OtpError, sendMail, maskEmail };

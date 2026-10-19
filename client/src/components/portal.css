@@ -78,3 +78,7 @@
 
 /* Call stream: shown when the browser blocked sound until a tap */
 .call-unmute { position: absolute; left: 50%; top: 56px; transform: translateX(-50%); z-index: 4; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 18px; border: 0; border-radius: 99px; background: #fff; color: var(--ink); font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,.3); cursor: pointer; white-space: nowrap; }
+
+/* Two-step login nudge on the account button (admins and officials). */
+.user-btn { position: relative; }
+.menu-item .badge { flex: none; }
