@@ -77,6 +77,7 @@ export default function Landing() {
             <a href="#how">How it works</a>
             <a href="#kiosk">E-Clinics</a>
             <a href="#partners">For partners</a>
+            <Link to="/testimonials">Testimonials</Link>
             <a href="#faq">FAQ</a>
             <div className="l-links-cta" onClick={(e) => e.stopPropagation()}>
               <LanguagePicker />

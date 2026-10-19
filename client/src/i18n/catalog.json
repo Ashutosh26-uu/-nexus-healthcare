@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-10-19T17:02:56.515Z",
+ "generatedAt": "2026-10-19T17:12:07.856Z",
  "strings": [
   "% advance confirms the order. If the chemist can't fulfil it, the advance is refunded.",
   "% complete",
@@ -3749,6 +3749,8 @@
   "Store setup",
   "Stored at 2–8°C",
   "Stored rounded to about 100 m, only to find care near you.",
+  "Stories from patients, doctors and partners using Nexus Healthcare — coming soon.",
+  "Stories from the patients, doctors, chemists and labs using Nexus Healthcare will appear here.",
   "Strength",
   "Strength:",
   "Struggling to breathe",
@@ -3871,6 +3873,8 @@
   "Test event delivered to n8n ✅",
   "Test orders from Nexus Healthcare doctors. Each one carries the patient's Health Passport ID and LOINC test codes, so nothing needs re-typing.",
   "Test type (LOINC code)",
+  "Testimonials",
+  "Testimonials · Nexus Healthcare",
   "Tests",
   "Tests & investigations",
   "Tests & prices",
