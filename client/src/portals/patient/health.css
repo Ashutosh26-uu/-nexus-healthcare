@@ -54,3 +54,12 @@
   .hl-today { grid-template-columns: 1fr; }
   .hl-invite > .btn { width: 100%; justify-content: center; }
 }
+/* Tracker: remote-monitoring panel */
+.hl-mon-item { padding: 10px 12px; border-radius: 12px; background: var(--paper-2); border-inline-start: 3px solid var(--sun); }
+.hl-mon-item.urgent { border-inline-start-color: var(--rose); background: #fdf1ef; }
+.hl-mon-item.done { border-inline-start-color: var(--green-2); background: var(--green-soft); }
+.hl-mon-ic { flex-shrink: 0; margin-top: 2px; }
+.hl-mon-ic.urgent { color: var(--rose); }
+.hl-mon-ic.watch { color: #8a5a06; }
+.hl-mon-ic.ok { color: var(--green-2); }
+.hl-mon-msg { background: #fff; border-radius: 10px; padding: 8px 10px; border: 1px solid var(--line); }

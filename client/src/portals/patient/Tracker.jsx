@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Bell, Trash2, ShieldCheck, Plus, Info } from 'lucide-react';
+import { Bell, Trash2, ShieldCheck, Plus, Info, Eye, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { api } from '../../api';
 import { Button, Card, Empty, Field, LineChart, Pills, Switch, fmtDateTime, useAction } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
@@ -63,6 +63,8 @@ export default function Tracker() {
     <div className="stack lg">
       <PageHeader eyebrow="Health tracker" title={isSelf ? 'Your home readings' : `${firstName(patient?.name)}’s home readings`}
         subtitle="Log BP, sugar, weight, oxygen and temperature at home. We'll show the trend and tell you plainly when something needs a doctor." />
+
+      <MonitoringPanel who={who} />
 
       {latest.length > 0 && (
         <div className="hl-latest" role="group" aria-label="Latest readings">
@@ -183,5 +185,44 @@ export default function Tracker() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Remote monitoring: patterns found across the readings, whether the doctor was alerted, and what they said.
+function MonitoringPanel({ who }) {
+  const { data } = usePatientLive('/patient/monitoring', ['monitoring', 'vitals', 'consents']);
+  if (!data) return null;
+  const { alerts, doctorsWatching } = data;
+  if (!alerts.length && !doctorsWatching.length) {
+    return (
+      <div className="callout"><Info /><span>Share {who === 'your' ? 'your' : who} record with a doctor (Consents) and they’ll be alerted automatically if {who === 'your' ? 'your' : 'these'} readings show a worrying pattern.</span></div>
+    );
+  }
+  return (
+    <Card className="hl-mon" title={<h3 className="row" style={{ gap: 8 }}><Eye size={18} /> {doctorsWatching.length ? `Watched by ${doctorsWatching.join(', ')}` : 'Patterns in your readings'}</h3>}>
+      {!alerts.length && <p className="small muted mb-0">No worrying pattern in the last 30 days. If one appears, {doctorsWatching.length === 1 ? 'your doctor is' : 'your doctors are'} alerted straight away.</p>}
+      <div className="stack" style={{ gap: 8 }}>
+        {alerts.map((a) => (
+          <div key={a.id} className={`hl-mon-item ${a.severity}${a.status === 'reviewed' ? ' done' : ''}`}>
+            <div className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
+              {a.status === 'reviewed' ? <CheckCircle2 size={18} className="hl-mon-ic ok" /> : <AlertTriangle size={18} className={`hl-mon-ic ${a.severity}`} />}
+              <div className="grow">
+                <strong>{a.title}</strong>
+                <div className="small muted">{a.detail}</div>
+                <div className="tiny muted mt-1">
+                  {a.status === 'reviewed'
+                    ? <>Reviewed by {a.reviewedByName} · {fmtDateTime(a.reviewedAt)}</>
+                    : doctorsWatching.length ? <>Your doctor has been alerted · {fmtDateTime(a.createdAt)}{a.cleared ? ' · readings back in range now' : ''}</> : <>Found {fmtDateTime(a.createdAt)} — no doctor has access yet</>}
+                </div>
+                {a.message && <div className="hl-mon-msg small mt-1">“{a.message}”</div>}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      {alerts.some((a) => a.severity === 'urgent' && a.status === 'open') && (
+        <p className="small mb-0 mt-1" style={{ color: 'var(--rose)' }}><strong>If you feel unwell now, don’t wait for a reply — call 108.</strong></p>
+      )}
+    </Card>
   );
 }

@@ -438,3 +438,11 @@ table { max-width: 100%; }
 .bc-scan video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .bc-frame { position: absolute; inset: 22% 14%; border: 3px solid rgba(255, 255, 255, .9); border-radius: 14px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .35); }
 
+/* Distance picker: quick choices + a custom km, used wherever a search has a radius. */
+.nx-dist { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.nx-dist-ic { color: var(--ink-3); }
+.nx-dist-chip { min-height: 32px; padding: 0 12px; border-radius: 99px; border: 1px solid var(--line); background: #fff; font: 600 0.82rem var(--sans); color: var(--ink-2); cursor: pointer; transition: background-color 0.15s, border-color 0.15s, color 0.15s; }
+.nx-dist-chip.on { background: var(--green); border-color: var(--green); color: #fff; }
+.nx-dist-custom { display: inline-flex; align-items: center; gap: 6px; }
+.nx-dist-custom .input { width: 78px; min-height: 32px; padding: 4px 10px; }
+.nx-dist-custom .input.invalid { border-color: var(--rose); }

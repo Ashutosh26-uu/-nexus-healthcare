@@ -3,6 +3,7 @@ import { Store, MapPin, Clock, Check, ChevronDown, Truck, BadgeIndianRupee, Phon
 import { api } from '../../api';
 import { fmtMoney, cx } from '../../components/ui';
 import { useDeviceLocation, LocationButton } from './NearbyDoctors';
+import DistancePicker, { useRadius } from '../../components/DistancePicker';
 
 // Every nearby chemist that has the prescription's medicines — what each costs there, and the total.
 export default function WhereToBuy({ rx, selectable, value, onChange, onLoaded }) {
@@ -10,6 +11,7 @@ export default function WhereToBuy({ rx, selectable, value, onChange, onLoaded }
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [open, setOpen] = useState(null);
+  const [radius, setRadius] = useRadius('chemists', 50, { max: 100 });
 
   const lat = device.loc?.lat;
   const lng = device.loc?.lng;
@@ -17,15 +19,15 @@ export default function WhereToBuy({ rx, selectable, value, onChange, onLoaded }
     if (!rx) return undefined;
     let alive = true;
     setError('');
-    const qs = lat != null && lng != null ? `?lat=${lat}&lng=${lng}` : '';
-    api.get(`/prescriptions/${rx.id}/pharmacies${qs}`).then((r) => {
+    const qs = new URLSearchParams({ radiusKm: String(radius), ...(lat != null && lng != null ? { lat, lng } : {}) });
+    api.get(`/prescriptions/${rx.id}/pharmacies?${qs}`).then((r) => {
       if (!alive) return;
       setData(r); onLoaded?.(r);
       if (selectable && !value && r.shops[0]) onChange?.(r.shops[0].id);
     }).catch((e) => alive && setError(e.message));
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rx?.id, lat, lng]);
+  }, [rx?.id, lat, lng, radius]);
 
   if (error) return <div className="form-error">{error}</div>;
   if (!data) return <div className="stack">{[0, 1].map((i) => <div key={i} className="skeleton" style={{ height: 64, borderRadius: 12 }} />)}</div>;
@@ -34,10 +36,13 @@ export default function WhereToBuy({ rx, selectable, value, onChange, onLoaded }
     <div className="pt-wtb">
       <div className="row between wrap" style={{ gap: 8 }}>
         <span className="tiny muted">Prices for the full course: {data.items.map((i) => `${i.drug} × ${i.units} ${i.unit}${i.units > 1 ? 's' : ''}`).join(' · ')}</span>
-        <LocationButton device={device} />
+        <div className="row wrap" style={{ gap: 6 }}>
+          <DistancePicker value={radius} onChange={setRadius} options={[5, 10, 25, 50]} max={100} label="How far to look for chemists" />
+          <LocationButton device={device} />
+        </div>
       </div>
       {data.shops.length === 0 && (
-        <div className="callout"><AlertTriangle /><span>No chemist within {data.radiusKm} km has these right now{data.fartherCount ? ` (${data.fartherCount} farther away do)` : ''}. Ask your doctor about an alternative, or check again later — chemists update their stock through the day.</span></div>
+        <div className="callout"><AlertTriangle /><span>No chemist within {data.radiusKm} km has these right now{data.fartherCount ? ` (${data.fartherCount} farther away do — try a bigger distance)` : ''}. Ask your doctor about an alternative, or check again later — chemists update their stock through the day.</span></div>
       )}
       {data.shops.length > 0 && <span className="tiny muted">Showing chemists within {data.radiusKm} km of you that have your medicines.</span>}
       <div className="pt-wtb-list" role={selectable ? 'radiogroup' : undefined}>

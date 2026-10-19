@@ -37,7 +37,7 @@ const LAB_DISCLAIMER = 'Test prices are indicative (the Nexus reference price li
 module.exports = function registerPublicPages(app, deps) {
   const {
     db, catalog, geo, security, clean, own, publicDoctor, doctorStats, practiceOf, bookingOptions, labQuote, testInfo, stockRow,
-    MEDICINE_RADIUS_KM, LAB_ADVANCE_SHARE, LAB_HOME_FEE, auth, role, activePatient, store, audit, broadcast, dist,
+    MEDICINE_RADIUS_KM, medRadius, LAB_ADVANCE_SHARE, LAB_HOME_FEE, auth, role, activePatient, store, audit, broadcast, dist,
   } = deps;
 
   const limiter = security.rateLimit({ windowMs: 60000, max: 120, message: 'Too many requests. Please wait a moment.' });
@@ -93,7 +93,8 @@ module.exports = function registerPublicPages(app, deps) {
     const names = [...new Set([e.key, e.name, ...options.map((o) => o.name)])];
     const stocked = d.facilities.filter((f) => f.type === 'pharmacy' && f.verified && names.some((n) => free(stockRow(d, f.id, n)) > 0))
       .map((f) => ({ f, km: origin ? geo.km(origin, geo.pointOf(f)) : null }));
-    const near = origin ? stocked.filter((x) => x.km !== null && x.km <= MEDICINE_RADIUS_KM).sort((a, b) => a.km - b.km) : stocked;
+    const radiusKm = medRadius(req.query.radiusKm);
+    const near = origin ? stocked.filter((x) => x.km !== null && x.km <= radiusKm).sort((a, b) => a.km - b.km) : stocked;
     // No "save X%" pitch for medicines that must not be switched at the counter (e.g. insulin).
     const best = s.noSwap ? null : options.filter((o) => o.saving > 0).sort((a, b) => b.saving - a.saving)[0] || null;
     const label = [s.salt, s.strength].filter(Boolean).join(' ');
@@ -105,7 +106,7 @@ module.exports = function registerPublicPages(app, deps) {
       name: e.name, slug: e.slug, kind: e.kind, generic: e.key, salt: s.salt || null, strength: s.strength || null,
       unit: s.unit || p?.unit || 'unit', pack: !!p?.pack, price, noSwap: s.noSwap || null, options, bestSaving: best,
       stock: {
-        scope: origin ? 'near' : 'network', radiusKm: origin ? MEDICINE_RADIUS_KM : null, pharmacies: near.length,
+        scope: origin ? 'near' : 'network', radiusKm: origin ? radiusKm : null, pharmacies: near.length,
         // Store names only when the visitor shared a location — and only verified chemists.
         stores: origin ? near.slice(0, 8).map(({ f, km }) => ({
           name: f.name, district: f.district || null, distanceKm: km, janAushadhi: !!f.generic, delivery: !!f.delivery,

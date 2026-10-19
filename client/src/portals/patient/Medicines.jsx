@@ -30,7 +30,7 @@ export default function Medicines() {
   return (
     <div className="stack lg">
       <PageHeader eyebrow="Medicines" title={isSelf ? 'Your medicines' : `${firstName(patient?.name)}’s medicines`}
-        subtitle="E-prescriptions from your doctors. Order from a chemist within 50 km — pick it up or get it delivered — and track every step.">
+        subtitle="E-prescriptions from your doctors. Order from a chemist near you (50 km, or the distance you choose) — pick it up or get it delivered — and track every step.">
         <Button variant="clay" icon={ShoppingBag} onClick={() => navigate('/patient/medicines/order')}>Order medicines</Button>
       </PageHeader>
       <RunningLow />

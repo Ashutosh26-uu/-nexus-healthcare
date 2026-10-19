@@ -5,6 +5,7 @@ import { api, subscribe } from '../../api';
 import { Avatar, Button, Empty, Field, fmtMoney, cx, useDebounced } from '../../components/ui';
 import { AvailBadge, availClass } from '../../components/Availability';
 import VoiceInput from '../../components/VoiceInput';
+import DistancePicker, { useRadius } from '../../components/DistancePicker';
 import { getLocale } from '../../i18n';
 import DoctorProfile, { TodayTimings } from './DoctorProfile';
 import BookingFlow from './BookingFlow';
@@ -53,7 +54,7 @@ export function DoctorStats({ d }) {
 }
 
 // The doctor finder. In `full` mode it has its own symptom box (type or speak) and department picker;
-// otherwise it follows the `symptoms` / `department` it's given. Default: doctors within 20 km of the
+// otherwise it follows the `symptoms` / `department` it's given. Default: doctors within the patient's chosen distance (20 km) of the
 // patient. "All centres in <country>" lifts the radius (e.g. to change doctor). `onPick` turns the card
 // button into "Choose" (used by the change-doctor flow).
 export default function NearbyDoctors({ symptoms: givenSymptoms, department: givenDept, title, compact, full, device: shared, defaultScope = 'near', onPick, pickLabel = 'Choose', excludeId }) {
@@ -64,6 +65,7 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
   const [error, setError] = useState('');
   const [profile, setProfile] = useState(null);
   const [scope, setScope] = useState(defaultScope);
+  const [radius, setRadius] = useRadius('doctors', 20);
   const [typed, setTyped] = useState(givenSymptoms || '');
   const [dept, setDept] = useState(givenDept || '');
   useEffect(() => { if (!full) setTyped(givenSymptoms || ''); }, [givenSymptoms, full]);
@@ -98,13 +100,13 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
     if (!active) { setData(null); return undefined; }
     let alive = true;
     setLoading(true); setError('');
-    const params = new URLSearchParams({ symptoms: q, scope });
+    const params = new URLSearchParams({ symptoms: q, scope, radiusKm: String(radius) });
     if (dept) params.set('department', dept);
     if (excludeId) params.set('exclude', excludeId);
     if (place) { params.set('district', place.district); params.set('state', place.state); } else if (lat != null && lng != null) { params.set('lat', lat); params.set('lng', lng); } else if (manualDistrict) { params.set('district', manualDistrict); params.set('state', manualState); }
     api.get(`/doctors/recommend?${params}`).then((r) => alive && setData(r)).catch((e) => { if (alive) { setData(null); setError(e.message); } }).finally(() => alive && setLoading(false));
     return () => { alive = false; };
-  }, [q, dept, scope, lat, lng, manualDistrict, manualState, place, active, excludeId, tick]);
+  }, [q, dept, scope, radius, lat, lng, manualDistrict, manualState, place, active, excludeId, tick]);
 
   const [booking, setBooking] = useState(null);
   const pick = (doc) => (onPick ? onPick(doc) : setBooking(doc));
@@ -132,7 +134,7 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
 
       <div className="row between wrap" style={{ gap: 10 }}>
         <div>
-          <h3 className="mb-0 row" style={{ gap: 8 }}><Stethoscope size={19} />{title || (scope === 'all' ? `Doctors across ${countryName}` : 'Doctors within 20 km of you')}</h3>
+          <h3 className="mb-0 row" style={{ gap: 8 }}><Stethoscope size={19} />{title || (scope === 'all' ? `Doctors across ${countryName}` : `Doctors within ${radius} km of you`)}</h3>
           {data && (
             <p className="small muted mb-0">
               {data.triage.byDepartment ? <>Department: <strong>{data.triage.specialty}</strong></> : q ? <>For “{q.length > 50 ? `${q.slice(0, 50)}…` : q}” we suggest <strong>{data.triage.specialty}</strong></> : 'All specialties'}
@@ -142,9 +144,10 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
         </div>
         <div className="row wrap" style={{ gap: 6 }}>
           <div className="pt-scope" role="radiogroup" aria-label="Search area">
-            <button type="button" role="radio" aria-checked={scope === 'near'} className={cx(scope === 'near' && 'on')} onClick={() => setScope('near')}><Radar size={13} /> Within 20 km</button>
+            <button type="button" role="radio" aria-checked={scope === 'near'} className={cx(scope === 'near' && 'on')} onClick={() => setScope('near')}><Radar size={13} /> Near me</button>
             <button type="button" role="radio" aria-checked={scope === 'all'} className={cx(scope === 'all' && 'on')} onClick={() => setScope('all')}><Globe2 size={13} /> All of {countryName}</button>
           </div>
+          {scope === 'near' && <DistancePicker value={radius} onChange={setRadius} label="How far to look for doctors" />}
           {scope === 'near' && (place ? (
             <span className="badge green pt-place"><MapPin size={12} /> {place.district} <button type="button" onClick={clearPlace} aria-label="Clear chosen area"><X size={12} /></button></span>
           ) : picking ? (
@@ -162,12 +165,12 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
       {loading && !data && <div className="row small muted mt-2"><span className="spinner sm" /> Finding the right doctors…</div>}
       {error && !loading && <div className="form-error mt-2">{error}</div>}
       {data && data.doctors.length === 0 && (
-        <Empty icon={Stethoscope} title={scope === 'near' ? 'No matching doctor within 20 km yet' : 'No verified doctors for this yet'}>
-          {scope === 'near' ? <>Our network is growing. <button type="button" className="link-btn" onClick={() => setScope('all')}>See doctors across {countryName}</button> — many consult by video.</> : 'Try another department, or a general physician.'}
+        <Empty icon={Stethoscope} title={scope === 'near' ? `No matching doctor within ${radius} km yet` : 'No verified doctors for this yet'}>
+          {scope === 'near' ? <>Our network is growing. Try a bigger distance, or <button type="button" className="link-btn" onClick={() => setScope('all')}>See doctors across {countryName}</button> — many consult by video.</> : 'Try another department, or a general physician.'}
         </Empty>
       )}
       {data && data.doctors.length > 0 && specialists.length === 0 && !data.triage.byDepartment && q && (
-        <p className="tiny muted mt-2 mb-0">No {data.triage.specialty.toLowerCase()} specialist {scope === 'near' ? 'within 20 km' : 'on the network'} yet — these general physicians can examine you and refer you on.</p>
+        <p className="tiny muted mt-2 mb-0">No {data.triage.specialty.toLowerCase()} specialist {scope === 'near' ? `within ${radius} km` : 'on the network'} yet — these general physicians can examine you and refer you on.</p>
       )}
 
       {data && data.doctors.length > 0 && (
@@ -207,7 +210,7 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
 
       {data?.facilities?.length > 0 && (
         <div className="pt-near-fac">
-          <h4 className="row mb-1" style={{ gap: 8 }}><Building2 size={17} />Hospitals &amp; clinics {scope === 'near' ? 'within 20 km' : `in ${countryName}`}</h4>
+          <h4 className="row mb-1" style={{ gap: 8 }}><Building2 size={17} />Hospitals &amp; clinics {scope === 'near' ? `within ${radius} km` : `in ${countryName}`}</h4>
           <div className="pt-nearby-list">
             {data.facilities.map((f) => (
               <article key={f.id} className="pt-near-doc pt-near-facility">

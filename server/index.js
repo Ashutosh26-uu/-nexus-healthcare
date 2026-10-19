@@ -17,6 +17,7 @@ const i18n = require('./i18n');
 const security = require('./security');
 const innovations = require('./innovations');
 const scribe = require('./scribe');
+const monitoring = require('./monitoring');
 const { availabilityOf, isEClinicDoctor, timingsOf, DAYS: WEEK_DAYS } = require('./availability');
 const catalog = require('./catalog');
 const payments = require('./payments');
@@ -1696,7 +1697,10 @@ app.get('/api/prescriptions/:id', auth, (req, res) => {
 });
 
 // ---- where to buy: every nearby chemist, which of the medicines it has, and what it will cost ----
-const MEDICINE_RADIUS_KM = 50;
+const MEDICINE_RADIUS_KM = 50; // default chemist search distance
+const MEDICINE_MAX_KM = 100;   // the furthest a patient may choose (delivery and pickup stay practical)
+// The patient's chosen distance for this search (2–100 km), else the default.
+const medRadius = (v) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.round(Math.max(2, Math.min(MEDICINE_MAX_KM, n))) : MEDICINE_RADIUS_KM; };
 const DELIVERY_FEE = 40;
 const normDrug = (s) => String(s).toLowerCase().replace(/\s+/g, '');
 // What this chemist has of the prescription, and what it costs there.
@@ -1750,12 +1754,13 @@ app.get('/api/prescriptions/:id/pharmacies', auth, role('patient', 'caregiver'),
   const origin = originFor(req, d.patients.find((x) => x.id === r.patientId));
   const all = d.facilities.filter((f) => f.type === 'pharmacy' && f.verified).map((f) => quoteShop(d, r, f, origin)).filter((s) => s.availableCount > 0);
   // Within 50 km of the patient (if we know where they are); farther stores only count as "elsewhere".
-  const near = all.filter((s) => s.distanceKm === null || s.distanceKm <= MEDICINE_RADIUS_KM);
+  const radiusKm = medRadius(req.query.radiusKm);
+  const near = all.filter((s) => s.distanceKm === null || s.distanceKm <= radiusKm);
   const shops = near.sort((a, b) => Number(b.complete) - Number(a.complete) || (a.distanceKm ?? 1e9) - (b.distanceKm ?? 1e9)).slice(0, 8);
   const priced = shops.filter((s) => s.complete);
   const byDistance = [...shops].sort((a, b) => (a.distanceKm ?? 1e9) - (b.distanceKm ?? 1e9));
   res.json({
-    rxId: r.id, radiusKm: MEDICINE_RADIUS_KM, deliveryFee: DELIVERY_FEE,
+    rxId: r.id, radiusKm, deliveryFee: DELIVERY_FEE,
     items: r.items.map((it) => ({ drug: it.drug, units: catalog.unitsFor(it), unit: catalog.priceOf(it.drug)?.unit || 'unit' })),
     shops, cheapestId: priced.length ? priced.reduce((m, s) => (s.total < m.total ? s : m)).id : null,
     nearestId: byDistance[0]?.id || null, fartherCount: all.length - near.length,
@@ -1799,9 +1804,9 @@ const orderTotals = (medicines, fulfilment) => {
   const advance = fulfilment === 'delivery' ? Math.ceil(total * ADVANCE_SHARE) : 0;
   return { medicines: catalog.round(medicines), deliveryFee, total, advance, balance: catalog.round(total - advance) };
 };
-function nearbyPharmacies(d, origin, country) {
+function nearbyPharmacies(d, origin, country, radiusKm = MEDICINE_RADIUS_KM) {
   return d.facilities.filter((f) => f.type === 'pharmacy' && f.verified && countryOf(f) === country)
-    .map((f) => ({ f, km: geo.km(origin, geo.pointOf(f)) })).filter((x) => x.km === null || x.km <= MEDICINE_RADIUS_KM);
+    .map((f) => ({ f, km: geo.km(origin, geo.pointOf(f)) })).filter((x) => x.km === null || x.km <= radiusKm);
 }
 function itemsFromRx(r, picks) {
   const byDrug = new Map((Array.isArray(picks) ? picks : []).map((x) => [normDrug(x.drug), x]));
@@ -1834,15 +1839,16 @@ app.post('/api/medicine-orders/quote', auth, role('patient', 'caregiver'), (req,
   } else items = cleanOrderItems(b.items);
   if (!items.length) return res.status(400).json({ error: 'Choose at least one medicine and how many you need.' });
   const origin = originFor(req, p);
-  const shops = nearbyPharmacies(d, origin, countryOf(p)).map(({ f }) => quoteItems(d, items, f, origin)).filter((s) => s.availableCount > 0)
+  const radiusKm = medRadius(req.body?.radiusKm);
+  const shops = nearbyPharmacies(d, origin, countryOf(p), radiusKm).map(({ f }) => quoteItems(d, items, f, origin)).filter((s) => s.availableCount > 0)
     .sort((a, b2) => Number(b2.complete) - Number(a.complete) || b2.availableCount - a.availableCount || (a.distanceKm ?? 1e9) - (b2.distanceKm ?? 1e9)).slice(0, 10);
   const full = shops.filter((s) => s.complete && s.priced);
   res.json({
     items: items.map((it) => ({ ...it, unit: catalog.priceOf(it.drug)?.unit || 'unit', known: !!catalog.priceOf(it.drug) })), shops,
     cheapestId: full.length ? full.reduce((m, s) => (s.total < m.total ? s : m)).id : null,
     nearestId: [...shops].sort((a, b2) => (a.distanceKm ?? 1e9) - (b2.distanceKm ?? 1e9))[0]?.id || null,
-    radiusKm: MEDICINE_RADIUS_KM, deliveryFee: DELIVERY_FEE, advanceShare: ADVANCE_SHARE, estimate: estimateItems(items),
-    chemistsNearby: nearbyPharmacies(d, origin, countryOf(p)).length,
+    radiusKm, deliveryFee: DELIVERY_FEE, advanceShare: ADVANCE_SHARE, estimate: estimateItems(items),
+    chemistsNearby: nearbyPharmacies(d, origin, countryOf(p), radiusKm).length,
   });
 });
 
@@ -1868,18 +1874,19 @@ app.post('/api/medicine-orders', auth, role('patient', 'caregiver'), async (req,
     rxFileId = f.id;
   }
   const origin = originFor(req, p);
+  const orderRadius = medRadius(b.radiusKm);
   let pharmacyId = null; let candidates = []; let lines; let medicines;
   if (b.pharmacyId === 'any') {
     // No single chemist has it — ask everyone within 50 km; the first to accept gets the order.
-    candidates = nearbyPharmacies(d, origin, countryOf(p)).map(({ f }) => f.id);
-    if (!candidates.length) return res.status(400).json({ error: `There's no chemist on Nexus within ${MEDICINE_RADIUS_KM} km of you yet.` });
+    candidates = nearbyPharmacies(d, origin, countryOf(p), orderRadius).map(({ f }) => f.id);
+    if (!candidates.length) return res.status(400).json({ error: `There's no chemist on Nexus within ${orderRadius} km of you yet. Try a bigger distance.` });
     lines = items.map((it) => ({ ...it, unitPrice: catalog.priceOf(it.drug)?.mrp ?? null, lineTotal: catalog.priceOf(it.drug) ? catalog.round(catalog.priceOf(it.drug).mrp * it.qty) : null, estimated: true }));
     medicines = estimateItems(items);
   } else {
     const f = d.facilities.find((x) => x.id === b.pharmacyId && x.type === 'pharmacy' && x.verified);
     if (!f) return res.status(400).json({ error: 'Choose a chemist from the list.' });
     const q = quoteItems(d, items, f, origin);
-    if (q.distanceKm !== null && q.distanceKm > MEDICINE_RADIUS_KM) return res.status(400).json({ error: `${f.name} is beyond ${MEDICINE_RADIUS_KM} km — choose a nearer chemist.` });
+    if (q.distanceKm !== null && q.distanceKm > medRadius((req.body || {}).radiusKm)) return res.status(400).json({ error: `${f.name} is beyond ${medRadius((req.body || {}).radiusKm)} km — choose a nearer chemist or a bigger distance.` });
     if (!q.availableCount) return res.status(400).json({ error: `${f.name} doesn't have these medicines right now.` });
     pharmacyId = f.id;
     lines = q.lines.filter((l) => l.inStock).map(({ drug, qty, unit, unitPrice, lineTotal, switchedFrom }) => ({ drug, qty, unit, unitPrice, lineTotal, ...(switchedFrom ? { switchedFrom } : {}) }));
@@ -2464,7 +2471,7 @@ app.post('/api/prescriptions/:id/delivery-payment', auth, role('patient', 'careg
   d.payments.filter((x) => x.purpose === 'delivery' && x.refId === r.id && x.status === 'created').forEach((x) => { x.status = 'void'; });
   const q = quoteShop(d, r, f, originFor(req, d.patients.find((x) => x.id === r.patientId)));
   if (!q.availableCount) return res.status(400).json({ error: `${f.name} doesn't have these medicines right now.` });
-  if (q.distanceKm !== null && q.distanceKm > MEDICINE_RADIUS_KM) return res.status(400).json({ error: `${f.name} is beyond ${MEDICINE_RADIUS_KM} km — choose a nearer chemist.` });
+  if (q.distanceKm !== null && q.distanceKm > medRadius((req.body || {}).radiusKm)) return res.status(400).json({ error: `${f.name} is beyond ${medRadius((req.body || {}).radiusKm)} km — choose a nearer chemist or a bigger distance.` });
   const pay = {
     id: store.id('pay'), purpose: 'delivery', refId: r.id, amount: q.total + DELIVERY_FEE, status: 'created', provider: payments.provider(),
     label: `Medicines + delivery · ${f.name}`, userId: req.user.id, patientId: r.patientId, createdAt: nowIso(),
@@ -3138,9 +3145,123 @@ app.post('/api/patient/vitals-log', auth, role('patient', 'caregiver'), (req, re
   audit(req.user, 'logged_home_reading', p.id, 'vitals', entry.kind);
   store.save();
   touch(patientOwnerUserIds(p)); // the patient and their guardian (family hub) both see it
-  broadcast('vitals');
+  const fresh = refreshMonitoring(p);
+  broadcast('vitals', 'monitoring');
   const v = wellness.readingView(rec, vitalsCtx(p));
-  res.json({ ...v, text: wellness.readingText(v) });
+  res.json({ ...v, text: wellness.readingText(v), alerts: fresh.map(patientAlertView) });
+});
+
+// ---------- remote monitoring: pattern alerts on home readings ----------
+// Only doctors with active consent to the patient's record receive or see alerts; revoking consent hides them
+// at once. Each pattern has one open alert at a time (updated as new readings arrive). A pattern the doctor
+// reviewed isn't raised again for 3 days; an urgent reading is alerted once, ever.
+const MONITOR_REARM_MS = 3 * 86400000;
+const MONITOR_KEEP_MS = 90 * 86400000;
+const consentedPatientIds = (doc) => {
+  const t = Date.now();
+  return new Set(db().consents.filter((c) => c.granteeId === doc.id && c.status === 'active' && (!c.expiry || Date.parse(c.expiry) > t)).map((c) => c.patientId));
+};
+const monitoringDoctors = (p) => db().doctors.filter((doc) => doc.userId && hasConsent(p.id, [doc.id]));
+const patientAlertView = (a) => ({ id: a.id, severity: a.severity, kind: a.kind, title: a.title, detail: a.detail, status: a.status, cleared: !!a.cleared, createdAt: a.createdAt, updatedAt: a.updatedAt, reviewedAt: a.reviewedAt || null, reviewedByName: a.reviewedByName || null, message: a.message || null });
+
+function refreshMonitoring(p, now = Date.now()) {
+  const d = db();
+  if (!d.monitorAlerts) d.monitorAlerts = [];
+  const found = monitoring.detect(vitalsOf(p.id), { ...vitalsCtx(p), now });
+  const mine = d.monitorAlerts.filter((a) => a.patientId === p.id);
+  const fresh = [];
+  for (const f of found) {
+    const open = mine.find((a) => a.key === f.key && a.status === 'open');
+    if (open) { Object.assign(open, { title: f.title, detail: f.detail, readingIds: f.readingIds, lastAt: f.lastAt, cleared: false, updatedAt: nowIso() }); continue; }
+    if (f.key.startsWith('urgent:') && mine.some((a) => a.key === f.key)) continue;
+    if (mine.some((a) => a.key === f.key && a.status === 'reviewed' && Date.parse(a.reviewedAt) > now - MONITOR_REARM_MS)) continue;
+    const a = { id: store.id('mon'), patientId: p.id, ...f, status: 'open', cleared: false, createdAt: nowIso(), updatedAt: nowIso() };
+    d.monitorAlerts.unshift(a);
+    fresh.push(a);
+  }
+  // A pattern that no longer holds stays open for the doctor to see, marked as back in range.
+  // An urgent alert whose reading was deleted (mistyped) is marked the same way.
+  const have = new Set(vitalsOf(p.id).map((e) => e.id));
+  for (const a of mine) {
+    if (a.status !== 'open') continue;
+    if (a.key.startsWith('urgent:') ? !have.has(a.key.slice(7)) : !found.some((f) => f.key === a.key)) a.cleared = true;
+  }
+  const cutoff = now - MONITOR_KEEP_MS;
+  if (d.monitorAlerts.some((a) => a.status === 'reviewed' && Date.parse(a.reviewedAt) < cutoff)) {
+    d.monitorAlerts = d.monitorAlerts.filter((a) => !(a.status === 'reviewed' && Date.parse(a.reviewedAt) < cutoff));
+  }
+  if (fresh.length) {
+    const docs = monitoringDoctors(p);
+    for (const a of fresh) {
+      const urgent = a.severity === 'urgent';
+      for (const doc of docs) notify(doc.userId, urgent ? `Urgent home reading — ${p.name}` : `Home readings — ${p.name}`, a.title, urgent ? 'alert' : undefined);
+      for (const uid of patientOwnerUserIds(p)) {
+        notify(uid, urgent ? 'Urgent reading' : 'A pattern in your readings', `${a.title}. ${docs.length ? `${docs.length === 1 ? 'Your doctor has' : `${docs.length} doctors have`} been alerted.` : 'Share your record with your doctor so they’re alerted too.'}`, urgent ? 'alert' : undefined);
+      }
+      audit({ id: 'system', name: 'Remote monitoring', role: 'system' }, 'monitoring_alert', p.id, 'vitals', `${a.key} · ${docs.length} doctor(s)`);
+    }
+    touch(docs.map((x) => x.userId));
+  }
+  store.save();
+  return fresh;
+}
+
+// Doctor: open alerts (urgent first), recently reviewed ones, and every consented patient with home readings.
+app.get('/api/doctor/monitoring', auth, role('doctor'), (req, res) => {
+  const d = db();
+  const doc = doctorFor(req.user);
+  const ids = consentedPatientIds(doc);
+  const since = Date.now() - 14 * 86400000;
+  const nameOf = new Map();
+  const patientOf = (id) => { if (!nameOf.has(id)) nameOf.set(id, d.patients.find((x) => x.id === id) || null); return nameOf.get(id); };
+  const alerts = (d.monitorAlerts || []).filter((a) => ids.has(a.patientId) && (a.status === 'open' || Date.parse(a.reviewedAt) > since))
+    .map((a) => { const p = patientOf(a.patientId); return { ...patientAlertView(a), patientId: a.patientId, patientName: p?.name || 'Patient', age: ageOf(p?.dob), gender: p?.gender || null, lastAt: a.lastAt }; })
+    .sort((a, b) => (a.status === b.status ? (a.severity === b.severity ? (a.updatedAt < b.updatedAt ? 1 : -1) : a.severity === 'urgent' ? -1 : 1) : a.status === 'open' ? -1 : 1));
+  const recentCut = new Date(Date.now() - 30 * 86400000).toISOString();
+  const latest = new Map();
+  for (const e of d.vitalsLog || []) {
+    if (!ids.has(e.patientId) || e.at < recentCut) continue;
+    const m = latest.get(e.patientId) || { count: 0, byKind: {} };
+    m.count += 1;
+    if (!m.byKind[e.kind] || m.byKind[e.kind].at < e.at) m.byKind[e.kind] = e;
+    latest.set(e.patientId, m);
+  }
+  const openBy = new Map();
+  for (const a of alerts) if (a.status === 'open') openBy.set(a.patientId, (openBy.get(a.patientId) || 0) + 1);
+  const patients = [...latest.entries()].map(([id, m]) => {
+    const p = patientOf(id);
+    if (!p) return null;
+    const ctx = vitalsCtx(p);
+    const readings = Object.values(m.byKind).sort((a, b) => (a.at < b.at ? 1 : -1)).map((e) => { const v = wellness.readingView(e, ctx); return { kind: v.kind, at: v.at, text: wellness.readingText(v), level: v.flag.level }; });
+    return { id, name: p.name, age: ageOf(p.dob), gender: p.gender, readings30: m.count, lastAt: readings[0]?.at || null, openAlerts: openBy.get(id) || 0, readings };
+  }).filter(Boolean).sort((a, b) => (b.openAlerts - a.openAlerts) || (a.lastAt < b.lastAt ? 1 : -1));
+  res.json({ alerts, patients, open: alerts.filter((a) => a.status === 'open').length, note: 'Readings are measured at home by the patient or family — not clinically verified.' });
+});
+
+// Doctor marks an alert reviewed, optionally with a short message the patient sees.
+app.post('/api/doctor/monitoring/:id/review', auth, role('doctor'), (req, res) => {
+  const d = db();
+  const doc = doctorFor(req.user);
+  const a = (d.monitorAlerts || []).find((x) => x.id === req.params.id);
+  if (!a || !hasConsent(a.patientId, [doc.id])) return res.status(404).json({ error: 'Alert not found.' });
+  if (a.status === 'reviewed') return res.json(patientAlertView(a));
+  const message = clean(req.body?.message, 300);
+  Object.assign(a, { status: 'reviewed', reviewedAt: nowIso(), reviewedBy: doc.id, reviewedByName: doc.name, message: message || null, updatedAt: nowIso() });
+  const p = d.patients.find((x) => x.id === a.patientId);
+  if (p) for (const uid of patientOwnerUserIds(p)) notify(uid, `${doc.name} reviewed your readings`, message ? `${a.title} — “${message}”` : a.title);
+  audit(req.user, 'monitoring_reviewed', a.patientId, 'vitals', a.key);
+  store.save();
+  if (p) touch(patientOwnerUserIds(p));
+  broadcast('monitoring', 'vitals');
+  res.json(patientAlertView(a));
+});
+
+// Patient / family: this profile's alerts from the last 30 days and whether a doctor is watching.
+app.get('/api/patient/monitoring', auth, role('patient', 'caregiver'), (req, res) => {
+  const p = activePatient(req);
+  const since = Date.now() - 30 * 86400000;
+  const alerts = (db().monitorAlerts || []).filter((a) => a.patientId === p.id && (a.status === 'open' || Date.parse(a.reviewedAt) > since)).map(patientAlertView);
+  res.json({ alerts, doctorsWatching: monitoringDoctors(p).map((doc) => doc.name) });
 });
 
 app.delete('/api/patient/vitals-log/:id', auth, role('patient', 'caregiver'), (req, res) => {
@@ -3151,8 +3272,8 @@ app.delete('/api/patient/vitals-log/:id', auth, role('patient', 'caregiver'), (r
   const [gone] = list.splice(i, 1);
   audit(req.user, 'deleted_home_reading', gone.patientId, 'vitals', gone.kind);
   store.save();
-  { const owner = patientById(gone.patientId); if (owner) touch(patientOwnerUserIds(owner)); }
-  broadcast('vitals');
+  { const owner = patientById(gone.patientId); if (owner) { touch(patientOwnerUserIds(owner)); refreshMonitoring(owner); touch(monitoringDoctors(owner).map((x) => x.userId)); } }
+  broadcast('vitals', 'monitoring');
   res.json({ ok: true });
 });
 
@@ -3284,6 +3405,7 @@ app.get('/api/doctor/home', auth, role('doctor'), (req, res) => {
       };
     }),
     // Patients who moved their care to this doctor (records copied in).
+    monitoringOpen: (() => { const ids = consentedPatientIds(doc); return (d.monitorAlerts || []).filter((a) => a.status === 'open' && ids.has(a.patientId)).length; })(),
     transfersIn: d.careTransfers.filter((t) => t.toDoctorId === doc.id && !t.seenByNew).map((t) => ({ id: t.id, patientId: t.patientId, patientName: d.patients.find((x) => x.id === t.patientId)?.name, fromName: t.fromName, reason: t.reason, at: t.at, copied: t.copied })),
     clinic: doc.ownsFacilityId ? (() => { const f = d.facilities.find((x) => x.id === doc.ownsFacilityId); return f ? { id: f.id, name: f.name, verified: !!f.verified, doctors: d.doctors.filter((x) => x.facilityId === f.id && x.id !== doc.id).length } : null; })() : null,
     stats2: doctorStats(doc),
@@ -6203,7 +6325,7 @@ app.post('/api/consults/:id/scribe', auth, role('doctor'), scribeLimiter, async 
 // Registered before the SPA catch-all so /sitemap.xml, /robots.txt and the meta-filled public pages win.
 require('./publicPages')(app, {
   db, catalog, geo, security, clean, own, publicDoctor, doctorStats, practiceOf, bookingOptions, labQuote, testInfo, stockRow,
-  MEDICINE_RADIUS_KM, LAB_ADVANCE_SHARE, LAB_HOME_FEE, auth, role, activePatient, store, audit, broadcast, dist: path.join(__dirname, '..', 'client', 'dist'),
+  MEDICINE_RADIUS_KM, medRadius, LAB_ADVANCE_SHARE, LAB_HOME_FEE, auth, role, activePatient, store, audit, broadcast, dist: path.join(__dirname, '..', 'client', 'dist'),
 });
 
 // ---------- static client (production) ----------

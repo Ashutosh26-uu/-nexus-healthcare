@@ -407,3 +407,15 @@
 .dr-scribe-full { display: block; }
 .dr-scribe-med { padding: 8px 10px; border-radius: 10px; background: #fff; border: 1px solid var(--line); align-items: flex-start; }
 .dr-scribe-med.on { border-color: var(--green-2); }
+/* Remote monitoring */
+.dr-mon-alert { padding: 16px; border-inline-start: 4px solid var(--sun); }
+.dr-mon-alert.urgent { border-inline-start-color: var(--rose); }
+.dr-mon-alert.done { border-inline-start-color: var(--line); opacity: 0.85; }
+.dr-mon-ic { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; flex-shrink: 0; }
+.dr-mon-ic.rose { background: #fbe4e1; color: var(--rose); }
+.dr-mon-ic.sun { background: var(--sun-soft); color: #8a5a06; }
+.dr-mon-list { display: flex; flex-direction: column; gap: 8px; }
+.dr-mon-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; width: 100%; text-align: start; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer; font: inherit; color: inherit; }
+.dr-mon-row:hover { border-color: var(--green-2); }
+.dr-mon-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+@media (max-width: 480px) { .dr-mon-row .grow { flex-basis: 100%; } }

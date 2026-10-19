@@ -8,6 +8,7 @@ import { ProtectedImg } from '../../components/Availability';
 import VoiceInput from '../../components/VoiceInput';
 import { usePatient, PageSkeleton } from './shared';
 import { useDeviceLocation, LocationButton } from './NearbyDoctors';
+import DistancePicker, { useRadius } from '../../components/DistancePicker';
 import PaymentStep from './Payment';
 import ShareButton from '../../components/ShareButton';
 
@@ -53,6 +54,7 @@ export default function OrderMedicines() {
   const device = useDeviceLocation();
   const prescriptions = useMemo(() => home?.prescriptions || [], [home]);
   const [step, setStep] = useState(0);
+  const [radius, setRadius] = useRadius('chemists', 50, { max: 100 });
   // ?drug= comes from the public price checker: start on "other medicine" with that name filled in.
   const linkedDrug = (params.get('drug') || '').slice(0, 80);
   const [source, setSource] = useState(linkedDrug ? 'other' : 'rx');
@@ -119,12 +121,12 @@ export default function OrderMedicines() {
   // What the generic swaps the patient accepted saved (shown + shareable on the "order sent" screen).
   const genericSaved = source === 'rx' ? Math.round(Object.entries(picks).filter(([, v]) => v.on && v.sub).reduce((s, [drug, v]) => s + (subs[drug]?.saving || 0) * (v.qty || 0), 0)) : 0;
 
-  const findChemists = async () => {
+  const findChemists = async (km = radius) => {
     setError('');
     if (!items.length) { setError(source === 'rx' ? 'Tick at least one medicine.' : 'Add at least one medicine.'); return; }
     setBusy(true);
     try {
-      const q = await api.post('/medicine-orders/quote', { ...(source === 'rx' ? { rxId } : {}), items, ...(device.loc ? { lat: device.loc.lat, lng: device.loc.lng } : {}) });
+      const q = await api.post('/medicine-orders/quote', { ...(source === 'rx' ? { rxId } : {}), items, radiusKm: km,...(device.loc ? { lat: device.loc.lat, lng: device.loc.lng } : {}) });
       setQuote(q);
       // A reorder goes back to the same chemist when it still has the medicines.
       const same = params.get('pharmacy') && q.shops.find((s) => s.id === params.get('pharmacy'));
@@ -142,7 +144,7 @@ export default function OrderMedicines() {
     try {
       const r = await api.post('/medicine-orders', {
         ...(source === 'rx' ? { rxId } : {}), items: open || !shop ? items : shop.lines.filter((l) => l.inStock).map((l) => ({ drug: l.switchedFrom || l.drug, qty: l.qty, ...(l.switchedFrom ? { sub: l.drug } : {}) })),
-        pharmacyId: shopId, fulfilment, address, rxFileId: rxFile?.id, ...(device.loc ? { lat: device.loc.lat, lng: device.loc.lng } : {}),
+        pharmacyId: shopId, fulfilment, address, rxFileId: rxFile?.id, radiusKm: radius,...(device.loc ? { lat: device.loc.lat, lng: device.loc.lng } : {}),
       });
       setResult(r); setStep(3); reloadHome();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
@@ -150,7 +152,7 @@ export default function OrderMedicines() {
 
   return (
     <div className="stack lg">
-      <PageHeader eyebrow="Medicines" title="Order medicines" subtitle="From your doctor's prescription or any medicine you need — we show chemists within 50 km that have it, with prices. Pick it up yourself, or get it delivered." />
+      <PageHeader eyebrow="Medicines" title="Order medicines" subtitle="From your doctor's prescription or any medicine you need — we show chemists near you (50 km, or the distance you choose) that have it, with prices. Pick it up yourself, or get it delivered." />
       <div className="steps">{STEPS.map((s, i) => <span key={s} className={cx(i <= step && 'done')} />)}</div>
 
       {step === 0 && (
@@ -241,7 +243,7 @@ export default function OrderMedicines() {
           {error && <div className="form-error mt-1">{error}</div>}
           <div className="row between mt-2">
             <Button variant="ghost" icon={ArrowLeft} onClick={() => navigate('/patient/medicines')}>Back</Button>
-            <Button icon={ArrowRight} loading={busy} onClick={findChemists}>Find chemists near me</Button>
+            <Button icon={ArrowRight} loading={busy} onClick={() => findChemists()}>Find chemists near me</Button>
           </div>
         </Card>
       )}
@@ -250,7 +252,10 @@ export default function OrderMedicines() {
         <Card>
           <div className="row between wrap" style={{ gap: 8 }}>
             <span className="tiny muted">Chemists within {quote.radiusKm} km that have {items.length > 1 ? 'these medicines' : 'this medicine'}: {quote.items.map((i) => `${i.drug} × ${i.qty}`).join(' · ')}</span>
-            <LocationButton device={device} />
+            <div className="row wrap" style={{ gap: 6 }}>
+              <DistancePicker value={radius} onChange={(km) => { setRadius(km); findChemists(km); }} options={[5, 10, 25, 50]} max={100} label="How far to look for chemists" />
+              <LocationButton device={device} />
+            </div>
           </div>
           <div className="pt-wtb-list mt-1" role="radiogroup">
             {quote.shops.map((s) => (

@@ -38,25 +38,26 @@ export default function AmbientScribe({ consultId, onUse }) {
     r.lang = lang;
     r.continuous = true;
     r.interimResults = true;
+    const sent = new Set(); // Android repeats final results within a session — add each one once
     r.onresult = (e) => {
       let finals = '';
       let live = '';
       for (let i = e.resultIndex; i < e.results.length; i += 1) {
         const t = e.results[i][0].transcript;
-        if (e.results[i].isFinal) finals += `${t.trim()}. `; else live += t;
+        if (e.results[i].isFinal) { if (!sent.has(i)) { sent.add(i); finals += `${t.trim()}. `; } } else live += t;
       }
       if (finals) setTranscript((x) => `${x}${x && !x.endsWith(' ') ? ' ' : ''}${finals}`);
       setInterim(live);
     };
     r.onerror = (e) => {
-      if (e.error === 'no-speech' || e.error === 'aborted') return;
+      if (e.error === 'no-speech' || e.error === 'aborted' || e.error === 'network') return;
       wantOn.current = false;
       setMicError(e.error === 'not-allowed' ? 'Allow the microphone for this site to record.' : 'The microphone stopped. Tap Listen to carry on.');
     };
     // Browsers end recognition after a pause; keep going until the doctor taps Stop.
     r.onend = () => {
       setInterim('');
-      if (wantOn.current) { try { r.start(); return; } catch { /* fall through */ } }
+      if (wantOn.current) { try { startRec(); return; } catch { /* fall through */ } }
       setListening(false);
     };
     rec.current = r;

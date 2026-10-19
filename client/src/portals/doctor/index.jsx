@@ -1,6 +1,6 @@
 import { DoctorCtx } from './context';
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ListChecks, Users, CalendarDays, Wallet, Award, Pill, UserRound, Clock, FilePen, Video, Building2, GraduationCap, MapPin, Camera } from 'lucide-react';
+import { Activity, ListChecks, Users, CalendarDays, Wallet, Award, Pill, UserRound, Clock, FilePen, Video, Building2, GraduationCap, MapPin, Camera } from 'lucide-react';
 import { Suspense, useState } from 'react';
 import PortalLayout from '../../components/PortalLayout';
 import { pageLoader } from '../../prefetch';
@@ -23,6 +23,7 @@ const Earnings = page(() => import('./Earnings'));
 const Medicines = page(() => import('./Medicines'));
 const Profile = page(() => import('./Profile'));
 const Prescribe = page(() => import('./Prescribe'));
+const Monitoring = page(() => import('./Monitoring'));
 import './doctor.css';
 
 // Keyed by id so state from one consult never carries into the next.
@@ -91,7 +92,7 @@ function PresenceControl({ home }) {
 
 export default function DoctorApp() {
   usePrefetch();
-  const home = useLive('/doctor/home', ['queue', 'consults', 'doctors', 'lab', 'payments', 'referrals', 'notifications']);
+  const home = useLive('/doctor/home', ['queue', 'consults', 'doctors', 'lab', 'payments', 'referrals', 'notifications', 'monitoring']);
   const waiting = home.data?.stats?.waiting || 0;
   const doctor = home.data?.doctor;
   const verified = doctor ? doctor.verified : true;
@@ -99,6 +100,7 @@ export default function DoctorApp() {
     { to: '/doctor', label: 'Patient queue', icon: ListChecks, end: true, badge: waiting || null },
     { to: '/doctor/prescribe', label: 'Write prescription', icon: FilePen },
     { to: '/doctor/patients', label: 'Patients & records', icon: Users },
+    { to: '/doctor/monitoring', label: 'Remote monitoring', icon: Activity, badge: home.data?.monitoringOpen || null },
     { to: '/doctor/schedule', label: 'Schedule & availability', icon: CalendarDays },
     { to: '/doctor/medicines', label: 'My medicines', icon: Pill },
     { to: '/doctor/clinic', label: home.data?.clinic ? 'My clinic & doctors' : 'Add my clinic', icon: Building2 },
@@ -123,6 +125,7 @@ export default function DoctorApp() {
           {verified && <Route path="prescribe" element={<Prescribe />} />}
           {verified && <Route path="patients" element={<Patients />} />}
           {verified && <Route path="patients/:pid" element={<Patients />} />}
+          {verified && <Route path="monitoring" element={<Monitoring />} />}
           {verified && <Route path="schedule" element={<Schedule />} />}
           {verified && <Route path="earnings" element={<Earnings />} />}
           {verified && <Route path="score" element={<Score />} />}
