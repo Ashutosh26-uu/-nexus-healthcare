@@ -51,9 +51,24 @@ function normaliseSymptoms(raw) {
   return text;
 }
 
+// Whole-word match for Latin-script flags ("fits" must not fire on "benefits"); Indian scripts have no word
+// boundaries in regex, so those keep a plain substring match. Negations are deliberately NOT stripped: a missed
+// emergency costs more than a cautious one.
+const escRe = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const hasFlag = (text, f) => (/^[\x20-\x7e]+$/.test(f) ? new RegExp(`\\b${escRe(f)}\\b`, 'i').test(text) : text.includes(f));
+
+// Pulse limits by age: a toddler's normal resting rate (100–160) would trip the adult >140 rule.
+function pulseOutOfRange(pulse, age) {
+  if (!pulse) return false;
+  if (age < 1) return pulse > 180 || pulse < 80;
+  if (age < 6) return pulse > 160 || pulse < 60;
+  if (age < 13) return pulse > 150 || pulse < 50;
+  return pulse > 140 || pulse < 40;
+}
+
 function triage({ symptoms = '', age, duration, severity, vitals = {} }, config) {
   const text = normaliseSymptoms(symptoms);
-  const flags = (config?.triage?.redFlags || []).filter((f) => text.includes(f));
+  const flags = (config?.triage?.redFlags || []).filter((f) => hasFlag(text, f));
   const reasons = [];
   let score = 10;
 
@@ -65,7 +80,8 @@ function triage({ symptoms = '', age, duration, severity, vitals = {} }, config)
 
   if (spo2 && spo2 < (config?.triage?.spo2Emergency || 90)) flags.push(`SpO₂ ${spo2}%`);
   if (sys >= 180 || dia >= 120) flags.push(`BP ${vitals.bp}`);
-  if (pulse && (pulse > 140 || pulse < 40)) flags.push(`pulse ${pulse}`);
+  const ageYears = age === undefined || age === null || age === '' ? NaN : Number(age);
+  if (pulseOutOfRange(pulse, Number.isFinite(ageYears) ? ageYears : 99)) flags.push(`pulse ${pulse}`);
 
   let specialty = 'General Medicine';
   for (const h of SPECIALTY_HINTS) if (h.words.some((w) => text.includes(w))) specialty = h.specialty;

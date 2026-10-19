@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Search, BedDouble, HeartPulse, Wind, Building2 } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Card, Progress, Pills, Empty, Stat, cx, fmtNum } from '../../components/ui';
-import { useGov } from './shared';
+import { useGov, scopePlace } from './shared';
 
 function HBar({ label, value, max, sub, tone = 'green' }) {
   const pct = Math.max(2, Math.min(100, (value / (max || 1)) * 100));
@@ -45,7 +45,7 @@ export default function Capacity() {
 
   return (
     <>
-      <PageHeader eyebrow="Capacity" title="Beds, ICU & oxygen" subtitle={national ? 'Every network hospital, least headroom first.' : `Hospitals inside ${data.scope.district}, least headroom first.`} />
+      <PageHeader eyebrow="Capacity" title="Beds, ICU & oxygen" subtitle={national ? 'Every network hospital, least headroom first.' : `Hospitals inside ${scopePlace(data.scope)}, least headroom first.`} />
 
       <div className="grid four mb-2">
         <Stat label="Beds free" icon={BedDouble} value={fmtNum(freeBeds)} sub={`of ${fmtNum(totalBeds)} · ${Math.round((1 - freeBeds / (totalBeds || 1)) * 100)}% occupied`} />
@@ -121,7 +121,7 @@ export default function Capacity() {
           <Card title="Free beds by hospital">
             <div className="stack">{data.capacity.map((h) => <HBar key={h.id} label={h.name} value={h.freeBeds} max={Math.max(...data.capacity.map((x) => x.freeBeds), 1)} sub={`${h.freeBeds} free`} />)}</div>
           </Card>
-          <Card title={`Coverage in ${data.scope.district}`}>
+          <Card title={`Coverage in ${scopePlace(data.scope)}`}>
             <div className="stack">
               <HBar label="Kiosks online" value={data.totals?.kiosksOnline || 0} max={Math.max(1, data.totals?.kiosksOnline || 0)} sub={`${data.totals?.kiosksOnline ?? 0} online`} />
               <HBar label="Doctors available to the district" value={data.totals?.doctorsOnline || 0} max={Math.max(1, data.totals?.doctorsOnline || 0)} sub={`${data.totals?.doctorsOnline ?? 0} online (state pool)`} tone="sky" />

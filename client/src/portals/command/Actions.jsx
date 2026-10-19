@@ -75,12 +75,12 @@ function draftFromAlert(a, scope) {
       region: a.district,
     };
   }
-  return { title: '', body: '', region: scope.level === 'district' ? scope.district : 'All India' };
+  return { title: '', body: '', region: scope.level === 'national' ? 'All India' : scope.level === 'state' ? scope.state : scope.district };
 }
 
 function AdvisoryComposer({ prefill, onSaved }) {
   const { data } = useGov();
-  const defRegion = data.scope.level === 'district' ? data.scope.district : 'All India';
+  const defRegion = data.scope.level === 'national' ? 'All India' : data.scope.level === 'state' ? data.scope.state : data.scope.district;
   const [form, setForm] = useState(() => ({ title: '', body: '', region: defRegion, languages: ['Hindi', 'English'], ...(prefill || {}) }));
   const [reviewed, setReviewed] = useState(false);
   const [run, busy] = useAction();

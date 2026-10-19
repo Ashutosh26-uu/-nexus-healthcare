@@ -198,10 +198,12 @@ async function aiDraft({ transcript, patient = {} }) {
   const age = ageOf(patient.dob);
   const msg = await anthropic.messages.create({
     model: process.env.SCRIBE_MODEL || 'claude-opus-5-5',
-    max_tokens: 2048,
-    system: 'You are a clinical scribe. Turn a doctor–patient consultation transcript (it may mix English, Hindi, Arabic or other languages) into a concise English SOAP note. Record only what was said: never add findings, diagnoses, doses or tests that are not in the transcript. If something is unclear, leave it out. The doctor will review and sign.',
+    max_tokens: 8000, // includes the model's thinking; 2048 could end before the note was written
+    system: 'You are a clinical scribe. Turn a doctor–patient consultation transcript (it may mix English, Hindi, Arabic or other languages) into a concise English SOAP note. Record only what was said: never add findings, diagnoses, doses or tests that are not in the transcript. If something is unclear, leave it out. The doctor will review and sign. Always answer by calling the clinical_note tool exactly once.',
     tools: [NOTE_TOOL],
-    tool_choice: { type: 'tool', name: NOTE_TOOL.name },
+    // Forcing a specific tool is rejected by current models; 'auto' plus the instruction below gets the same call,
+    // and if it ever doesn't come back the rules engine drafts the note instead.
+    tool_choice: { type: 'auto' },
     messages: [{ role: 'user', content: `Patient: ${[age != null ? `${age} years` : 'age not recorded', patient.gender || 'sex not recorded'].join(', ')}.\n\nTranscript:\n${clip(transcript, MAX_TRANSCRIPT)}` }],
   });
   const block = msg.content.find((b) => b.type === 'tool_use');

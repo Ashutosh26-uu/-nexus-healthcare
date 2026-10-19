@@ -32,7 +32,7 @@ export default function CommandApp() {
   // The API returns every corridor; a district officer should only see corridors touching their district.
   const raw = live.data;
   const scoped = useMemo(() => {
-    if (!raw || raw.scope.level === 'national') return raw;
+    if (!raw || raw.scope.level !== 'district') return raw;
     const mine = (c) => c.from.includes(raw.scope.district) || c.to.includes(raw.scope.district);
     return { ...raw, corridors: (raw.corridors || []).filter(mine) };
   }, [raw]);

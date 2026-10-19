@@ -23,13 +23,15 @@ export const ALERT_KIND = {
 };
 export const alertTitle = (a) => (a.type === 'outbreak' ? `${a.disease} · pin ${a.pincode}` : a.type === 'shortage' ? a.drug : `${a.district} overload`);
 export const isOpen = (a) => a.status === 'open' || a.status === 'acknowledged';
+/* The name of what an official sees: India, their state, or their district. */
+export const scopePlace = (scope) => (scope?.level === 'national' ? 'India' : scope?.level === 'state' ? scope.state : scope?.district);
 
 export function ScopeChip({ scope, compact }) {
   if (!scope) return null;
   if (scope.level === 'national') {
     return <span className="cc-scope national"><Globe2 /> {compact ? 'National view' : 'National view · all states'}</span>;
   }
-  return <span className="cc-scope"><Lock /> Scoped to {scope.district}{compact ? '' : ' · district officer'}</span>;
+  return <span className="cc-scope"><Lock /> Scoped to {scopePlace(scope)}{compact ? '' : scope.level === 'state' ? ' · state officer' : ' · district officer'}</span>;
 }
 
 /* CSV helpers — built in the browser from the live overview. */

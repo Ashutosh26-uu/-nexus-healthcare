@@ -20,7 +20,8 @@ async function createOrder({ amount, receipt, notes }) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Basic ${Buffer.from(`${keyId()}:${keySecret()}`).toString('base64')}` },
     body: JSON.stringify({ amount: Math.round(amount * 100), currency: 'INR', receipt, notes }),
-  });
+    signal: AbortSignal.timeout(10000), // a stalled gateway must not hang the booking request
+  }).catch((e) => { throw new Error(e?.name === 'TimeoutError' ? 'The payment service is slow to respond. Please try again.' : 'Could not reach the payment service. Please try again.'); });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error?.description || 'Could not start the payment. Please try again.');
   return { orderId: data.id };
@@ -41,8 +42,9 @@ function upiUri({ amount, ref, note }) {
   const name = process.env.UPI_PAYEE_NAME || 'Nexus Healthcare';
   const am = Number(amount);
   if (!Number.isFinite(am) || am <= 0) return null; // never a QR for "₹NaN"
-  const q = new URLSearchParams({ pa: vpa, pn: name, am: am.toFixed(2), cu: 'INR', tn: String(note || 'Nexus Healthcare').slice(0, 60), tr: String(ref || '') });
-  return `upi://pay?${q.toString()}`;
+  // Percent-encoding (%20), not form-encoding (+): UPI apps decode upi:// as a URI and would show "Nexus+Healthcare".
+  const q = { pa: vpa, pn: name, am: am.toFixed(2), cu: 'INR', tn: String(note || 'Nexus Healthcare').slice(0, 60), tr: String(ref || '') };
+  return `upi://pay?${Object.entries(q).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')}`;
 }
 
 function publicPayment(p, { dataMode }) {

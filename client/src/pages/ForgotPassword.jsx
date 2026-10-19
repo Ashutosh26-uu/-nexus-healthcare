@@ -15,6 +15,8 @@ export default function ForgotPassword() {
   const toast = useToast();
 
   const done = async (r) => {
+    // An account still awaiting verification gets its new password but no session until it's approved.
+    if (!r.token) { toast(r.message || 'Password changed. You can sign in once your account is approved.'); navigate('/login', { replace: true }); return; }
     await signIn(r.token);
     toast('Password changed — you\'re signed in. Other devices have been signed out.');
     navigate(ROLE_HOME[r.user?.role] || '/', { replace: true });

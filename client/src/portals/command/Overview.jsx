@@ -4,7 +4,7 @@ import { BedDouble, HeartPulse, Stethoscope, MonitorSmartphone, Video, Siren, Ch
 import { PageHeader } from '../../components/PortalLayout';
 import { Card, Progress, StatusBadge, Empty, PreviewBadge, cx, fmtNum, timeAgo } from '../../components/ui';
 import { useAuth } from '../../auth';
-import { useGov, ALERT_KIND, alertTitle, isOpen, ScopeChip } from './shared';
+import { useGov, ALERT_KIND, alertTitle, isOpen, ScopeChip, scopePlace } from './shared';
 import IndiaMap, { regionTone } from './IndiaMap';
 import DistrictSketch from './DistrictSketch';
 import { getLocale } from '../../i18n';
@@ -216,17 +216,18 @@ export default function Overview() {
   const { data } = useGov();
   const { user } = useAuth();
   const national = data.scope.level === 'national';
-  const rootDepth = national ? 0 : 2;
+  const stateView = data.scope.level === 'state';
+  const rootDepth = national ? 0 : stateView ? 1 : 2;
   const [path, setPath] = useState(() => (national ? [] : [data.scope.state, data.scope.district]));
 
   const crumbs = [
     { key: 'in', label: 'India', jump: national },
-    path[0] && { key: 's', label: path[0], jump: national },
+    path[0] && { key: 's', label: path[0], jump: national || stateView },
     path[1] && { key: 'd', label: path[1] },
     path[2] && { key: 'p', label: `Pin ${path[2]}` },
   ].filter(Boolean);
   const sketchDistrict = path[1];
-  const showIndia = national && !sketchDistrict;
+  const showIndia = (national || stateView) && !sketchDistrict;
   const jump = (i) => setPath(path.slice(0, Math.max(i, rootDepth)));
 
   const t = data.totals;
@@ -240,16 +241,16 @@ export default function Overview() {
       <PageHeader
         eyebrow={today}
         title={`${greeting()}, ${firstName}`}
-        subtitle={national ? 'Here is the national picture right now — every number refreshes as facilities report.' : `Here is ${data.scope.district} right now — beds, doctors, signals and stock in one place.`}
+        subtitle={national ? 'Here is the national picture right now — every number refreshes as facilities report.' : `Here is ${scopePlace(data.scope)} right now — beds, doctors, signals and stock in one place.`}
       />
 
       <div className={cx('cc-banner', national ? 'national' : 'district')}>
         <div className="grow">
-          <div className="cc-banner-title">{national ? 'National view' : `${data.scope.district} district view`}</div>
+          <div className="cc-banner-title">{national ? 'National view' : stateView ? `${data.scope.state} state view` : `${data.scope.district} district view`}</div>
           <div className="small">
             {national
               ? `${data.regions?.length || 0} states reporting · ${activeCorridors.length} triage corridor${activeCorridors.length === 1 ? '' : 's'} active`
-              : `${data.scope.state} · you see only facilities, alerts and stock inside ${data.scope.district}`}
+              : stateView ? `${data.regions?.[0]?.districts?.length || 0} districts · you see only facilities, alerts and stock inside ${data.scope.state}` : `${data.scope.state} · you see only facilities, alerts and stock inside ${data.scope.district}`}
           </div>
         </div>
         <ScopeChip scope={data.scope} />
@@ -271,7 +272,7 @@ export default function Overview() {
         <Card
           className="cc-map-card"
           title={<div><h3>{showIndia ? 'Network map' : `${sketchDistrict} at pin-code level`}</h3><p className="tiny muted mb-0">{showIndia ? 'Tap a state to drill down to districts, hospitals and pin codes.' : 'Case clusters are drawn from anonymised lab results. Tap a pin code.'}</p></div>}
-          action={national && !showIndia ? <button type="button" className="btn sm ghost" onClick={() => setPath([path[0]])}>Back to map</button> : null}
+          action={(national || stateView) && !showIndia ? <button type="button" className="btn sm ghost" onClick={() => setPath([path[0]])}>Back to map</button> : null}
         >
           {showIndia
             ? <IndiaMap regions={data.regions || []} alerts={data.alerts} corridors={data.corridors} selected={path[0]} onSelect={(s) => setPath(s ? [s] : [])} />

@@ -132,6 +132,7 @@ function auth(req, res, next) {
     const user = userById(payload.sub);
     if (!user) return res.status(401).json({ error: 'Account not found.' });
     if (user.status === 'suspended') return res.status(403).json({ error: 'This account is suspended. Contact support.' });
+    if (user.status === 'pending') return res.status(403).json({ error: 'Your account is awaiting verification by our team.' });
     if ((payload.tv || 0) !== (user.tokenVersion || 0)) return res.status(401).json({ error: 'Your session has expired. Please sign in again.' });
     req.user = user;
     const ctx = requestCtx.getStore();
@@ -269,7 +270,7 @@ function patientOwnerUserIds(patient) {
 function canAccessConsult(user, c) {
   if (!c) return false;
   if (user.role === 'super_admin') return true;
-  if (user.role === 'doctor') return doctorFor(user)?.id === c.doctorId;
+  if (user.role === 'doctor') return handledDoctorIds(user).includes(c.doctorId);
   if (user.role === 'kiosk_operator') return user.facilityId && c.kioskId === user.facilityId;
   const p = patientById(c.patientId);
   return Boolean(p && patientOwnerUserIds(p).includes(user.id));
@@ -365,9 +366,21 @@ function enrichLab(o) {
 }
 
 const CONSENT_SCOPES = ['history', 'prescriptions', 'labs', 'allergies', 'uploads'];
-function hasConsent(patientId, granteeIds) {
+// `need` (optional) is one of CONSENT_SCOPES: the patient can approve a request for only some parts of the record,
+// and that choice must hold everywhere the record is read — not just be shown on the consent card.
+const activeConsents = (patientId, granteeIds) => {
   const t = Date.now();
-  return db().consents.some((c) => c.patientId === patientId && granteeIds.includes(c.granteeId) && c.status === 'active' && (!c.expiry || new Date(c.expiry) > t));
+  return db().consents.filter((c) => c.patientId === patientId && granteeIds.includes(c.granteeId) && c.status === 'active' && (!c.expiry || new Date(c.expiry) > t));
+};
+const consentCovers = (c, need) => !need || !Array.isArray(c.scope) || !c.scope.length || c.scope.includes(need);
+function hasConsent(patientId, granteeIds, need) {
+  return activeConsents(patientId, granteeIds).some((c) => consentCovers(c, need));
+}
+// Union of what the active consents allow (every scope when a consent has no list — older records).
+function consentScopes(patientId, granteeIds) {
+  const out = new Set();
+  for (const c of activeConsents(patientId, granteeIds)) (Array.isArray(c.scope) && c.scope.length ? c.scope : CONSENT_SCOPES).forEach((x) => out.add(x));
+  return out;
 }
 
 // Runs from the 5-minute sweeper, not per request. Access checks never rely on this flag (hasConsent checks
@@ -535,6 +548,7 @@ app.get('/api/i18n/dict/:lang', async (req, res) => {
   res.json(await i18n.dictionary(req.params.lang));
 });
 app.put('/api/admin/i18n/:lang', auth, role('super_admin'), async (req, res) => {
+  if (!i18n.langInfo(req.params.lang)) return res.status(404).json({ error: 'Language not supported.' });
   const { source, text } = req.body || {};
   if (typeof source !== 'string' || typeof text !== 'string' || !source.trim() || !text.trim()) return res.status(400).json({ error: 'Source and translation are required.' });
   await i18n.setHuman(req.params.lang, source, text);
@@ -588,7 +602,7 @@ function canSeeFile(user, f) {
   if (!p) return false;
   if (patientOwnerUserIds(p).includes(user.id)) return true;
   if (f.uploadedBy === user.id) return true;
-  if (user.role === 'doctor') return hasConsent(p.id, [doctorFor(user)?.id]);
+  if (user.role === 'doctor') return hasConsent(p.id, [doctorFor(user)?.id], 'uploads');
   // A lab tech may see a patient's files only if that patient has an order at the tech's lab.
   if (user.role === 'lab_tech') return db().labOrders.some((o) => o.labId === user.facilityId && o.sharedRx && db().prescriptions.find((r) => r.id === o.sharedRx)?.paperFileId === f.id);
   return false;
@@ -882,6 +896,7 @@ app.post('/api/auth/password-reset/confirm', resetVerifyLimiter, async (req, res
   notify(user.id, 'Password changed', 'Your password was changed using a code sent to your email. If this wasn\'t you, contact support right away.');
   audit(user, 'password_reset', null, 'account', 'Password set with an email code');
   store.save();
+  if (user.status === 'pending') return res.json({ ok: true, message: 'Password changed. You can sign in as soon as your account is approved.' });
   res.json({ ok: true, token: sign(user), user: publicUser(user) });
 });
 
@@ -1235,6 +1250,7 @@ app.put('/api/patient/profile/complete', auth, role('patient', 'caregiver'), (re
   if (p.userId === req.user.id) req.user.region = { ...req.user.region, district: p.district, state: p.state, country };
   audit(req.user, 'completed_profile', p.id, 'passport', 'Profile completed');
   store.save();
+  touch(patientOwnerUserIds(p));
   broadcast('patients');
   res.json({ ...p, age: ageOf(p.dob), bookingMissing: bookingMissing(p) });
 });
@@ -1366,6 +1382,7 @@ app.post('/api/consults/:id/review', auth, role('patient', 'caregiver'), (req, r
     notify(doc.userId, `New ${stars}★ review`, review.text ? `"${review.text.slice(0, 90)}"` : `${review.name} rated your consult.`);
   }
   store.save();
+  touch(patientOwnerUserIds(p));
   broadcast('doctors', 'consults');
   res.json({ ok: true, review });
 });
@@ -1408,6 +1425,7 @@ app.post('/api/patient/records/upload', auth, role('patient', 'caregiver'), asyn
   db().records.push(rec);
   audit(req.user, 'uploaded_record', p.id, 'upload', rec.title);
   store.save();
+  touch(patientOwnerUserIds(p));
   broadcast('records');
   res.json(rec);
 });
@@ -1458,7 +1476,7 @@ app.post('/api/consults', auth, role('kiosk_operator'), (req, res) => {
   d.consults.push(consult);
   // Consult implies time-limited consent for the treating doctor (patient approves at booking).
   d.consents.push({ id: store.id('cst'), patientId: p.id, granteeType: 'doctor', granteeId: doctor.id, granteeName: doctor.name, scope: ['history', 'prescriptions', 'labs', 'allergies'], purpose: 'Kiosk teleconsult (patient present at kiosk)', start: nowIso(), expiry: new Date(Date.now() + 2 * 86400000).toISOString(), status: 'active' });
-  notify(doctor.userId, type === 'scheduled' ? 'New booking' : 'New patient in your queue', `${p.name} · ${consult.triage.level.replace('_', ' ')} · ${consult.triage.symptoms}`);
+  doctorInbox(d, doctor).forEach((uid) => notify(uid, type === 'scheduled' ? 'New booking' : 'New patient in your queue', `${p.name} · ${consult.triage.level.replace('_', ' ')} · ${consult.triage.symptoms}`));
   audit(req.user, 'booked_consult', p.id, 'consult', consult.id);
   store.save();
   broadcast('consults', 'queue');
@@ -1541,6 +1559,7 @@ app.post('/api/consults/:id/messages', auth, (req, res) => {
   const c = db().consults.find((x) => x.id === req.params.id);
   if (!c) return res.status(404).json({ error: 'Consult not found.' });
   if (!canAccessConsult(req.user, c)) return res.status(403).json({ error: 'You don\'t have access to this consult.' });
+  if (['cancelled', 'expired'].includes(c.status)) return res.status(409).json({ error: 'This visit is closed — messages can no longer be sent.' });
   const text = String(req.body?.text || '').slice(0, 2000).trim();
   if (!text) return res.status(400).json({ error: 'Message is empty.' });
   // The whole thread is stored on the consult and returned on every post/poll — a cap keeps one visit from
@@ -1672,8 +1691,7 @@ app.post('/api/prescriptions/:id/order', auth, role('patient', 'caregiver'), (re
   r.fulfilment = 'pickup';
   r.status = 'sent';
   r.orderedAt = nowIso();
-  const pharmacist = db().users.find((u) => u.facilityId === pharmacyId);
-  notify(pharmacist?.id, 'New e-prescription', `${enrichRx(r).patientName} · ${r.items.length} items · ${fulfilment}`);
+  pharmacistsOf(db(), pharmacyId).forEach((u) => notify(u.id, 'New e-prescription', `${enrichRx(r).patientName} · ${r.items.length} items · ${fulfilment}`));
   store.save();
   broadcast('prescriptions', 'pharmacy');
   res.json(enrichRx(r));
@@ -1822,7 +1840,7 @@ const MED_ORDER_CLOSED = ['delivered', 'collected', 'declined', 'cancelled'];
 // `switchedFrom` is only kept for lines built by itemsFromRx (trusted) — never from a raw request body.
 function cleanOrderItems(list, trusted = false) {
   const seen = new Set();
-  return (Array.isArray(list) ? list : []).slice(0, 25).map((it) => ({ drug: clean(it.drug, 80), qty: Math.max(1, Math.min(500, parseInt(it.qty, 10) || 1)), ...(trusted && it.switchedFrom ? { switchedFrom: clean(it.switchedFrom, 80) } : {}) }))
+  return (Array.isArray(list) ? list : []).filter((it) => it && typeof it === 'object').slice(0, 25).map((it) => ({ drug: clean(it.drug, 80), qty: Math.max(1, Math.min(500, parseInt(it.qty, 10) || 1)), ...(trusted && it.switchedFrom ? { switchedFrom: clean(it.switchedFrom, 80) } : {}) }))
     .filter((it) => it.drug.length >= 2 && !seen.has(normDrug(it.drug)) && seen.add(normDrug(it.drug)));
 }
 function quoteItems(d, items, f, origin) {
@@ -1852,7 +1870,7 @@ function nearbyPharmacies(d, origin, country, radiusKm = MEDICINE_RADIUS_KM) {
     .map((f) => ({ f, km: geo.km(origin, geo.pointOf(f)) })).filter((x) => x.km === null || x.km <= radiusKm);
 }
 function itemsFromRx(r, picks) {
-  const byDrug = new Map((Array.isArray(picks) ? picks : []).map((x) => [normDrug(x.drug), x]));
+  const byDrug = new Map((Array.isArray(picks) ? picks : []).filter((x) => x && typeof x === 'object').map((x) => [normDrug(x.drug), x]));
   return r.items.filter((it) => !picks || byDrug.has(normDrug(it.drug)))
     .map((it) => {
       const qty = byDrug.get(normDrug(it.drug))?.qty ?? catalog.unitsFor(it);
@@ -1872,12 +1890,13 @@ function enrichMedOrder(o) {
 
 app.post('/api/medicine-orders/quote', auth, role('patient', 'caregiver'), (req, res) => {
   const d = db();
-  const p = activePatient(req);
+  let p = activePatient(req);
   const b = req.body || {};
   let items;
   if (b.rxId) {
     const r = d.prescriptions.find((x) => x.id === b.rxId);
     if (!r || !ownsPatient(req.user, r.patientId)) return res.status(404).json({ error: 'Prescription not found.' });
+    p = patientById(r.patientId) || p; // the order belongs to the prescription's patient, whichever family profile is open
     items = cleanOrderItems(b.items?.length ? itemsFromRx(r, b.items) : itemsFromRx(r), true);
   } else items = cleanOrderItems(b.items);
   if (!items.length) return res.status(400).json({ error: 'Choose at least one medicine and how many you need.' });
@@ -1897,7 +1916,7 @@ app.post('/api/medicine-orders/quote', auth, role('patient', 'caregiver'), (req,
 
 app.post('/api/medicine-orders', auth, role('patient', 'caregiver'), async (req, res) => {
   const d = db();
-  const p = activePatient(req);
+  let p = activePatient(req);
   const b = req.body || {};
   const fulfilment = b.fulfilment === 'delivery' ? 'delivery' : 'pickup';
   let rx = null;
@@ -1905,6 +1924,7 @@ app.post('/api/medicine-orders', auth, role('patient', 'caregiver'), async (req,
   if (b.rxId) {
     rx = d.prescriptions.find((x) => x.id === b.rxId);
     if (!rx || !ownsPatient(req.user, rx.patientId)) return res.status(404).json({ error: 'Prescription not found.' });
+    p = patientById(rx.patientId) || p; // the order belongs to the prescription's patient, whichever family profile is open
     items = cleanOrderItems(b.items?.length ? itemsFromRx(rx, b.items) : itemsFromRx(rx), true);
   } else items = cleanOrderItems(b.items);
   if (!items.length) return res.status(400).json({ error: 'Choose at least one medicine and how many you need.' });
@@ -1997,7 +2017,7 @@ app.post('/api/medicine-orders/:id/respond', auth, role('pharmacist'), (req, res
   const d = db();
   const fid = req.user.facilityId;
   const o = d.medOrders.find((x) => x.id === req.params.id);
-  if (!o || !(o.pharmacyId === fid || (!o.pharmacyId && o.candidates.includes(fid)))) return res.status(404).json({ error: 'Order not found.' });
+  if (!o || !(o.pharmacyId === fid || (o.candidates || []).includes(fid))) return res.status(404).json({ error: 'Order not found.' });
   if (o.status !== 'requested') return res.status(409).json({ error: o.status === 'accepted' && o.pharmacyId !== fid ? 'Another chemist has already taken this order.' : 'This order has already been handled.' });
   const f = d.facilities.find((x) => x.id === fid);
   const p = d.patients.find((x) => x.id === o.patientId);
@@ -2013,9 +2033,11 @@ app.post('/api/medicine-orders/:id/respond', auth, role('pharmacist'), (req, res
   } else {
     if (!o.pharmacyId) {
       // First to accept an open request: re-price at this chemist's rates; the other chemists' screens drop it.
+      const q = quoteItems(d, o.items, f, geo.pointOf(p));
+      const missing = q.lines.filter((l) => !l.inStock).map((l) => l.drug);
+      if (missing.length) return res.status(409).json({ error: `You don't have ${missing.join(', ')} in stock on Nexus. Update your stock, or decline so another chemist can take it.` });
       o.candidates.forEach((cid) => { if (cid !== fid) pharmacistsOf(d, cid).forEach((u) => touch(u.id)); });
       o.pharmacyId = fid;
-      const q = quoteItems(d, o.items, f, geo.pointOf(p));
       const lines = q.lines.filter((l) => l.inStock).map(({ drug, qty, unit, unitPrice, lineTotal, switchedFrom }) => ({ drug, qty, unit, unitPrice, lineTotal, ...(switchedFrom ? { switchedFrom } : {}) }));
       if (lines.length && lines.every((l) => l.lineTotal !== null)) {
         o.items = lines;
@@ -2053,8 +2075,17 @@ app.post('/api/medicine-orders/:id/status', auth, role('pharmacist'), (req, res)
   if (next === 'packed') {
     for (const it of o.items) {
       // A brand / Jan Aushadhi line is stocked under its generic name — match either, and keep batch/expiry for the invoice.
-      const inv = d.inventory.find((i) => i.facilityId === fid && (normDrug(i.drug) === normDrug(it.drug) || normDrug(i.drug) === normDrug(catalog.priceOf(it.drug)?.name || '')));
-      if (inv) { inv.qty = Math.max(0, inv.qty - it.qty); it.batch = inv.batch; it.expiry = inv.expiry; }
+      // Every batch of the medicine, earliest expiry first (first-expiry-first-out) until the ordered qty is covered.
+      const generic = normDrug(catalog.priceOf(it.drug)?.name || '');
+      const rows = d.inventory.filter((i) => i.facilityId === fid && i.qty > 0 && (normDrug(i.drug) === normDrug(it.drug) || (generic && normDrug(i.drug) === generic)))
+        .sort((a, b) => String(a.expiry || '9999').localeCompare(String(b.expiry || '9999')));
+      let need = it.qty;
+      for (const inv of rows) {
+        if (need <= 0) break;
+        const take = Math.min(inv.qty, need);
+        inv.qty -= take; need -= take; inv.updatedAt = nowIso();
+        if (!it.batch) { it.batch = inv.batch; it.expiry = inv.expiry; } // the invoice shows the first batch used
+      }
     }
     if (o.fulfilment === 'delivery' && o.deliveryBy === 'nexus') {
       const rider = pickRider(d, f.district);
@@ -2516,7 +2547,7 @@ app.post('/api/prescriptions/:id/delivery-payment', auth, role('patient', 'careg
   if (!q.availableCount) return res.status(400).json({ error: `${f.name} doesn't have these medicines right now.` });
   if (q.distanceKm !== null && q.distanceKm > medRadius((req.body || {}).radiusKm)) return res.status(400).json({ error: `${f.name} is beyond ${medRadius((req.body || {}).radiusKm)} km — choose a nearer chemist or a bigger distance.` });
   const pay = {
-    id: store.id('pay'), purpose: 'delivery', refId: r.id, amount: q.total + DELIVERY_FEE, status: 'created', provider: payments.provider(),
+    id: store.id('pay'), purpose: 'delivery', refId: r.id, amount: catalog.round(q.total + DELIVERY_FEE), status: 'created', provider: payments.provider(),
     label: `Medicines + delivery · ${f.name}`, userId: req.user.id, patientId: r.patientId, createdAt: nowIso(),
     meta: { pharmacyId: f.id, address, medicines: q.total, deliveryFee: DELIVERY_FEE, items: q.items.filter((i) => i.inStock).map((i) => ({ drug: i.drug, units: i.units, lineTotal: i.lineTotal })) },
   };
@@ -2579,7 +2610,7 @@ function finalizePayment(d, pay, user) {
     d.users.filter((u) => u.role === 'lab_tech' && u.facilityId === o.labId).forEach((u) => notify(u.id, 'New paid test booking', `${p?.name} · ${o.tests.map((t) => t.name).join(', ')} · ${o.booking.homeCollection ? 'home collection' : 'walk-in'}${when} · ₹${o.booking.advancePaid} advance paid, collect ₹${o.booking.balance}`));
     patientOwnerUserIds(p).forEach((u) => notify(u, 'Test booked ✅', `${facilityName(o.labId)}${when}. ₹${o.booking.advancePaid} paid${pay.creditApplied ? ` (₹${pay.creditApplied} Nexus credit)` : ''} — pay ₹${o.booking.balance} at the lab. Report in about ${o.booking.reportInHours} hours after the sample.`));
     audit(user, 'paid_lab_advance', o.patientId, 'lab', `${o.id} · ₹${pay.amount}`);
-    automation.emit('lab.booked', { labOrderId: o.id, patientId: o.patientId, labId: o.labId, labName: facilityName(o.labId), testsCount: o.tests.length, homeCollection: !!o.booking.homeCollection, slot: o.booking.slot || null, advancePaid: pay.amount, balance: o.booking.balance, reportInHours: o.booking.reportInHours }, { contact: autoContact(p) });
+    automation.emit('lab.booked', { labOrderId: o.id, patientId: o.patientId, labId: o.labId, labName: facilityName(o.labId), testsCount: o.tests.length, homeCollection: !!o.booking.homeCollection, slot: o.booking.slot || null, advancePaid: o.booking.advancePaid, creditApplied: pay.creditApplied || 0, balance: o.booking.balance, reportInHours: o.booking.reportInHours }, { contact: autoContact(p) });
     credits.rewardReferral(d, pay);
   } else if (pay.purpose === 'med_order_advance') {
     const o = d.medOrders.find((x) => x.id === pay.refId);
@@ -2602,6 +2633,7 @@ function payableProblem(d, pay) {
   if (pay.purpose === 'consult') {
     const c = d.consults.find((x) => x.id === pay.refId);
     if (!c || c.status !== 'awaiting_payment') return 'This booking was cancelled or has expired. Please book again.';
+    if (!d.doctors.some((x) => x.id === c.doctorId)) return 'This doctor is no longer taking bookings on Nexus. Please book another doctor.';
     if (c.scheduledAt && Date.parse(c.scheduledAt) < Date.now() - 15 * 60000) return 'This appointment time has passed. Please book a new time.';
   } else if (pay.purpose === 'lab_advance') {
     const o = d.labOrders.find((x) => x.id === pay.refId);
@@ -2627,7 +2659,15 @@ app.post('/api/payments/:id/confirm', auth, (req, res) => {
   if (problem && pay.provider !== 'razorpay') return res.status(409).json({ error: problem });
   if (pay.provider === 'razorpay') {
     const { razorpay_order_id: orderId, razorpay_payment_id: paymentId, razorpay_signature: signature } = req.body || {};
-    if (orderId !== pay.orderId || !payments.verifySignature({ orderId, paymentId, signature })) return res.status(400).json({ error: 'We couldn\'t verify this payment. If money was deducted, it will be refunded automatically.' });
+    const genuine = payments.verifySignature({ orderId, paymentId, signature });
+    if (genuine && orderId !== pay.orderId && (pay.previousOrderIds || []).includes(orderId)) {
+      pay.refunds = [...(pay.refunds || []), { orderId, gatewayPaymentId: paymentId, at: nowIso(), reason: 'Paid against an older order for this payment' }];
+      audit(req.user, 'payment_refund_due', pay.patientId || null, 'payment', `${pay.id} · older order ${orderId} · ${paymentId}`);
+      automation.emit('payment.refund_due', { paymentId: pay.id, purpose: pay.purpose, amount: null, method: 'razorpay', gatewayPaymentId: paymentId, orderId, reason: 'Paid against a superseded order', patientId: pay.patientId || null });
+      store.save();
+      return res.status(409).json({ error: 'This payment window was out of date, so we didn\'t use it — the amount will be refunded to you. Please pay again from this screen.' });
+    }
+    if (!genuine || orderId !== pay.orderId) return res.status(400).json({ error: 'We couldn\'t verify this payment. If money was deducted, it will be refunded automatically.' });
     pay.method = 'razorpay'; pay.gatewayPaymentId = paymentId;
   } else {
     if (!payments.demoAllowed(DATA_MODE)) return res.status(403).json({ error: 'Online payments aren\'t switched on yet. Please contact support.' });
@@ -2689,6 +2729,7 @@ app.post('/api/admin/payments/:id/:action', auth, role('super_admin'), (req, res
   const d = db();
   const pay = d.payments.find((x) => x.id === req.params.id);
   if (!pay || pay.status !== 'claimed') return res.status(404).json({ error: 'No payment is waiting for confirmation with that ID.' });
+  if (!['confirm', 'reject'].includes(req.params.action)) return res.status(400).json({ error: 'Unknown action.' });
   const payer = d.users.find((u) => u.id === pay.userId) || req.user;
   touch(payer.id);
   pay.decidedAt = nowIso(); pay.decidedBy = req.user.id;
@@ -2774,6 +2815,7 @@ app.post('/api/payments/:id/credit', auth, role('patient', 'caregiver'), async (
   const use = req.body?.useCredit === true;
   credits.sweep(d, req.user); // credit stuck on an older voided payment is spendable again first
   const gross = pay.gross ?? pay.amount;
+  const prevApplied = pay.creditApplied || 0;
   if (use !== (pay.creditApplied > 0)) {
     if (use) {
       // Debit and payment update happen in this one synchronous block — two taps (or two tabs) can't both spend it.
@@ -2795,15 +2837,22 @@ app.post('/api/payments/:id/credit', auth, role('patient', 'caregiver'), async (
     }
     if (pay.provider === 'razorpay') {
       // The old gateway order is for the old sum: drop it before awaiting, so it can't be confirmed meanwhile.
-      const oldOrder = pay.orderId; pay.orderId = null; creditBusy.add(pay.id); store.save();
+      const oldOrder = pay.orderId; pay.orderId = null; creditBusy.add(pay.id);
+      if (oldOrder) pay.previousOrderIds = [...(pay.previousOrderIds || []), oldOrder].slice(-10);
+      store.save();
       try {
         const order = await payments.createOrder({ amount: pay.amount, receipt: pay.id, notes: { payment: pay.id } });
         pay.orderId = order?.orderId || null;
       } catch (e) {
         // Back to the full sum (the old order was made for it); taking credit off can't restore an order, so pay again.
         if (use) { credits.giveBack(d, req.user, pay, 'Gateway error'); Object.assign(pay, { creditApplied: 0, amount: gross, orderId: oldOrder }); }
+        else {
+          // Taking credit off failed: re-apply it so the old order (made for the reduced sum) is payable again.
+          const applied = credits.spend(d, req.user, req.user.id, prevApplied, pay.id);
+          Object.assign(pay, { creditApplied: applied, creditReturned: null, amount: credits.r2(gross - applied), orderId: applied === prevApplied ? oldOrder : null });
+        }
         store.save();
-        return res.status(502).json({ error: `${e.message} Your Nexus credit wasn't used.` });
+        return res.status(502).json({ error: use ? `${e.message} Your Nexus credit wasn't used.` : `${e.message} Your Nexus credit is still applied.` });
       } finally { creditBusy.delete(pay.id); }
       credits.sweep(d, req.user); // voided while we waited → the credit goes straight back
     }
@@ -2848,6 +2897,7 @@ app.post('/api/visits/check-in', auth, role('doctor', 'hospital_admin', 'kiosk_o
   patientOwnerUserIds(p).forEach((u) => notify(u, 'You\'re checked in', `Please wait — ${enrichConsult(c).doctorName} will call you shortly.`));
   audit(req.user, 'visit_check_in', p.id, 'consult', c.id);
   store.save();
+  touchFacility(c.location?.facilityId); // the clinic's reception board moves with the doctor's queue
   broadcast('consults', 'queue', `consult:${c.id}`);
   // The treating doctor gets the full visit; a front desk / kiosk only what its check-in card shows —
   // never symptoms, triage, vitals or the chat.
@@ -3488,7 +3538,7 @@ app.get('/api/doctor/home', auth, role('doctor'), (req, res) => {
   const clinicVisits = handled.length > 1 ? d.consults.filter((c) => c.doctorId !== doc.id && handled.includes(c.doctorId) && ['scheduled', 'queued'].includes(c.status)).map(consultCard).sort((a, b) => ((a.scheduledAt || a.createdAt) < (b.scheduledAt || b.createdAt) ? -1 : 1)) : [];
   const order = { emergency: 0, doctor_now: 1, routine: 2, self_care: 3 };
   const queue = mine.filter((c) => c.status === 'queued' || c.status === 'in_progress').map(consultCard)
-    .sort((a, b) => (a.status === 'in_progress' ? -1 : b.status === 'in_progress' ? 1 : 0) || order[a.triage.level] - order[b.triage.level] || (a.createdAt < b.createdAt ? -1 : 1));
+    .sort((a, b) => (a.status === 'in_progress' ? -1 : b.status === 'in_progress' ? 1 : 0) || order[a.triage.level] - order[b.triage.level] || ((a.checkedInAt || a.createdAt) < (b.checkedInAt || b.createdAt) ? -1 : 1));
   const today = istDay(nowIso());
   // The "new patient" pop-ups: their history is gathered in ONE pass per collection for just these patients,
   // instead of four full scans (consults, prescriptions, records, lab orders) per pending booking.
@@ -3511,7 +3561,9 @@ app.get('/api/doctor/home', auth, role('doctor'), (req, res) => {
     // Paid bookings the doctor hasn't acknowledged yet → the "new patient" pop-up.
     newBookings: fresh.map((c) => {
       const pt = patientById(c.patientId) || {};
-      const h = hist.get(c.patientId);
+      const may = consentScopes(c.patientId, [doc.id]);
+      const all = hist.get(c.patientId);
+      const h = { visits: may.has('history') ? all.visits : [], rx: may.has('prescriptions') ? all.rx : [], records: may.has('uploads') ? all.records : [], labs: may.has('labs') ? all.labs : [] };
       return {
       ...consultCard(c), forDoctor: c.doctorId !== doc.id ? d.doctors.find((x) => x.id === c.doctorId)?.name : null,
       patient: { bloodGroup: pt.bloodGroup && pt.bloodGroup !== 'Unknown' ? pt.bloodGroup : null, allergies: pt.allergies || [], conditions: pt.conditions || [], currentMeds: pt.currentMeds || [], district: pt.district, country: countryOf(pt) },
@@ -3955,7 +4007,8 @@ function recordAccess(user, doc, p) {
   return { consented, bg, copy };
 }
 
-app.get('/api/doctor/patient/:id', auth, role('doctor'), (req, res) => {
+const lookupLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 120, key: (r) => r.headers.authorization || r.ip, message: 'Too many patient searches. Please wait a while.' });
+app.get('/api/doctor/patient/:id', auth, role('doctor'), lookupLimiter, (req, res) => {
   const d = db();
   const doc = doctorFor(req.user);
   const p = d.patients.find((x) => x.id === req.params.id);
@@ -3970,7 +4023,7 @@ app.get('/api/doctor/patient/:id', auth, role('doctor'), (req, res) => {
       // Clinical summary only — no address, IDs, location or contacts after the patient has moved on.
       patient: { id: p.id, name: p.name, age: ageOf(p.dob), gender: p.gender, bloodGroup: p.bloodGroup, allergies: p.allergies || [], conditions: p.conditions || [], currentMeds: p.currentMeds || [] },
       visits: d.consults.filter((c) => c.patientId === p.id && c.status === 'completed' && (c.completedAt || '') <= upTo).map(enrichConsult),
-      prescriptions: d.prescriptions.filter((r) => r.patientId === p.id && r.createdAt <= upTo).map(enrichRx),
+      prescriptions: d.prescriptions.filter((r) => r.patientId === p.id && r.createdAt <= upTo).map(enrichRx).map(({ patientPhone: _ph, address: _ad, ...r }) => r),
       labs: d.labOrders.filter((o) => o.patientId === p.id && o.createdAt <= upTo).map((o) => (o.reportedAt && o.reportedAt > upTo ? { ...enrichLab(o), status: 'processing', results: [], insights: [], doctorNote: null } : enrichLab(o))),
       uploads: d.records.filter((r) => r.patientId === p.id && (r.date || '') <= upTo),
       homeReadings: wellness.homeReadingsSummary(vitalsOf(p.id), { ...vitalsCtx(p), upTo }),
@@ -3987,13 +4040,18 @@ app.get('/api/doctor/patient/:id', auth, role('doctor'), (req, res) => {
   }
   // Account-level settings (privacy choices, deletion requests, kiosk session) are the patient's own — not part of the clinical record.
   const { privacy: _priv, deletionRequest: _del, kioskSeen: _ks, aadhaarRefHash: _ar, vaxReminded: _vr, vaxPrefs: _vp, vitalsReminder: _vit, ...clinical } = p;
+  // With consent, only the parts the patient approved (break-glass returned above). Allergies and conditions stay
+  // in the header for prescribing safety — the same critical set an emergency view shows.
+  const may = consented ? consentScopes(p.id, [doc.id]) : new Set(CONSENT_SCOPES);
+  const { currentLocation: _loc, ...shown } = clinical;
   res.json({
-    patient: { ...clinical, age: ageOf(p.dob) },
-    visits: d.consults.filter((c) => c.patientId === p.id && c.status === 'completed').map(enrichConsult),
-    prescriptions: d.prescriptions.filter((r) => r.patientId === p.id).map(enrichRx),
-    labs: d.labOrders.filter((o) => o.patientId === p.id).map(enrichLab),
-    uploads: d.records.filter((r) => r.patientId === p.id),
-    homeReadings: wellness.homeReadingsSummary(vitalsOf(p.id), vitalsCtx(p)),
+    patient: { ...shown, age: ageOf(p.dob) },
+    scopes: [...may],
+    visits: may.has('history') ? d.consults.filter((c) => c.patientId === p.id && c.status === 'completed').map(enrichConsult) : [],
+    prescriptions: may.has('prescriptions') ? d.prescriptions.filter((r) => r.patientId === p.id).map(enrichRx) : [],
+    labs: may.has('labs') ? d.labOrders.filter((o) => o.patientId === p.id).map(enrichLab) : [],
+    uploads: may.has('uploads') ? d.records.filter((r) => r.patientId === p.id) : [],
+    homeReadings: may.has('history') ? wellness.homeReadingsSummary(vitalsOf(p.id), vitalsCtx(p)) : null,
   });
 });
 
@@ -4035,10 +4093,11 @@ app.get('/api/consults/:id/summary', auth, role('doctor'), (req, res) => {
     return { ...l, abnormal: !['normal', 'negative', ''].includes(String(l.flag).toLowerCase()), trend: a === null || b === null ? null : a > b ? 'up' : a < b ? 'down' : 'same' };
   }).sort((x, y) => Number(y.abnormal) - Number(x.abnormal) || (x.date < y.date ? 1 : -1)).slice(0, 8);
   // Home readings follow the same rule as labs: full with consent, up to the transfer date for a copy, none on break-glass.
-  res.json({ ...base, access: consented ? 'full' : 'copy', copyUntil: upTo, ...critical, visits, labs, homeReadings: wellness.homeReadingsSummary(vitalsOf(p.id), { ...vitalsCtx(p), upTo }) });
+  // Same consent parts as the record view: no history or labs the patient didn't approve.
+  const may = consented ? consentScopes(p.id, [doc.id]) : new Set(CONSENT_SCOPES);
+  res.json({ ...base, access: consented ? 'full' : 'copy', copyUntil: upTo, ...critical, visits: may.has('history') ? visits : [], labs: may.has('labs') ? labs : [], homeReadings: may.has('history') ? wellness.homeReadingsSummary(vitalsOf(p.id), { ...vitalsCtx(p), upTo }) : null });
 });
 
-const lookupLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 120, key: (r) => r.headers.authorization || r.ip, message: 'Too many patient searches. Please wait a while.' });
 app.get('/api/doctor/lookup', auth, role('doctor'), lookupLimiter, (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   if (q.length < 4) return res.json([]); // require a near-complete id/phone/name, not broad enumeration
@@ -4246,9 +4305,13 @@ function createLabOrders(d, { p, doc, labTests, lab, rx, shareRx }) {
 }
 
 // ---- shared: a follow-up becomes a real appointment the patient sees with date & time ----
-function istAt(daysAhead, hour = 10) {
-  const ymd = new Date(Date.now() + daysAhead * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-  return new Date(`${ymd}T${String(hour).padStart(2, '0')}:00:00+05:30`).toISOString();
+function istAt(daysAhead, hour = 10, tz = APP_TZ) {
+  const ymd = new Date(Date.now() + daysAhead * 86400000).toLocaleDateString('en-CA', { timeZone: tz });
+  // Wall-clock hour in `tz`: start from that time in UTC, then shift by the zone's offset on that day.
+  const utc = new Date(`${ymd}T${String(hour).padStart(2, '0')}:00:00Z`);
+  const local = new Date(utc.toLocaleString('en-US', { timeZone: tz }));
+  const asUtc = new Date(utc.toLocaleString('en-US', { timeZone: 'UTC' }));
+  return new Date(utc.getTime() - (local - asUtc)).toISOString();
 }
 function createFollowUp(d, { p, doc, days, diagnosis, from }) {
   const opts = bookingOptions(d, doc);
@@ -4350,6 +4413,7 @@ app.post('/api/consults/:id/start', auth, role('doctor'), (req, res) => {
   const p = db().patients.find((x) => x.id === c.patientId);
   patientOwnerUserIds(p).forEach((u) => notify(u, 'Your doctor is ready', `${req.user.name} has started your consult. Join now.`));
   store.save();
+  touchFacility(c.location?.facilityId); // the clinic's reception board moves with the doctor's queue
   broadcast('consults', 'queue', `consult:${c.id}`);
   res.json(enrichConsult(c));
 });
@@ -4405,7 +4469,10 @@ app.post('/api/consults/:id/complete', auth, role('doctor'), (req, res) => {
     // Kiosk visits send the prescription straight to the attached/nearest pharmacy.
     if (c.kioskId) {
       const stocked = engines.findStock(d, validItems[0].drug, { district: p.district, state: p.state }).find((s) => s.facility.type === 'pharmacy');
-      if (stocked) { rx.pharmacyId = stocked.facilityId; rx.fulfilment = 'pickup'; rx.status = 'sent'; }
+      if (stocked) {
+        rx.pharmacyId = stocked.facilityId; rx.fulfilment = 'pickup'; rx.status = 'sent';
+        pharmacistsOf(d, rx.pharmacyId).forEach((u) => notify(u.id, 'New e-prescription', `${p.name} · ${validItems.length} item${validItems.length === 1 ? '' : 's'} · pickup (E-Clinic visit)`));
+      }
     }
     d.prescriptions.push(rx);
     audit(req.user, 'created_prescription', p.id, 'prescription', rx.id);
@@ -4441,6 +4508,7 @@ app.post('/api/consults/:id/complete', auth, role('doctor'), (req, res) => {
   audit(req.user, 'completed_consult', p.id, 'consult', c.id);
   automation.emit('consult.completed', { consultId: c.id, patientId: p.id, doctorId: doc.id, doctorName: doc.name, prescriptionId: rx?.id || null }, { contact: autoContact(p) });
   store.save();
+  touchFacility(c.location?.facilityId); // the clinic's reception board moves with the doctor's queue
   broadcast('consults', 'queue', 'prescriptions', 'pharmacy', 'lab', 'referrals', 'supply', `consult:${c.id}`);
   res.json({ consult: enrichConsult(c), prescription: rx ? { ...rx, pharmacyName: facilityName(rx.pharmacyId) || null } : null });
 });
@@ -4784,6 +4852,7 @@ app.post('/api/hospital/reception/call-next', auth, role('hospital_admin'), (req
   const p = d.patients.find((x) => x.id === next.patientId);
   if (p) patientOwnerUserIds(p).forEach((u) => notify(u, `Token ${next.token} — it's your turn`, `Please go to ${doc.name}${(f.rooms || {})[doc.id] ? ` · ${f.rooms[doc.id]}` : ''}.`));
   store.save();
+  touch(doc.userId); touchFacility(f.id); // the doctor's queue and co-workers' desks move too
   broadcast('consults', 'queue');
   res.json(deskView(d, f));
 });
@@ -4808,7 +4877,9 @@ app.post('/api/hospital/reception/display-code', auth, role('hospital_admin'), (
   const f = d.facilities.find((x) => x.id === req.user.facilityId);
   f.queueDisplayCode = crypto.randomBytes(18).toString('base64url');
   audit(req.user, 'rotated_display_link', null, 'facility', f.name);
+  touchFacility(f.id);
   store.save();
+  broadcast('queue', 'hospital');
   res.json(deskView(d, f));
 });
 
@@ -4940,7 +5011,7 @@ app.put('/api/hospital/beds', auth, role('hospital_admin'), (req, res) => {
   const b = db().beds.find((x) => x.facilityId === req.user.facilityId && x.type === type);
   if (!b) return res.status(404).json({ error: 'Bed type not found.' });
   const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
-  if (total !== undefined) { const n = num(total); if (n === null || n < 0 || n > 100000) return res.status(400).json({ error: 'Enter a valid bed count.' }); b.total = Math.round(n); }
+  if (total !== undefined) { const n = num(total); if (n === null || n < 0 || n > 100000) return res.status(400).json({ error: 'Enter a valid bed count.' }); b.total = Math.round(n); b.occupied = Math.min(b.occupied || 0, b.total); }
   if (occupied !== undefined) { const n = num(occupied); if (n === null || n < 0) return res.status(400).json({ error: 'Enter a valid occupied count.' }); b.occupied = Math.min(b.total, Math.round(n)); }
   b.updatedAt = nowIso();
   store.save();
@@ -5016,7 +5087,9 @@ app.put('/api/pharmacy/profile', auth, role('pharmacist'), async (req, res) => {
     // After verification only day-to-day details are self-service.
     for (const [k, max] of [['hours', 60], ['phone', 20]]) if (b[k] !== undefined) f[k] = clean(b[k], max);
     if (b.delivery !== undefined) f.delivery = Boolean(b.delivery);
+    touchFacility(f.id);
     store.save();
+    broadcast('pharmacy');
     return res.json(f);
   }
   if (clean(b.storeName, 120).length >= 3) f.name = clean(b.storeName, 120);
@@ -5689,14 +5762,20 @@ app.post('/api/transfers/request', auth, role('pharmacist'), (req, res) => {
   if (!Number.isInteger(qty) || qty < 1 || qty > 100000) return res.status(400).json({ error: 'Enter a quantity between 1 and 100000.' });
   const fac = d.facilities.find((f) => f.id === req.user.facilityId);
   if (!fac) return res.status(404).json({ error: 'Store not found.' });
-  const src = engines.findStock(d, drug, { district: fac.district, state: fac.state }, qty).find((s) => s.facilityId !== fac.id);
+  // Only a verified chemist or warehouse can be asked to send stock.
+  const src = engines.findStock(d, drug, { district: fac.district, state: fac.state }, qty)
+    .find((s) => s.facilityId !== fac.id && s.facility?.verified && ['pharmacy', 'warehouse'].includes(s.facility.type));
   if (!src) return res.status(404).json({ error: `No source with spare stock of ${drug} found nationally.` });
   const t = { id: store.id('tr'), drug: src.drug, qty, fromId: src.facilityId, toId: fac.id, status: 'requested', reason: 'Low stock — requested by pharmacist', createdAt: nowIso() };
   d.transfers.unshift(t);
-  // Shortage flag: many open requests for the same drug in a district.
-  const open = d.transfers.filter((x) => x.drug === t.drug && ['requested'].includes(x.status)).length;
-  if (open >= 3 && !d.alerts.some((a) => a.type === 'shortage' && a.drug === t.drug && a.status === 'open')) {
-    d.alerts.unshift({ id: store.id('al'), type: 'shortage', drug: t.drug, district: fac.district, state: fac.state, pincode: fac.pincode, confidence: null, requests: open, status: 'open', message: `${open} open transfer requests for ${t.drug} across the network — possible shortage.`, createdAt: nowIso(), actions: [] });
+  facilityUsers(d, src.facilityId).forEach((u) => notify(u, 'Stock requested from you', `${fac.name}, ${fac.district} asks for ${qty} × ${t.drug}. Accept or decline it under Dispatch.`));
+  touchFacility(src.facilityId, fac.id);
+  // Shortage flag: many open requests for the same drug from one district (counted and de-duplicated per
+  // district — a network-wide count stamped with whichever district asked last pointed help at the wrong place).
+  const toDistrict = (x) => facilityById(x.toId)?.district;
+  const open = d.transfers.filter((x) => sameDrug(x.drug, t.drug) && x.status === 'requested' && toDistrict(x) === fac.district).length;
+  if (open >= 3 && !d.alerts.some((a) => a.type === 'shortage' && sameDrug(a.drug, t.drug) && a.district === fac.district && a.status === 'open')) {
+    d.alerts.unshift({ id: store.id('al'), type: 'shortage', drug: t.drug, district: fac.district, state: fac.state, pincode: fac.pincode, confidence: null, requests: open, status: 'open', message: `${open} open transfer requests for ${t.drug} from ${fac.district} — possible shortage.`, createdAt: nowIso(), actions: [] });
   }
   store.save();
   broadcast('supply', 'pharmacy', 'gov');
@@ -5735,8 +5814,12 @@ app.post('/api/gov/transfers', auth, role('official'), (req, res) => {
   if (drug.length < 2) return res.status(400).json({ error: 'Choose a medicine or kit.' });
   if (!Number.isInteger(qty) || qty < 1 || qty > 100000) return res.status(400).json({ error: 'Enter a quantity between 1 and 100000.' });
   if (!to?.district) return res.status(400).json({ error: 'Choose where the stock should go.' });
-  if (req.user.scope === 'district' && to.district !== req.user.region?.district) return res.status(403).json({ error: 'You can only send stock into your own district.' });
-  if (req.user.scope === 'state' && to.state && to.state !== req.user.region?.state) return res.status(403).json({ error: 'You can only send stock into your own state.' });
+  // A scoped official's destination is pinned to their region: a missing state can't widen it to the whole country.
+  const sc = govScope(req.user);
+  if (sc.level !== 'national') {
+    if (!to.state) to.state = sc.state;
+    if (!sc.inScope(to)) return res.status(403).json({ error: `You can only send stock into your own ${sc.level}.` });
+  }
   const dest = neediestPharmacy(d, drug, to);
   if (!dest) return res.status(404).json({ error: `There's no verified chemist on Nexus in ${to.district} to receive it yet.` });
   let src = null;
@@ -5817,6 +5900,15 @@ app.post('/api/kiosk/upi/:id/confirm', auth, role('kiosk_operator'), (req, res) 
   res.json({ id: pay.id, status: pay.status, paidAt: pay.paidAt });
 });
 
+// Stock arriving at the receiving shelf — the same whether the chemist confirms it or the rider's OTP does
+// (the rider path used to add it only to an existing line, so a first delivery of a drug vanished).
+function receiveTransfer(d, t) {
+  t.status = 'delivered'; t.deliveredAt = nowIso();
+  const inv = d.inventory.find((i) => i.facilityId === t.toId && sameDrug(i.drug, t.drug));
+  if (inv) { inv.qty += t.qty; inv.updatedAt = nowIso(); }
+  else d.inventory.push({ id: store.id('inv'), facilityId: t.toId, drug: t.drug, batch: t.batch || null, expiry: t.expiry || null, qty: t.qty, safetyStock: 10, updatedAt: nowIso() });
+}
+
 app.post('/api/transfers/:id/:action', auth, role('pharmacist', 'distributor'), (req, res) => {
   const d = db();
   const t = d.transfers.find((x) => x.id === req.params.id);
@@ -5829,12 +5921,12 @@ app.post('/api/transfers/:id/:action', auth, role('pharmacist', 'distributor'), 
   if (action === 'accept') t.status = 'accepted';
   else if (action === 'decline') t.status = 'declined';
   else if (action === 'dispatch') {
-    const inv = d.inventory.find((i) => i.facilityId === t.fromId && i.drug === t.drug);
-    if (inv) {
-      if (inv.qty - t.qty < (inv.safetyStock || 0)) return res.status(400).json({ error: 'This would take you below safety stock. Reduce the quantity or decline.' });
-      inv.qty -= t.qty;
-      t.batch = inv.batch || null; t.expiry = inv.expiry || null; // what was actually sent, for the receiving shelf
-    }
+    // Nothing ships that isn't on the shelf: without a stock line the receiver would gain units from nowhere.
+    const inv = d.inventory.find((i) => i.facilityId === t.fromId && sameDrug(i.drug, t.drug));
+    if (!inv) return res.status(400).json({ error: `${t.drug} isn't on your shelf on Nexus. Add it to your stock first, or decline this request.` });
+    if (inv.qty - t.qty < (inv.safetyStock || 0)) return res.status(400).json({ error: 'This would take you below safety stock. Reduce the quantity or decline.' });
+    inv.qty -= t.qty; inv.updatedAt = nowIso();
+    t.batch = inv.batch || null; t.expiry = inv.expiry || null; // what was actually sent, for the receiving shelf
     t.status = 'dispatched';
     const from = d.facilities.find((f) => f.id === t.fromId);
     const to = d.facilities.find((f) => f.id === t.toId);
@@ -5845,14 +5937,12 @@ app.post('/api/transfers/:id/:action', auth, role('pharmacist', 'distributor'), 
   } else if (action === 'receive') {
     if (t.toId !== req.user.facilityId) return res.status(403).json({ error: 'Only the receiving facility can confirm.' });
     if (t.status === 'delivered') return res.json(t);
-    t.status = 'delivered';
+    receiveTransfer(d, t);
     const del = d.deliveries.find((x) => x.kind === 'transfer' && x.refId === t.id);
-    if (del) { del.status = 'delivered'; del.deliveredAt = nowIso(); }
-    const inv = d.inventory.find((i) => i.facilityId === t.toId && i.drug === t.drug);
-    if (inv) inv.qty += t.qty;
-    else d.inventory.push({ id: store.id('inv'), facilityId: t.toId, drug: t.drug, batch: t.batch || null, expiry: t.expiry || null, qty: t.qty, safetyStock: 10, updatedAt: nowIso() });
+    if (del) { del.status = 'delivered'; del.deliveredAt = nowIso(); touch(del.courierId); }
   } else return res.status(400).json({ error: 'Unknown action.' });
   t.updatedAt = nowIso();
+  touchFacility(t.fromId, t.toId); // the other store's screen updates live, not just the one that tapped
   store.save();
   broadcast('supply', 'pharmacy', 'dispatch', 'gov');
   res.json(t);
@@ -6021,16 +6111,15 @@ app.post('/api/deliveries/:id/status', auth, role('delivery'), async (req, res) 
         r.status = 'delivered';
         const p = d.patients.find((x) => x.id === r.patientId);
         patientOwnerUserIds(p).forEach((u) => notify(u, 'Delivered ✅', 'Your medicines have been delivered. Get well soon!'));
+        touchFacility(r.pharmacyId);
       }
     } else {
       const t = d.transfers.find((x) => x.id === del.refId);
-      if (t && t.status !== 'delivered') {
-        t.status = 'delivered';
-        const inv = d.inventory.find((i) => i.facilityId === t.toId && i.drug === t.drug);
-        if (inv) inv.qty += t.qty;
-      }
+      if (t && t.status !== 'delivered') { receiveTransfer(d, t); t.updatedAt = nowIso(); }
     }
   }
+  if (del.kind === 'transfer') { const t = d.transfers.find((x) => x.id === del.refId); if (t) touchFacility(t.fromId, t.toId); }
+  if (del.kind === 'med_order') touchFacility(d.medOrders.find((x) => x.id === del.refId)?.pharmacyId);
   store.save();
   broadcast('dispatch', 'prescriptions', 'pharmacy', 'supply');
   const { otp: _code, ...job } = del;
@@ -6040,10 +6129,25 @@ app.post('/api/deliveries/:id/status', auth, role('delivery'), async (req, res) 
 // ---------- government command center ----------
 // Corridor endpoints are free text like "Patna, Bihar" — the same "mentions my district" rule the screen used.
 const corridorTouches = (c, district) => Boolean(district) && (String(c.from || '').includes(district) || String(c.to || '').includes(district));
+// What an official may see and act on — one rule for every command-centre route. Anything that isn't explicitly
+// national or state is treated as a district officer, the narrowest scope, so a missing scope never widens access.
+function govScope(user) {
+  const region = user.region || {};
+  if (user.scope === 'national') return { level: 'national', inScope: () => true, touches: () => true };
+  if (user.scope === 'state') {
+    return { level: 'state', state: region.state, district: region.district,
+      inScope: (x) => Boolean(region.state) && x?.state === region.state, touches: (c) => corridorTouches(c, region.state) };
+  }
+  return { level: 'district', state: region.state, district: region.district,
+    // District names repeat across states (two Aurangabads), so the state must match too when both are known.
+    inScope: (x) => Boolean(region.district) && x?.district === region.district && (!x.state || !region.state || x.state === region.state),
+    touches: (c) => corridorTouches(c, region.district) };
+}
 app.get('/api/gov/overview', auth, role('official'), (req, res) => {
   const d = db();
-  const scoped = req.user.scope !== 'national';
-  const inScope = (x) => !scoped || x.district === req.user.region.district;
+  const sc = govScope(req.user);
+  const scoped = sc.level !== 'national';
+  const { inScope } = sc;
   const hospitals = d.facilities.filter((f) => f.type === 'hospital').filter(inScope);
   const capacity = hospitals.map((h) => {
     const beds = d.beds.filter((b) => b.facilityId === h.id);
@@ -6053,21 +6157,21 @@ app.get('/api/gov/overview', auth, role('official'), (req, res) => {
   const pharmaciesInScope = new Set(d.facilities.filter((f) => f.type === 'pharmacy' && inScope(f)).map((f) => f.id));
   const stockDays = d.inventory.filter((i) => pharmaciesInScope.has(i.facilityId)).map((i) => ({ drug: i.drug, facility: facilityName(i.facilityId), qty: i.qty, daysLeft: Math.round(i.qty / Math.max(1, i.safetyStock / 7)) })).filter((s) => s.daysLeft < 14).sort((a, b) => a.daysLeft - b.daysLeft);
   res.json({
-    scope: scoped ? { level: 'district', district: req.user.region.district, state: req.user.region.state } : { level: 'national' },
+    scope: scoped ? { level: sc.level, district: sc.district || null, state: sc.state || null } : { level: 'national' },
     totals: {
       freeBeds: capacity.reduce((s, c) => s + c.freeBeds, 0),
       icuFree: capacity.reduce((s, c) => s + c.icuFree, 0),
       // Real counts in every mode (the demo used to pad these with regional illustration figures).
-      doctorsOnline: d.doctors.filter((x) => x.verified && availabilityOf(x, { facilities: d.facilities }).available && (!scoped || x.state === req.user.region.state)).length,
+      doctorsOnline: d.doctors.filter((x) => x.verified && availabilityOf(x, { facilities: d.facilities }).available && (!scoped || x.state === sc.state)).length,
       kiosksOnline: d.facilities.filter((f) => f.type === 'kiosk' && f.status === 'online' && inScope(f)).length,
       consultsToday: d.consults.filter((c) => istDay(c.createdAt) === istDay(nowIso()) && (!scoped || inScope(patientById(c.patientId) || {}))).length,
       openAlerts: d.alerts.filter((a) => a.status === 'open' && inScope(a)).length,
     },
-    regions: scoped ? null : d.regions,
+    regions: !scoped ? d.regions : sc.level === 'state' ? d.regions.filter((r) => r.state === sc.state) : null,
     capacity,
     alerts: d.alerts.filter(inScope),
     // Scoped on the server (the browser used to receive every region's corridors and filter them itself).
-    corridors: scoped ? d.corridors.filter((c) => corridorTouches(c, req.user.region?.district)) : d.corridors,
+    corridors: scoped ? d.corridors.filter(sc.touches) : d.corridors,
     shortages: stockDays,
     transfersInTransit: d.transfers.filter((t) => (['accepted', 'dispatched'].includes(t.status) || (t.status === 'requested' && t.orderedBy)) && (!scoped || inScope(facilityById(t.fromId) || {}) || inScope(facilityById(t.toId) || {}))).map((t) => ({ ...t, fromName: facilityName(t.fromId), toName: facilityName(t.toId) })),
     outbreakTrend: outbreakTrend(),
@@ -6085,13 +6189,15 @@ app.post('/api/alerts/:id/:action', auth, role('official'), (req, res) => {
   const d = db();
   const a = d.alerts.find((x) => x.id === req.params.id);
   if (!a) return res.status(404).json({ error: 'Alert not found.' });
-  if (req.user.scope === 'district' && a.district && a.district !== req.user.region?.district) return res.status(403).json({ error: 'This alert is outside your district.' });
-  if (req.user.scope === 'state' && a.state && a.state !== req.user.region?.state) return res.status(403).json({ error: 'This alert is outside your state.' });
+  const sc = govScope(req.user);
+  if (!sc.inScope(a)) return res.status(403).json({ error: `This alert is outside your ${sc.level}.` });
   const { action } = req.params;
   const map = { confirm: 'confirmed', dismiss: 'dismissed', resolve: 'resolved', acknowledge: 'acknowledged' };
   if (!own(map, action)) return res.status(400).json({ error: 'Unknown action.' });
-  // Confirming twice re-sent every clinical/stock notice and queued another pre-positioning transfer.
-  if (action === 'confirm' && a.status === 'confirmed') return res.status(409).json({ error: 'This alert is already confirmed.' });
+  // Allowed starting states: confirming twice (or re-opening a closed alert) re-sent every clinical/stock notice
+  // and queued another pre-positioning transfer.
+  const FROM = { acknowledge: ['open'], confirm: ['open', 'acknowledged'], dismiss: ['open', 'acknowledged'], resolve: ['open', 'acknowledged', 'confirmed'] };
+  if (!FROM[action].includes(a.status)) return res.status(409).json({ error: `This alert is already ${a.status}.` });
   a.status = map[action];
   // The log line says only what this request really did (no "pharmacies advised" when there were none).
   const did = [];
@@ -6103,7 +6209,8 @@ app.post('/api/alerts/:id/:action', auth, role('official'), (req, res) => {
     const localPharmacies = d.facilities.filter((f) => f.type === 'pharmacy' && f.verified && f.district === a.district);
     const chemists = d.users.filter((u) => u.role === 'pharmacist' && localPharmacies.some((f) => f.id === u.facilityId));
     chemists.forEach((u) => notify(u.id, 'Stock advisory', `${a.disease} confirmed in ${a.district}. Please review stock of related medicines.`, 'alert'));
-    const wh = d.facilities.find((f) => f.type === 'warehouse' && f.state === a.state);
+    // Only a verified warehouse in the state that actually holds the kits — otherwise the request can't be dispatched.
+    const wh = d.facilities.find((f) => f.type === 'warehouse' && f.verified && f.state === a.state && spareOf(d, f.id, 'Dengue NS1 rapid kit') >= 150);
     const target = localPharmacies.find((f) => f.generic) || localPharmacies[0];
     if (docs.length) did.push(`${docs.length} doctor${docs.length === 1 ? '' : 's'} notified`);
     if (chemists.length) did.push(`${chemists.length} chemist${chemists.length === 1 ? '' : 's'} sent a stock advisory`);
@@ -6124,6 +6231,8 @@ app.post('/api/corridors', auth, role('official'), (req, res) => {
   const b = req.body || {};
   const from = clean(b.from, 80); const to = clean(b.to, 80);
   if (!from || !to) return res.status(400).json({ error: 'Choose both regions.' });
+  const sc = govScope(req.user);
+  if (!sc.touches({ from, to })) return res.status(403).json({ error: `A corridor must start or end in your ${sc.level}.` });
   const c = { id: store.id('cor'), from, to, reason: clean(b.reason, 200) || 'Overflow load balancing', status: 'active', patientsRouted: 0, createdAt: nowIso(), openedBy: req.user.name };
   db().corridors.unshift(c);
   store.save();
@@ -6134,7 +6243,7 @@ app.post('/api/corridors', auth, role('official'), (req, res) => {
 app.post('/api/corridors/:id/close', auth, role('official'), (req, res) => {
   const c = db().corridors.find((x) => x.id === req.params.id);
   // A district officer acts only on corridors touching their district (same scope as what they're shown).
-  if (!c || (req.user.scope !== 'national' && !corridorTouches(c, req.user.region?.district))) return res.status(404).json({ error: 'Corridor not found.' });
+  if (!c || !govScope(req.user).touches(c)) return res.status(404).json({ error: 'Corridor not found.' });
   c.status = 'closed';
   c.closedAt = nowIso();
   store.save();
@@ -6283,6 +6392,11 @@ app.post('/api/admin/users', auth, role('super_admin'), async (req, res) => {
   if (findUserByEmail(email)) return res.status(409).json({ error: 'Email already in use.' });
   if (typeof password !== 'string' || password.length < 8 || password.length > 200) return res.status(400).json({ error: 'Set a password of at least 8 characters for the new user.' });
   if (['pharmacist', 'kiosk_operator', 'lab_tech', 'hospital_admin', 'distributor'].includes(r) && !db().facilities.some((f) => f.id === facilityId)) return res.status(400).json({ error: 'Choose the facility this person works at.' });
+  if (r === 'official') {
+    if (!['national', 'state', 'district'].includes(scope)) return res.status(400).json({ error: 'Choose the official’s scope: national, state or district.' });
+    if (scope !== 'national' && !clean(state)) return res.status(400).json({ error: 'Choose the official’s state.' });
+    if (scope === 'district' && !clean(district)) return res.status(400).json({ error: 'Choose the official’s district.' });
+  }
   const u = { id: store.id('u'), name, email, phone, role: r, facilityId: clean(facilityId, 60) || undefined, scope: ['national', 'state', 'district'].includes(scope) ? scope : undefined, status: 'active', region: { district: clean(district), state: clean(state) }, passwordHash: await bcrypt.hash(password, 10), createdAt: nowIso() };
   db().users.push(u);
   audit(req.user, 'created_user', null, 'user', `${name} (${r})`);
@@ -6487,8 +6601,10 @@ app.post('/api/capsule/open', auth, role('doctor', 'hospital_admin'), capsuleLim
 
 // 12 ★ Health Weather Forecast (officials).
 app.get('/api/gov/forecast', auth, role('official'), (req, res) => {
-  const scopeDistrict = req.user.scope !== 'national' ? req.user.region.district : null;
-  res.json({ scope: scopeDistrict || 'national', generatedAt: nowIso(), forecasts: innovations.forecast(db(), { scopeDistrict }) });
+  const sc = govScope(req.user);
+  const scopeDistrict = sc.level === 'district' ? sc.district : null;
+  const scopeState = sc.level === 'national' ? null : sc.state;
+  res.json({ scope: scopeDistrict || (sc.level === 'state' ? sc.state : 'national'), generatedAt: nowIso(), forecasts: innovations.forecast(db(), { scopeDistrict, scopeState }) });
 });
 
 // 8 ★ Kiosk Diagnostic Suite.
@@ -6893,9 +7009,11 @@ function scrubLiveArtifacts() {
   remind();
   const refills = () => { try { sweepRefills(); } catch (e) { console.error('[refills]', e); } };
   refills();
-  setInterval(() => { expireUnpaid(); expireConsents(); remind(); refills(); }, 5 * 60000).unref();
+  // Each sweep in its own try: one bad record must never stop the others — or, via uncaughtException, the server.
+  const guarded = (name, fn) => () => { try { fn(); } catch (e) { console.error(`[${name}]`, e); } };
+  setInterval(() => { guarded('expireUnpaid', expireUnpaid)(); guarded('expireConsents', expireConsents)(); remind(); refills(); }, 5 * 60000).unref();
   pruneNotifications();
-  setInterval(pruneNotifications, 6 * 3600000).unref();
+  setInterval(guarded('pruneNotifications', pruneNotifications), 6 * 3600000).unref();
   await i18n.init({ broadcast });
   const server = app.listen(PORT, () => {
     const o = otp.publicConfig();

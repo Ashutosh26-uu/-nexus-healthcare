@@ -5,7 +5,7 @@ import { Card, Button, Empty, useToast, fmtNum, fmtDate, fmtDateTime } from '../
 import { useAuth } from '../../auth';
 import { useGov, downloadCsv, alertTitle } from './shared';
 
-const scopeName = (s) => (s.level === 'national' ? 'National' : `${s.district} district`);
+const scopeName = (s) => (s.level === 'national' ? 'National' : s.level === 'state' ? `${s.state} state` : `${s.district} district`);
 const stamp = () => new Date().toISOString().slice(0, 10);
 
 const REPORTS = [
@@ -117,7 +117,7 @@ export function ReportView() {
             <h1>{r.title}</h1>
             <div className="small muted">{scopeName(data.scope)} · generated {fmtDateTime(new Date().toISOString())} · prepared for {r.audience}</div>
           </div>
-          <div className="cc-paper-seal">{data.scope.level === 'national' ? 'IN' : data.scope.district.slice(0, 3).toUpperCase()}</div>
+          <div className="cc-paper-seal">{data.scope.level === 'national' ? 'IN' : String(data.scope.level === 'state' ? data.scope.state : data.scope.district).slice(0, 3).toUpperCase()}</div>
         </header>
 
         <section className="cc-paper-summary">

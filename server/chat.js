@@ -83,7 +83,7 @@ function fallbackAnswer(message, ctx) {
   const p = ctx?.patient;
   if (p && /next|upcoming|appointment|when/.test(text) && ctx.upcoming?.length) {
     const c = ctx.upcoming[0];
-    return `Your next consult is with **${c.doctorName}** on **${new Date(c.scheduledAt).toLocaleString('en-IN', { weekday: 'long', hour: 'numeric', minute: '2-digit' })}**. You'll get a reminder about an hour before. You can find it on *Home → Upcoming*.`;
+    return `Your next consult is with **${c.doctorName}** on **${new Date(c.scheduledAt).toLocaleString('en-IN', { timeZone: process.env.APP_TZ || 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}**. You'll get a reminder about an hour before. You can find it on *Home → Upcoming*.`;
   }
   // The allergy reminder is returned separately so the fixed FAQ text can still be served translated and
   // only the catalog string (never the allergy itself) goes to a translation provider.

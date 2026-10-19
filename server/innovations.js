@@ -123,8 +123,8 @@ const DISEASES = [
   { key: 'gastro', label: 'Gastroenteritis', labRe: /widal|typhoid|stool/i, drugs: ['ORS', 'Zinc', 'Ondansetron', 'Cotrimoxazole'], symptomRe: /diarr|vomit|loose|stomach/i, weather: 0.6 },
 ];
 
-function forecast(db, { scopeDistrict } = {}) {
-  const pins = [...new Set(db.facilities.filter((f) => f.pincode && (!scopeDistrict || f.district === scopeDistrict)).map((f) => f.pincode))];
+function forecast(db, { scopeDistrict, scopeState } = {}) {
+  const pins = [...new Set(db.facilities.filter((f) => f.pincode && (!scopeDistrict || f.district === scopeDistrict) && (!scopeState || f.state === scopeState)).map((f) => f.pincode))];
   const now = Date.now();
   const recent = (iso, days) => iso && now - new Date(iso) < days * 86400000;
   const pinOfPatient = new Map(db.patients.map((p) => [p.id, p.pincode])); // once, not a patient scan per consult per pin per disease
@@ -236,9 +236,9 @@ function verifyLedger(wallet) {
    ───────────────────────────────────────────────────────────── */
 const CAPSULE_SECRET = process.env.CAPSULE_SECRET || process.env.JWT_SECRET || 'omnicare-capsule-dev';
 
-function capsuleKey(patientId) {
+const CAPSULE_EPOCH_MS = 1000 * 60 * 60 * 24 * 30; // keys rotate monthly
+function capsuleKey(patientId, epoch = Math.floor(Date.now() / CAPSULE_EPOCH_MS)) {
   // A short, time-rotating key derived from a server secret — printed inside the QR.
-  const epoch = Math.floor(Date.now() / (1000 * 60 * 60 * 24 * 30)); // rotates monthly
   return crypto.createHmac('sha256', CAPSULE_SECRET).update(`${patientId}|${epoch}`).digest('hex').slice(0, 10).toUpperCase();
 }
 
@@ -259,8 +259,12 @@ function buildCapsule(patient) {
 }
 
 function openCapsule(patient, blobB64, key) {
-  const want = Buffer.from(capsuleKey(patient.id)); const got = Buffer.from(String(key || ''));
-  if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return null;
+  // The current or the previous monthly key: a capsule printed late in a month keeps opening for at least 30 days
+  // (checking only the current key made one printed on day 29 fail the next day, when it was needed).
+  const got = Buffer.from(String(key || ''));
+  const now = Math.floor(Date.now() / CAPSULE_EPOCH_MS);
+  const ok = [now, now - 1].some((e) => { const want = Buffer.from(capsuleKey(patient.id, e)); return got.length === want.length && crypto.timingSafeEqual(got, want); });
+  if (!ok) return null;
   try {
     const raw = Buffer.from(blobB64, 'base64');
     const iv = raw.subarray(0, 12); const tag = raw.subarray(12, 28); const enc = raw.subarray(28);

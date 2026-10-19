@@ -81,7 +81,7 @@ module.exports = function registerPublicPages(app, deps) {
   };
   const free = (row) => (row ? Math.max(0, row.qty - (row.safetyStock || 0)) : 0);
 
-  function medicineView(e, origin, base) {
+  function medicineView(e, origin, base, radiusKm = medRadius()) {
     const d = db();
     const s = catalog.substitutesFor(e.name);
     const p = catalog.priceOf(e.name);
@@ -93,7 +93,7 @@ module.exports = function registerPublicPages(app, deps) {
     const names = [...new Set([e.key, e.name, ...options.map((o) => o.name)])];
     const stocked = d.facilities.filter((f) => f.type === 'pharmacy' && f.verified && names.some((n) => free(stockRow(d, f.id, n)) > 0))
       .map((f) => ({ f, km: origin ? geo.km(origin, geo.pointOf(f)) : null }));
-    const radiusKm = medRadius(req.query.radiusKm);
+
     const near = origin ? stocked.filter((x) => x.km !== null && x.km <= radiusKm).sort((a, b) => a.km - b.km) : stocked;
     // No "save X%" pitch for medicines that must not be switched at the counter (e.g. insulin).
     const best = s.noSwap ? null : options.filter((o) => o.saving > 0).sort((a, b) => b.saving - a.saving)[0] || null;
@@ -141,7 +141,7 @@ module.exports = function registerPublicPages(app, deps) {
   app.get('/api/public/medicines/:slug', pub, (req, res) => {
     const e = medIndex().bySlug.get(slugParam(req.params.slug));
     if (!e) return res.status(404).json({ error: 'We don\'t have a price for this medicine yet.' });
-    res.json(medicineView(e, originOf(req), baseUrl(req)));
+    res.json(medicineView(e, originOf(req), baseUrl(req), medRadius(req.query.radiusKm)));
   });
 
   // ---------------- lab tests & labs ----------------

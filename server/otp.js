@@ -113,7 +113,7 @@ const SUBJECTS = { consent: (c) => `${c} — approve your doctor (Nexus Healthca
 const PURPOSES = new Set(['login', 'consent', 'reset']);
 // Addresses that are not real inboxes: demo accounts (and phone-only patients' "…@patient.omnicare.in")
 // plus the reserved example/test domains. A real mail server must never send codes there.
-const DEMO_EMAIL = /@(([a-z0-9-]+\.)*(omnicare|nexushealthcare)\.in|example\.(com|org|net)|[a-z0-9.-]+\.(test|invalid|example|localhost))$/i;
+const DEMO_EMAIL = /@(([a-z0-9-]+\.)*omnicare.in|example\.(com|org|net)|[a-z0-9.-]+\.(test|invalid|example|localhost))$/i;
 const EMAIL_OK = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // only ever run on input of ≤ 254 chars (RFC 5321 limit)
 const keyFor = (purpose, target) => (purpose === 'login' ? target : `${purpose}|${target}`);
 
