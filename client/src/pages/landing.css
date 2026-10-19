@@ -1,4 +1,5 @@
-.landing { overflow-x: hidden; }
+/* `clip`, not `hidden`: hidden turns the wrapper into a scroll container and silently breaks the sticky header. */
+.landing { overflow-x: hidden; overflow-x: clip; }
 .l-container { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
 .landing .eyebrow { font-size: 0.78rem; font-weight: 700; color: var(--clay); text-transform: uppercase; letter-spacing: 0.08em; display: inline-block; margin-bottom: 10px; }
 

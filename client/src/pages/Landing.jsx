@@ -57,7 +57,8 @@ export default function Landing() {
       es.onmessage = (e) => { try { if (alive) setStats(JSON.parse(e.data)); } catch { /* ignore a bad frame */ } };
     } catch { es = null; }
     const timer = setInterval(() => { if (document.visibilityState === 'visible' && es?.readyState !== 1) load(false); }, 30000);
-    const onScroll = () => setScrolled(window.scrollY > 12);
+    // Scrolling closes the phone menu: it's a fixed panel, so otherwise it would sit over the page while the page moved.
+    const onScroll = () => { setScrolled(window.scrollY > 12); setMenu(false); };
     window.addEventListener('scroll', onScroll, { passive: true });
     // Sign-in and sign-up are the next click for most visitors — fetch their code while the page is idle.
     const warm = setTimeout(() => (window.requestIdleCallback || setTimeout)(() => { import('./Login').catch(() => {}); import('./Signup').catch(() => {}); }), 2000);
