@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Mic, MicOff, Video, VideoOff, PhoneOff, Send, Clock, CalendarClock, Pill, Star, FileText, MessageCircle, Phone, X, AlertTriangle, Check, MapPin, Building2, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Mic, MicOff, Video, VideoOff, PhoneOff, Send, Clock, CalendarClock, Pill, Star, FileText, MessageCircle, Phone, X, AlertTriangle, Check, MapPin, Building2, RefreshCw, Lock } from 'lucide-react';
 import { api } from '../../api';
+import { useE2EChat, E2EBar } from '../../components/E2EChat';
 import { useCall } from '../../components/useCall';
 import CallMedia from '../../components/CallMedia';
 import { useLive } from '../../live';
@@ -276,6 +277,7 @@ function ChatPanel({ c, setData, title, hint, tall }) {
   const listRef = useRef(null);
   const toast = useToast();
   const msgs = c.messages || [];
+  const e2e = useE2EChat(c.id, c.messages);
 
   useEffect(() => { const el = listRef.current; if (el) el.scrollTop = el.scrollHeight; }, [msgs.length]);
 
@@ -288,7 +290,7 @@ function ChatPanel({ c, setData, title, hint, tall }) {
     setText('');
     setSending(true);
     try {
-      const messages = await api.post(`/consults/${c.id}/messages`, { text: t });
+      const messages = await api.post(`/consults/${c.id}/messages`, await e2e.bodyFor(t));
       setData((d) => ({ ...d, messages }));
     } catch (err) {
       setData((d) => ({ ...d, messages: (d.messages || []).filter((m) => m.id !== temp.id) }));
@@ -303,11 +305,12 @@ function ChatPanel({ c, setData, title, hint, tall }) {
         <MessageCircle size={18} />
         <div className="grow"><div className="strong">{title}</div>{hint && <div className="tiny muted">{hint}</div>}</div>
       </div>
+      <E2EBar e2e={e2e} />
       <div className="pt-chat-list" ref={listRef} aria-live="polite">
         {msgs.length === 0 && <p className="small muted center pt-chat-empty">No messages yet. Say hello, or describe anything you&apos;d like the doctor to know.</p>}
         {msgs.map((m) => (
           <div key={m.id} className={cx('pt-msg', m.from === 'patient' ? 'me' : 'them', m.pending && 'pending')}>
-            <div className="pt-bubble" translate="no">{m.text}</div>
+            <div className="pt-bubble" translate="no">{m.e2e && <Lock size={11} className="msg-lock" aria-label="End-to-end encrypted" />}{m.pending ? m.text : e2e.textOf(m)}</div>
             <div className="tiny muted">{m.from === 'doctor' ? `${m.name} · ` : ''}{m.pending ? 'Sending…' : fmtTime(m.at)}</div>
           </div>
         ))}

@@ -91,7 +91,7 @@ const istDay = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: AP
 const ageOf = (dob) => (dob ? Math.floor((Date.now() - new Date(dob)) / (365.25 * 86400000)) : null);
 // tokenVersion is session-revocation state — never part of what a screen (or the admin list) sees.
 // The two-step login secret and backup-code hashes never leave the server — screens only learn whether it's on.
-const publicUser = ({ passwordHash: _h, tokenVersion: _tv, aadhaarRefHash: _ar, mfa: m, ...u }) => ({ ...u, mfaEnabled: Boolean(m?.enabledAt) });
+const publicUser = ({ passwordHash: _h, tokenVersion: _tv, aadhaarRefHash: _ar, mfa: m, e2e: k, ...u }) => ({ ...u, mfaEnabled: Boolean(m?.enabledAt), e2eReady: Boolean(k?.publicKey) });
 
 function sign(user) {
   return jwt.sign({ sub: user.id, role: user.role, tv: user.tokenVersion || 0 }, JWT_SECRET, { algorithm: 'HS256', expiresIn: '7d' });
@@ -1808,17 +1808,80 @@ app.post('/api/consults/:id/messages', auth, (req, res) => {
   if (!c) return res.status(404).json({ error: 'Consult not found.' });
   if (!canAccessConsult(req.user, c)) return res.status(403).json({ error: 'You don\'t have access to this consult.' });
   if (['cancelled', 'expired'].includes(c.status)) return res.status(409).json({ error: 'This visit is closed — messages can no longer be sent.' });
-  const text = String(req.body?.text || '').slice(0, 2000).trim();
-  if (!text) return res.status(400).json({ error: 'Message is empty.' });
+  // End-to-end encrypted messages arrive sealed (the server can't read them); plain ones only from the
+  // kiosk or when someone in the chat hasn't set up encrypted chat yet.
+  const sealedMsg = req.body?.e2e !== undefined ? cleanE2eMessage(req.body.e2e, c) : null;
+  if (req.body?.e2e !== undefined && !sealedMsg) return res.status(400).json({ error: 'This encrypted message is malformed. Please reload and try again.' });
+  const text = sealedMsg ? '' : String(req.body?.text || '').slice(0, 2000).trim();
+  if (!text && !sealedMsg) return res.status(400).json({ error: 'Message is empty.' });
   // The whole thread is stored on the consult and returned on every post/poll — a cap keeps one visit from
   // growing without limit (≈1 MB of text at most).
   c.messages = c.messages || [];
   if (c.messages.length >= CONSULT_MESSAGES_MAX) return res.status(409).json({ error: 'This chat is full. Please continue on a call, or book a follow-up.' });
-  c.messages.push({ id: store.id('m'), from: req.user.role === 'doctor' ? 'doctor' : 'patient', name: req.user.name, text, at: nowIso() });
+  c.messages.push({ id: store.id('m'), from: req.user.role === 'doctor' ? 'doctor' : 'patient', name: req.user.name, ...(sealedMsg ? { e2e: sealedMsg } : { text }), at: nowIso() });
   touchConsultParties(c);
   store.save();
   broadcast(`consult:${c.id}`);
   res.json(c.messages);
+});
+
+// ---------- end-to-end encrypted consult chat ----------
+// The server only relays and stores: each person's public key, their private key LOCKED with a passphrase
+// only they know (so a new device can restore it), and sealed messages. Kiosk consults run on a shared
+// screen read aloud by the operator, so they stay out of end-to-end chat.
+const B64U = /^[A-Za-z0-9_-]+$/;
+const b64u = (v, min, max) => typeof v === 'string' && v.length >= min && v.length <= max && B64U.test(v);
+const okJwk = (k) => k && typeof k === 'object' && k.kty === 'EC' && k.crv === 'P-256' && b64u(k.x, 43, 43) && b64u(k.y, 43, 43);
+const jwkOf = (k) => ({ kty: 'EC', crv: 'P-256', x: k.x, y: k.y });
+const e2eEnabledFor = (c) => !c.kioskId;
+function e2eParticipants(c, requester) {
+  const p = patientById(c.patientId);
+  const ids = new Set([doctorById(c.doctorId)?.userId, ...(p ? patientOwnerUserIds(p) : [])].filter(Boolean));
+  // A clinic owner answering for one of their doctors is in the conversation too.
+  if (requester && requester.role === 'doctor') ids.add(requester.id);
+  return [...ids].map((id) => userById(id)).filter((u) => u && u.status !== 'deleted');
+}
+function cleanE2eMessage(m, c) {
+  if (!e2eEnabledFor(c) || !m || typeof m !== 'object' || m.v !== 1 || !b64u(m.iv, 16, 16) || !b64u(m.ct, 22, 12000) || !Array.isArray(m.keys) || !m.keys.length || m.keys.length > 12) return null;
+  const allowed = new Set(e2eParticipants(c).map((u) => u.id));
+  const keys = [];
+  for (const k of m.keys) {
+    if (!k || typeof k.uid !== 'string' || !allowed.has(k.uid) || !okJwk(k.epk) || !b64u(k.iv, 16, 16) || !b64u(k.wk, 40, 80)) return null;
+    keys.push({ uid: k.uid, epk: jwkOf(k.epk), iv: k.iv, wk: k.wk });
+  }
+  return { v: 1, iv: m.iv, ct: m.ct, keys };
+}
+
+app.get('/api/e2e/me', auth, (req, res) => {
+  const k = req.user.e2e;
+  res.json(k?.publicKey ? { publicKey: k.publicKey, backup: k.backup, createdAt: k.createdAt } : { publicKey: null });
+});
+
+// Set up (or, after a forgotten passphrase, reset) this person's chat key. Reset makes earlier encrypted
+// messages unreadable for them — said plainly in the app before they confirm.
+app.put('/api/e2e/me', auth, passwordChangeLimiter, (req, res) => {
+  if (!['patient', 'caregiver', 'doctor'].includes(req.user.role)) return res.status(403).json({ error: 'Encrypted chat is for patients, caregivers and doctors.' });
+  const { publicKey, backup, reset } = req.body || {};
+  const b = backup || {};
+  if (!okJwk(publicKey) || b.v !== 1 || b.kdf !== 'PBKDF2-SHA256' || !Number.isInteger(b.iter) || b.iter < 300000 || b.iter > 5000000
+    || !b64u(b.salt, 22, 22) || !b64u(b.iv, 16, 16) || !b64u(b.ct, 100, 400)) return res.status(400).json({ error: 'That key setup is malformed. Please try again.' });
+  if (req.user.e2e?.publicKey && reset !== true) return res.status(409).json({ error: 'Encrypted chat is already set up on this account. Unlock it with your passphrase.' });
+  const wasReset = Boolean(req.user.e2e?.publicKey);
+  req.user.e2e = { publicKey: jwkOf(publicKey), backup: { v: 1, kdf: b.kdf, iter: b.iter, salt: b.salt, iv: b.iv, ct: b.ct }, createdAt: nowIso() };
+  audit(req.user, wasReset ? 'e2e_key_reset' : 'e2e_key_created', null, 'account', 'Encrypted chat key');
+  if (wasReset) notify(req.user.id, 'Encrypted chat key reset', 'Your encrypted chat was reset with a new passphrase. Messages sent before this can no longer be opened. If this wasn\'t you, change your password now.');
+  store.save();
+  res.json({ ok: true });
+});
+
+app.get('/api/consults/:id/e2e', auth, (req, res) => {
+  const c = db().consults.find((x) => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: 'Consult not found.' });
+  if (!canAccessConsult(req.user, c)) return res.status(403).json({ error: 'You don\'t have access to this consult.' });
+  res.json({
+    enabled: e2eEnabledFor(c),
+    participants: e2eParticipants(c, req.user).map((u) => ({ userId: u.id, name: u.name, role: u.role, publicKey: u.e2e?.publicKey || null })),
+  });
 });
 
 app.post('/api/consults/:id/cancel', auth, (req, res) => {

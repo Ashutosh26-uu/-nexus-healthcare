@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Mic, MicOff, Video, VideoOff, PhoneOff, Send, Languages, Sparkles, Activity, History, FlaskConical, ClipboardList, Signal, Monitor, Play, Maximize2, Building2, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Mic, MicOff, Video, VideoOff, PhoneOff, Send, Languages, Sparkles, Activity, History, FlaskConical, ClipboardList, Signal, Monitor, Play, Maximize2, Building2, RefreshCw, Lock } from 'lucide-react';
 import { api } from '../../api';
+import { useE2EChat, E2EBar } from '../../components/E2EChat';
 import { useCall } from '../../components/useCall';
 import CallMedia from '../../components/CallMedia';
 import { useLive } from '../../live';
@@ -111,13 +112,14 @@ function ChatPanel({ consult, onSent }) {
   const [run, busy] = useAction();
   const endRef = useRef(null);
   const msgs = consult.messages || [];
+  const e2e = useE2EChat(consult.id, consult.messages);
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'nearest' }); }, [msgs.length]);
   const send = (e) => {
     e.preventDefault();
     const t = text.trim();
     if (!t) return;
     run('send', async () => {
-      await api.post(`/consults/${consult.id}/messages`, { text: t });
+      await api.post(`/consults/${consult.id}/messages`, await e2e.bodyFor(t));
       setText('');
       onSent();
     });
@@ -126,11 +128,12 @@ function ChatPanel({ consult, onSent }) {
   return (
     <div className="card dr-chat">
       <div className="card-head"><h4>Chat</h4><span className="tiny muted">{consult.kioskName ? 'Operator reads messages aloud at the kiosk' : 'Visible to the patient'}</span></div>
+      <E2EBar e2e={e2e} compact />
       <div className="dr-chat-list">
         {msgs.length === 0 && <p className="tiny muted center" style={{ padding: '18px 8px' }}>No messages yet. Use chat for links, instructions or when the audio drops.</p>}
         {msgs.map((m) => (
           <div key={m.id} className={cx('dr-msg', m.from === 'doctor' ? 'me' : 'them')}>
-            <div translate="no">{m.text}</div>
+            <div translate="no">{m.e2e && <Lock size={11} className="msg-lock" aria-label="End-to-end encrypted" />}{e2e.textOf(m)}</div>
             <span>{m.from === 'doctor' ? 'You' : m.name} · {fmtTime(m.at)}</span>
           </div>
         ))}

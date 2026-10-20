@@ -111,7 +111,7 @@ function InCall({ c, t, vitals, onSend }) {
           <h3>Messages</h3>
           <div className="k-msgs">
             {(c.messages || []).length === 0 && <p className="k-fine">Messages from the doctor appear here.</p>}
-            {(c.messages || []).map((m) => <div key={m.id} translate="no" className={cx('k-msg', m.from === 'doctor' ? 'doc' : 'me')}>{m.text}</div>)}
+            {(c.messages || []).map((m) => <div key={m.id} translate="no" className={cx('k-msg', m.from === 'doctor' ? 'doc' : 'me')}>{m.e2e ? 'Encrypted message' : m.text}</div>)}
             <div ref={endRef} />
           </div>
           <form onSubmit={send} className="k-msgform">

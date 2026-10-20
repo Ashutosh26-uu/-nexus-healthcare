@@ -497,3 +497,10 @@ table { max-width: 100%; }
 .logo-text { display: flex; flex-direction: column; line-height: 1.1; }
 .logo-name { font-family: var(--serif); font-weight: 700; font-size: 1.22rem; letter-spacing: -0.02em; white-space: nowrap; }
 .logo-sub { font-size: 0.72rem; color: var(--ink-3); font-weight: 600; letter-spacing: 0.02em; }
+
+/* End-to-end chat status line (consult chat, patient and doctor). */
+.e2e-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 0.8rem; line-height: 1.35; color: var(--ink-2); background: var(--paper-2); border-bottom: 1px solid var(--line); }
+.e2e-bar.ok { color: var(--green-ink); background: var(--green-soft); }
+.e2e-bar svg { flex: none; }
+.e2e-bar .btn { flex: none; }
+.msg-lock { display: inline-flex; vertical-align: -1px; margin-inline-end: 3px; opacity: 0.7; }

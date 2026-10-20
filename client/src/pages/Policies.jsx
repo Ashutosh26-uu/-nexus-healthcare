@@ -82,7 +82,7 @@ export function PrivacyPolicy() {
         <p>We do not sell personal data and we do not share it with advertisers. These providers process data for us under their own security commitments:</p>
         <ul>
           <li><strong>Zoho Catalyst</strong> runs the application (India).</li>
-          <li><strong>Neon</strong> hosts our database, encrypted at rest, in its Singapore region.</li>
+          <li><strong>Neon</strong> hosts our database in its Singapore region. It only ever holds data we have already encrypted.</li>
           <li>An <strong>email delivery service</strong> sends your one-time sign-in codes and notifications.</li>
           <li><strong>Razorpay</strong>, only if card or net-banking payments are switched on for the network — it then handles those payments on its own secure pages.</li>
           <li>Your <strong>browser’s speech service</strong> when you use voice input, as described above.</li>
@@ -110,7 +110,7 @@ export function PrivacyPolicy() {
         <p>Children use Sehatra through a parent’s or caregiver’s account, who adds them as a family member and manages consent on their behalf.</p>
 
         <h2>9. Security</h2>
-        <p>Everything travels over HTTPS. Passwords are hashed, sign-in codes expire, requests are rate-limited, access is role-based and logged, and the database is encrypted at rest by our provider. No system is perfectly secure; if we ever learn of a breach that affects you, we will tell you and the authorities as the law requires.</p>
+        <p>Everything travels over HTTPS. Every record and upload is encrypted by us (AES-256) before it is stored, with a key kept outside the database, on top of our database provider's own encryption. Chat messages with your doctor are end-to-end encrypted once everyone in the chat turns it on: they are locked on your device and only the people in that chat can open them — not Sehatra, and not our administrators. Video and audio calls are encrypted end to end by your browser. Passwords are hashed, sign-in codes expire, requests are rate-limited, access is role-based and logged. No system is perfectly secure; if we ever learn of a breach that affects you, we will tell you and the authorities as the law requires.</p>
 
         <h2>10. Changes</h2>
         <p>When this policy changes, we update the date at the top and, for significant changes, tell you in the app. This policy applies alongside the <Link to="/cookies">cookie policy</Link>.</p>
