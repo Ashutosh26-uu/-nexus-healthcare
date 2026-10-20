@@ -30,3 +30,6 @@ Thumbs.db
 
 # Local-only credentials (never commit)
 .secrets/
+
+# Catalyst CLI state for the redirect app (copied from catalyst-build at deploy time)
+catalyst-redirect/.catalystrc

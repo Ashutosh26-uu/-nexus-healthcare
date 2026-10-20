@@ -1,0 +1,8 @@
+{
+  "appsail": [
+    {
+      "source": ".",
+      "name": "nexus-healthcare"
+    }
+  ]
+}

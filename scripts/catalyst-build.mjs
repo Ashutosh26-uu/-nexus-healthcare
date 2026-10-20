@@ -34,7 +34,7 @@ run('npm install --omit=dev --no-audit --no-fund', join(out, 'server'));
 
 const serverPkg = JSON.parse(readFileSync(join(root, 'server', 'package.json'), 'utf8'));
 writeFileSync(join(out, 'package.json'), JSON.stringify({
-  name: 'nexus-healthcare-appsail', version: serverPkg.version, private: true,
+  name: 'sehatra-appsail', version: serverPkg.version, private: true,
   scripts: { start: 'node server/index.js' }, engines: { node: '>=22' },
 }, null, 2));
 
