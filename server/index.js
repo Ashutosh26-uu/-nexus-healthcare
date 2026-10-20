@@ -65,7 +65,10 @@ app.use((req, _res, next) => requestCtx.run({ affected: new Set(), userId: null 
 app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
 // Throttle credential and code endpoints against brute force (OTP has its own per-target limits too).
-const loginLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 10, key: (r) => String(r.body?.identifier ?? '').slice(0, 160).toLowerCase(), message: 'Too many sign-in attempts. Please wait a few minutes and try again.' });
+// Limiter keys match how the route normalises the identifier (trim → slice → lower-case). Without the trim,
+// an attacker could add trailing spaces to get a fresh limiter bucket per request and slip past the cap.
+const limitKey = (v) => String(v ?? '').trim().slice(0, 160).toLowerCase();
+const loginLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 10, key: (r) => limitKey(r.body?.identifier), message: 'Too many sign-in attempts. Please wait a few minutes and try again.' });
 // The per-account limit alone lets one address spray a password across thousands of accounts (a new key per
 // identifier). Cap sign-ins per network too — generous enough for a clinic of staff behind one NAT.
 const loginIpLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 100, message: 'Too many sign-in attempts from this network. Please wait a few minutes and try again.' });
@@ -81,7 +84,7 @@ setInterval(() => { for (const k of loginFails.keys()) { const r = recentFails(k
 const publicLimiter = security.rateLimit({ windowMs: 60000, max: 120, message: 'Too many requests. Please wait a moment.' });
 const otpLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 20, message: 'Too many code requests. Please wait a while and try again.' });
 // Defence in depth on code checks (otp.js also caps wrong attempts per code): per ip + target / patient.
-const otpVerifyLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 20, key: (r) => String(r.body?.target ?? r.body?.patientId ?? '').slice(0, 160).toLowerCase(), message: 'Too many attempts. Please wait a few minutes and request a new code.' });
+const otpVerifyLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 20, key: (r) => limitKey(r.body?.target ?? r.body?.patientId), message: 'Too many attempts. Please wait a few minutes and request a new code.' });
 
 // ---------- helpers ----------
 const db = () => store.get();
@@ -232,6 +235,16 @@ function flushSse() {
     c.pending.clear();
   }
   sseDirty.clear();
+}
+
+// Account-security changes (two-step login, chat key, password, deletion) are told to the owner in the app AND
+// by email: someone holding a stolen session can read and dismiss in-app notices, but not the owner's inbox.
+function securityAlert(user, title, body) {
+  if (!user) return;
+  notify(user.id, title, body);
+  if (!user.email) return;
+  const text = `${body}\n\nIf this was you, there's nothing to do.\nIf it wasn't, change your password now (Sign in → Forgot password) and use "Sign out of all devices" from your account menu.\n\n— Sehatra security`;
+  otp.sendMail({ to: user.email, subject: `Sehatra security alert: ${title}`, text }).catch(() => {});
 }
 
 function audit(user, action, patientId, recordType, reason) {
@@ -1088,8 +1101,8 @@ app.post('/api/auth/mfa/backup-codes', auth, passwordChangeLimiter, (req, res) =
 // 2) POST …/confirm { email, code, password } sets the new password on the one account behind that email,
 //    so it applies in every portal at once; tokenVersion++ signs out all other devices, and this device
 //    gets a fresh token.
-const resetLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 10, key: (r) => `${r.ip}|${String(r.body?.email || '').slice(0, 160).toLowerCase()}`, message: 'Too many requests. Please wait a while and try again.' });
-const resetVerifyLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 20, key: (r) => String(r.body?.email || '').slice(0, 160).toLowerCase(), message: 'Too many attempts. Please wait a few minutes and request a new code.' });
+const resetLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 10, key: (r) => `${r.ip}|${limitKey(r.body?.email)}`, message: 'Too many requests. Please wait a while and try again.' });
+const resetVerifyLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 20, key: (r) => limitKey(r.body?.email), message: 'Too many attempts. Please wait a few minutes and request a new code.' });
 
 app.post('/api/auth/password-reset/request', resetLimiter, async (req, res) => {
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase().slice(0, 160) : '';
@@ -3704,6 +3717,9 @@ async function erasePatient(p, { by = 'system' } = {}) {
   drop('monitorAlerts', mine);
   drop('consents', mine);
   drop('careTransfers', mine);
+  // Ratings a patient left: keep the star score so doctors' averages stay honest, but strip everything that
+  // points back to the person (their partial name, the free-text note, and the passport/consult ids).
+  for (const r of d.reviews || []) if (mine(r)) { delete r.name; delete r.text; delete r.consultId; r.patientId = null; }
   for (const pl of d.carePlans || []) if (mine(pl) && !['ended', 'cancelled', 'expired'].includes(pl.status)) { pl.status = 'ended'; pl.endedAt = nowIso(); pl.endReason = 'Account deleted'; }
   for (const r of d.prescriptions || []) if (mine(r)) { r.address = null; r.paperFileId = null; }
   for (const o of d.medOrders || []) if (mine(o)) { o.address = null; o.rxFileId = null; o.note = ''; }
@@ -7452,7 +7468,7 @@ app.post('/api/admin/verify/:kind/:id', auth, role('super_admin'), (req, res) =>
     doc.verified = approve;
     const u = d.users.find((x) => x.id === doc.userId);
     // Self-signed-up doctors keep access so they can fix their profile and resubmit.
-    if (u) u.status = approve || doc.selfApplied ? 'active' : 'suspended';
+    if (u) { const next = approve || doc.selfApplied ? 'active' : 'suspended'; if (next !== 'active' && u.status === 'active') u.tokenVersion = (u.tokenVersion || 0) + 1; u.status = next; }
     Object.assign(doc, regCheck);
     doc.verificationNote = approve ? `Registration ${doc.regNo} checked on the official register by ${req.user.name}` : clean(req.body?.note, 300) || 'Rejected';
     if (u) notify(u.id, approve ? 'You\'re verified — welcome aboard 🎉' : 'Application update', approve ? (doc.engagement === 'eclinic_partner' ? 'Your E-Clinic partner account is active. Go online whenever you\'re free to start taking consults.' : 'Your account is active.') : doc.verificationNote);
@@ -7467,6 +7483,7 @@ app.post('/api/admin/verify/:kind/:id', auth, role('super_admin'), (req, res) =>
     if (f.ownerDoctorId) { const owner = d.doctors.find((x) => x.id === f.ownerDoctorId); if (owner?.userId) notify(owner.userId, approve ? `${f.name} is verified 🎉` : 'Clinic application update',       approve ? 'Your clinic is verified. Each listed doctor goes live once our team checks their registration.' : f.verificationNote); }
     // Self-applied facilities come with an owner account that unlocks only once the facility is verified.
     d.users.filter((x) => x.facilityId === f.id && x.applicationRef && x.status !== 'suspended').forEach((x) => {
+      if (!approve && x.status === 'active') x.tokenVersion = (x.tokenVersion || 0) + 1; // a rejected account's live sessions end
       x.status = approve ? 'active' : 'pending';
       notify(x.id, approve ? `${f.name} is live on Sehatra 🎉` : 'Application update', approve ? 'Your facility is verified and visible to the network. Sign in to set it up.' : f.verificationNote);
     });
@@ -7509,8 +7526,8 @@ app.put('/api/admin/users/:id/status', auth, role('super_admin'), (req, res) => 
   if (u.status === 'deleted') return res.status(409).json({ error: 'This account was erased at the owner\'s request and can\'t be reactivated.' });
   const status = req.body?.status;
   if (!['active', 'suspended', 'pending'].includes(status)) return res.status(400).json({ error: 'Status must be active, suspended or pending.' });
+  if (['suspended', 'pending'].includes(status) && u.status === 'active') u.tokenVersion = (u.tokenVersion || 0) + 1; // moving off active ends their open sessions everywhere
   u.status = status;
-  if (status === 'suspended') u.tokenVersion = (u.tokenVersion || 0) + 1; // ends their open sessions on every device
   audit(req.user, `user_${status}`, null, 'user', u.name);
   store.save();
   broadcast('admin', 'audit');

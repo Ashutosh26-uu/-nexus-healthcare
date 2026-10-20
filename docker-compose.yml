@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
     env_file: .env.production
     environment:
-      DATABASE_URL: postgres://nexus:${POSTGRES_PASSWORD:-change-me}@db:5432/nexus
+      DATABASE_URL: postgres://nexus:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD to a long random password}@db:5432/nexus
     volumes:
       - app-data:/app/server/data
     depends_on:
@@ -21,7 +21,7 @@ services:
     environment:
       POSTGRES_USER: nexus
       POSTGRES_DB: nexus
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD to a long random password}
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:

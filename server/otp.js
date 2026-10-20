@@ -289,6 +289,24 @@ async function burn(adapter, target, row) {
   });
 }
 
+// A hard daily ceiling on wrong guesses per address, across every code and purpose. The per-code limit
+// (MAX_ATTEMPTS) plus the resend cap already bound an hour; this stops someone requesting code after code
+// all day to grind through the space (for a patient the code is the only factor). Resets on a correct code
+// and at the UTC day boundary; in memory, which is enough — a restart only makes it stricter.
+const DAILY_FAIL_MAX = Number(process.env.OTP_DAILY_FAIL_MAX || 25);
+const dailyFails = new Map(); // plainTarget → { day, n }
+const dayNow = () => Math.floor(Date.now() / 86400000);
+function dailyGuard(plainTarget) {
+  const e = dailyFails.get(plainTarget);
+  if (e && e.day === dayNow() && e.n >= DAILY_FAIL_MAX) throw new OtpError('Too many incorrect codes today. Please try again tomorrow, or contact support.', 429);
+}
+function dailyFail(plainTarget) {
+  const d = dayNow();
+  const e = dailyFails.get(plainTarget);
+  dailyFails.set(plainTarget, e && e.day === d ? { day: d, n: e.n + 1 } : { day: d, n: 1 });
+  if (dailyFails.size > 50000) dailyFails.delete(dailyFails.keys().next().value);
+}
+
 async function verifyCode({ target: given, code, purpose = 'login' }) {
   const adapter = store.adapter();
   if (!PURPOSES.has(purpose)) throw new OtpError('Invalid code purpose.');
@@ -297,6 +315,7 @@ async function verifyCode({ target: given, code, purpose = 'login' }) {
   const raw = String(given || '').trim();
   const plainTarget = !raw ? '' : raw.includes('@') ? raw.toLowerCase() : (normalizePhone(raw) || raw);
   const target = plainTarget ? keyFor(purpose, plainTarget) : null;
+  if (plainTarget) dailyGuard(plainTarget);
   const row = target ? await adapter.otpGet(target) : null;
   const clean = String(code || '').replace(/\D/g, '');
   if (!row) throw new OtpError('Please request a new code.');
@@ -319,9 +338,11 @@ async function verifyCode({ target: given, code, purpose = 'login' }) {
     ok = a.length === b.length && crypto.timingSafeEqual(a, b);
   }
   if (!ok) {
+    if (plainTarget) dailyFail(plainTarget);
     const left = MAX_ATTEMPTS - used;
     throw new OtpError(left > 0 ? `That code isn't right. ${left} attempt${left === 1 ? '' : 's'} left.` : 'Too many wrong attempts. Please request a new code.');
   }
+  dailyFails.delete(plainTarget);
   await adapter.otpDelete(target);
   return { target: plainTarget, channel: row.channel };
 }
