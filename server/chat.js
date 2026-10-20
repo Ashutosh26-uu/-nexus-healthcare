@@ -1,7 +1,9 @@
 // "Saathi" — the patient help assistant behind the website chat bubble.
-// Streams from Claude when ANTHROPIC_API_KEY is set (with no personal health data — see genericContext);
-// otherwise falls back to a built-in rule-based assistant so the POC works fully offline.
+// Health questions go to DxGPT when DXGPT_API_KEY is set (see dxgpt.js); questions about using the app get the
+// built-in answers below. Claude is used instead when ANTHROPIC_API_KEY is set. Neither ever receives the
+// person's record — only what they typed. Anything failing falls back to the built-in assistant.
 const Anthropic = require('@anthropic-ai/sdk');
+const dxgpt = require('./dxgpt');
 const i18n = require('./i18n');
 
 // The real support contact, only if the operator configured one (SUPPORT_PHONE / SUPPORT_EMAIL) — never a
@@ -49,7 +51,9 @@ function genericContext(ctx) {
 const NO_MATCH = `I'm not completely sure about that one. I can help with booking doctors, your Health Passport, medicines, consent and privacy, kiosks, or general health questions. If it's about symptoms, try **Check symptoms** in your dashboard — or ${SUPPORT}.`;
 const ALLERGY_NOTE = '⚠️ Just a reminder: your Health Passport lists an allergy to {0}. Always mention it to the doctor or pharmacist.';
 const FAQ = [
-  { k: ['book', 'appointment', 'consult', 'see a doctor', 'doctor'], a: "To talk to a doctor, open **Find a doctor**, pick a verified doctor and choose a **video consult** or a **clinic visit** at a time that suits you. Doctors who are available right now are shown first.\n\nTip: run **Check symptoms** first — it helps match you with the right kind of doctor and shares your notes so you don't repeat yourself." },
+  { k: ['cancel', 'reschedule', 'postpone', 'change my appointment', 'change the time', 'refund'], a: "To cancel or move a visit, open **Follow-ups** (or the visit from **Home**) and tap **Reschedule** or **Cancel**. If you paid online and cancel in time, the refund goes back to the same payment method. If the doctor is running late, you'll see it on the visit card." },
+  { k: ['lab test', 'blood test', 'cbc', 'test price', 'pathology', 'x-ray', 'ultrasound'], a: "Open **Lab tests** to compare prices, report times and home sample collection at verified labs near you — prices are shown before you book. You pay a small advance online and the rest at the lab, and the report appears in the app as soon as the lab uploads it." },
+  { k: ['book', 'appointment', 'consult', 'see a doctor', 'find a doctor'], a: "To talk to a doctor, open **Find a doctor**, pick a verified doctor and choose a **video consult** or a **clinic visit** at a time that suits you. Doctors who are available right now are shown first.\n\nTip: run **Check symptoms** first — it helps match you with the right kind of doctor and shares your notes so you don't repeat yourself." },
   { k: ['passport', 'health id', 'abha', 'aadhaar', 'register', 'sign up', 'signup', 'account'], a: "Your **Health Passport** is one secure ID for all your records. To create one: tap **Get started**, enter your email, type the one-time code we send there, and add basics like blood group and allergies. You can add your ABHA number too, and verify your Aadhaar if you want to. You'll get a QR health card for emergencies." },
   { k: ['otp', 'login', 'log in', 'password', 'sign in'], a: "Sign in with your **email and a one-time code** sent to your inbox, or with your password if you set one. If the code doesn't arrive in a minute, check your spam folder and tap *Resend*. Forgot your password? Use *Forgot password* to get a reset code by email." },
   { k: ['consent', 'privacy', 'who can see', 'data', 'share my'], a: "You're in control. In **Consent Manager** you can see every request to view your records, approve or deny it, and choose how long access lasts. Every view is written to your **access log**. Officials only ever see anonymous totals, never your name." },
@@ -57,15 +61,15 @@ const FAQ = [
   { k: ['kiosk', 'e-clinic', 'eclinic', 'village', 'no smartphone'], a: "Sehatra E-Clinics are assisted kiosks: a trained operator helps you register, records your BP, sugar, oxygen and temperature, and connects you to a doctor on video — no smartphone needed. If there's one near you, it shows up when you book." },
   { k: ['fee', 'cost', 'price', 'charge', 'free', 'pay'], a: "Each doctor sets their own fee, and you see it before you book. Video consults are paid online; for a clinic visit you pay a small booking amount online and the doctor's fee at the clinic. Medicine and lab test prices are shown before you order." },
   { k: ['language', 'hindi', 'tamil', 'bengali', 'bhasha'], a: "You can use Sehatra in many languages, including Hindi, Bengali, Tamil, Telugu and Marathi — change it anytime in **Settings**. Each doctor lists the languages they speak, so you can pick one who speaks yours." },
-  { k: ['family', 'child', 'mother', 'father', 'parent', 'elderly'], a: "Add family members under **Family** — children, parents, grandparents. Switch profiles with one tap to book consults or see their records. Each person still has their own Health Passport." },
+  { k: ['family', 'add a member', 'add my', 'switch profile', 'family profile'], a: "Add family members under **Family** — children, parents, grandparents. Switch profiles with one tap to book consults or see their records. Each person still has their own Health Passport." },
   { k: ['emergency card', 'qr', 'blood group'], a: "Your **Emergency card** shows blood group, allergies and emergency contacts with a QR code. Any verified doctor can scan it in an emergency, even offline — and you'll be notified every time it's opened." },
-  { k: ['fever', 'temperature', 'bukhar'], a: "For a fever: rest, drink plenty of fluids (ORS is good), and you can take **paracetamol** as per the label. See a doctor if it's above **102°F**, lasts more than **2 days**, or comes with rash, bleeding gums, severe headache or confusion (these can be signs of dengue)." },
-  { k: ['cough', 'cold', 'throat', 'khansi', 'zukam'], a: "Most coughs and colds settle in a week. Warm fluids, steam, honey with warm water (not for babies under 1), and rest help. See a doctor if you're breathless, the cough has lasted over **2 weeks**, you're coughing blood, or there's a high fever." },
-  { k: ['diabetes', 'sugar', 'bp', 'blood pressure', 'hypertension'], a: "For diabetes and BP, consistency matters most: take medicines at the same time daily, walk 30 minutes, cut sugar and salt, and check readings regularly. You can log home readings in the **Health tracker**. If sugar is above **300** or BP above **180/120**, see a doctor today." },
-  { k: ['headache', 'sir dard'], a: "Common headaches often ease with rest, water, and paracetamol at label dose. Please seek help urgently if it's the **worst headache of your life**, comes with a stiff neck, fever, weakness on one side, or confusion." },
-  { k: ['diarrhoea', 'diarrhea', 'loose motion', 'vomit', 'dast'], a: "Keep drinking — **ORS after every loose stool** is the most important thing. Eat light food like khichdi or banana. See a doctor if there's blood, high fever, signs of dehydration (very little urine, dizziness), or if it's a small child or elderly person." },
-  { k: ['dengue', 'malaria', 'mosquito'], a: "To protect against dengue and malaria: empty standing water weekly, use nets and repellents, and wear full sleeves. Get tested if you have high fever with body ache, pain behind the eyes, or rash. **Avoid ibuprofen/aspirin** for suspected dengue — paracetamol is safer." },
-  { k: ['hello', 'hi', 'namaste', 'hey'], a: "Namaste! 🙏 I'm **Saathi**, Sehatra's help assistant. I can help you book a doctor, understand your Health Passport, find medicines, or answer general health questions. What can I do for you?" },
+  { tip: true, k: ['fever', 'temperature', 'bukhar', 'बुखार'], a: "For a fever: rest, drink plenty of fluids (ORS is good), and you can take **paracetamol** as per the label. See a doctor if it's above **102°F**, lasts more than **2 days**, or comes with rash, bleeding gums, severe headache or confusion (these can be signs of dengue)." },
+  { tip: true, k: ['cough', 'cold', 'throat', 'khansi', 'zukam', 'खांसी', 'जुकाम'], a: "Most coughs and colds settle in a week. Warm fluids, steam, honey with warm water (not for babies under 1), and rest help. See a doctor if you're breathless, the cough has lasted over **2 weeks**, you're coughing blood, or there's a high fever." },
+  { tip: true, k: ['diabetes', 'sugar', 'bp', 'blood pressure', 'hypertension'], a: "For diabetes and BP, consistency matters most: take medicines at the same time daily, walk 30 minutes, cut sugar and salt, and check readings regularly. You can log home readings in the **Health tracker**. If sugar is above **300** or BP above **180/120**, see a doctor today." },
+  { tip: true, k: ['headache', 'sir dard', 'sar dard', 'sardard', 'सिर दर्द', 'सर दर्द'], a: "Common headaches often ease with rest, water, and paracetamol at label dose. Please seek help urgently if it's the **worst headache of your life**, comes with a stiff neck, fever, weakness on one side, or confusion." },
+  { tip: true, k: ['diarrhoea', 'diarrhea', 'loose motion', 'vomit', 'dast', 'दस्त', 'उल्टी'], a: "Keep drinking — **ORS after every loose stool** is the most important thing. Eat light food like khichdi or banana. See a doctor if there's blood, high fever, signs of dehydration (very little urine, dizziness), or if it's a small child or elderly person." },
+  { tip: true, k: ['dengue', 'malaria', 'mosquito'], a: "To protect against dengue and malaria: empty standing water weekly, use nets and repellents, and wear full sleeves. Get tested if you have high fever with body ache, pain behind the eyes, or rash. **Avoid ibuprofen/aspirin** for suspected dengue — paracetamol is safer." },
+  { k: ['hello', 'namaste', 'hey', 'good morning'], a: "Namaste! 🙏 I'm **Saathi**, Sehatra's help assistant. I can help you book a doctor, understand your Health Passport, find medicines, or answer general health questions. What can I do for you?" },
   { k: ['thank', 'dhanyavad', 'shukriya'], a: "You're welcome! Take care, and I'm here whenever you need me. 💚" },
   { k: ['contact', 'support', 'help line', 'helpline', 'phone number', 'call'], a: `For help with your account or a booking, ${SUPPORT}. For emergencies always call **108**.` },
 ];
@@ -75,7 +79,7 @@ function fallbackAnswer(message, ctx) {
   let best = null;
   let bestHits = 0;
   for (const item of FAQ) {
-    const hits = item.k.filter((k) => text.includes(k)).length;
+    const hits = item.k.filter((k) => (k.length <= 3 ? new RegExp(`(^|[^a-z])${k}([^a-z]|$)`).test(text) : text.includes(k))).length;
     if (hits > bestHits) { best = item; bestHits = hits; }
   }
   const answer = best ? best.a : NO_MATCH;
@@ -92,8 +96,56 @@ function fallbackAnswer(message, ctx) {
   return answer;
 }
 
+// ---------- Routing: app help (built-in answers) vs health questions (DxGPT) ----------
+const APP_WORDS = /(book|booking|appointment|cancel|reschedul|postpone|refund|passport|abha|aadhaar|sign ?up|register|account|log ?in|otp|password|consent|privacy|who can see|prescription|order|deliver|pharmacy|chemist|kiosk|e-?clinic|fee|price|cost|charge|pay|language|family|profile|emergency card|qr code|contact|support|helpline|lab test|\bapp\b|website)/i;
+const GREETING = /^\s*(hi+|hello|hey|namaste|namaskar|thanks?|thank you|dhanyavad|shukriya|ok|okay|good (morning|evening|night))[\s!.]*$/i;
+const isAppQuestion = (t) => GREETING.test(t) || APP_WORDS.test(t) || t.trim().length < 10;
+
+const DIFF_INTRO = 'From what you have described, these are some things a doctor would usually consider:';
+const DIFF_OUTRO = 'This is **not a diagnosis** — only a doctor who examines you can tell. **See a doctor today** if you feel very unwell, it gets worse or lasts more than 2–3 days, or you notice confusion, trouble breathing, a stiff neck, bleeding or a rash. Tap **Find a doctor** to book — in an emergency call **108**.';
+const ANSWER_FOOTER = "_This is general health information, not a diagnosis. If you're worried or it isn't getting better, **book a doctor** — in an emergency call **108**._";
+
+// The built-in self-care advice for this symptom, if there is one (ORS for loose motions, fluids for fever…).
+function selfCareTip(message) {
+  // "no fever", "without vomiting", "bukhar nahi" are not symptoms — drop them before matching.
+  const text = message.toLowerCase()
+    .replace(/\b(no|not|without|never|denies)\s+(any\s+)?[a-z]+(\s+[a-z]+)?/g, ' ')
+    .replace(/[a-zऀ-ॿ]+\s+(nahi|nahin|nahi hai|नहीं)/g, ' ');
+  let best = null; let bestHits = 0;
+  for (const f of FAQ) {
+    if (!f.tip) continue;
+    const hits = f.k.filter((k) => text.includes(k)).length;
+    if (hits > bestHits) { best = f; bestHits = hits; }
+  }
+  return best ? best.a : null;
+}
+const TIP_TITLE = '**What you can do now:**';
+const NEED_MORE = 'Could you tell me a little more — the age of the person, how long it has been going on, and any other symptoms (fever, vomiting, rash, pain, weakness)? That helps me give a better answer.';
+
+async function healthReply(message, ctx, lang, seed) {
+  const r = await dxgpt.answer(message, seed);
+  let out;
+  if (r.kind === 'need-more') {
+    const tip = selfCareTip(message);
+    out = `${await localise(NEED_MORE, lang)}${tip ? `\n\n${await localise(TIP_TITLE, lang)} ${await localise(tip, lang)}` : ''}\n\n${await localise(ANSWER_FOOTER, lang)}`;
+  } else if (r.kind === 'differential') {
+    const list = r.items.map((x, i) => `${i + 1}. **${x.name}** — ${x.about}`).join('\n');
+    const tip = selfCareTip(message);
+    const tipText = tip ? `\n\n${await localise(TIP_TITLE, lang)} ${await localise(tip, lang)}` : '';
+    out = `${await localise(DIFF_INTRO, lang)}\n\n${list}${tipText}\n\n${await localise(DIFF_OUTRO, lang)}`;
+  } else {
+    out = `${r.text}${r.sources ? `\n\n${r.sources}` : ''}\n\n${await localise(ANSWER_FOOTER, lang)}`;
+  }
+  // Same allergy reminder as the built-in answers — read from the record on our server, never sent to DxGPT.
+  const allergies = (ctx?.patient?.allergies || []).filter(Boolean);
+  if (allergies.length && /medicine|tablet|take|dose|ibuprofen|amoxicillin|penicillin|painkiller|antibiotic|dawa|dawai|goli/i.test(message)) {
+    out += `\n\n${(await localise(ALLERGY_NOTE, lang)).replace('{0}', `**${allergies.join(', ')}**`)}`;
+  }
+  return out;
+}
+
 // Fixed help texts may be translated by the i18n engine (they contain no personal data).
-i18n.registerServerStrings([EMERGENCY_REPLY, ...FAQ.map((f) => f.a), NO_MATCH, ALLERGY_NOTE]);
+i18n.registerServerStrings([EMERGENCY_REPLY, ...FAQ.map((f) => f.a), NO_MATCH, ALLERGY_NOTE, DIFF_INTRO, DIFF_OUTRO, ANSWER_FOOTER, TIP_TITLE, NEED_MORE]);
 
 async function localise(text, lang) {
   try { return await i18n.translateServerText(lang, text); } catch { return text; }
@@ -152,7 +204,15 @@ async function handleChat(req, res, ctx) {
 
   const anthropic = req.chatOffline ? null : getClient(); // over the daily AI budget → built-in answers
   if (!anthropic) {
-    await streamFallback(res, await fallbackText(last.content, ctx, lang));
+    let text = null;
+    // Health questions → DxGPT (only the typed message is sent); app questions → built-in answers.
+    if (!req.chatOffline && dxgpt.enabled() && !isAppQuestion(last.content)) {
+      // The person's own last few messages, so a follow-up ("he is 4, since 6 hours") keeps its context.
+      const typed = history.filter((m) => m.role === 'user').slice(-3).map((m) => m.content.trim()).join('\n');
+      try { text = await healthReply(typed, ctx, lang, ctx?.user?.id || req.ip); } catch (e) { console.warn('[chat] DxGPT unavailable, using a built-in answer:', e.message); }
+    }
+    if (res.writableEnded || res.destroyed) return undefined; // the chat was closed while we waited
+    await streamFallback(res, text || await fallbackText(last.content, ctx, lang));
     res.write('data: [DONE]\n\n');
     return res.end();
   }
@@ -192,4 +252,4 @@ The person has chosen ${langName} for the app. Reply in ${langName} unless they 
   res.end();
 }
 
-module.exports = { handleChat, aiEnabled: () => Boolean(process.env.ANTHROPIC_API_KEY) };
+module.exports = { handleChat, aiEnabled: () => Boolean(process.env.ANTHROPIC_API_KEY) || dxgpt.enabled(), isAppQuestion };

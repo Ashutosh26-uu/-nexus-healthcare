@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-10-20T08:41:43.611Z",
+ "generatedAt": "2026-10-20T14:40:24.345Z",
  "strings": [
   "% advance confirms the order. If the chemist can't fulfil it, the advance is refunded.",
   "% complete",
@@ -22,6 +22,7 @@
   "(a month of cover plus the distributor's lead time) − stock, rounded up to whole packs. Below-safety items with no recent sales are topped up to twice the safety level.",
   "(also in the footer and in your account menu) to switch live location on or off.",
   "(bottom right of every page) or the Help section of the app",
+  "(by Foundation29, a non-profit) answers health questions you type to Saathi. Only the message you type is sent — never your name, Health Passport, records or medicines — and DxGPT removes any personal details it still finds. Questions about using Sehatra are answered by Saathi itself.",
   "(display-mode: standalone)",
   "(estimate)",
   "(for example Google’s on Android/Chrome or Apple’s on iPhone) and only the text reaches Sehatra. The AI assistant that drafts notes from that text is",
@@ -1335,6 +1336,7 @@
   "Due in (days)",
   "Due now",
   "Dues",
+  "DxGPT",
   "E-Clinic",
   "E-Clinic (kiosk)",
   "E-Clinic added — create an operator for it in Users & roles",
@@ -3161,7 +3163,6 @@
   "Quantity",
   "Quantity received",
   "Questions",
-  "Questions you type to Saathi, our help assistant, so that it can answer them.",
   "Queue is clear",
   "Quick add:",
   "Quick fill:",
