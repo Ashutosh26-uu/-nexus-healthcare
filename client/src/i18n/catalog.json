@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-10-20T16:06:27.092Z",
+ "generatedAt": "2026-10-20T16:25:36.183Z",
  "strings": [
   "% advance confirms the order. If the chemist can't fulfil it, the advance is refunded.",
   "% complete",
@@ -19,7 +19,8 @@
   "(AI)",
   "(ASHA)",
   "(Reg",
-  "(a medical AI company, servers in the EU) under the same rule — only what you typed. Questions about using Sehatra are answered by Saathi itself.",
+  "(a medical AI company, servers in the EU), and after that to",
+  "(a medical AI service), under the same rule — only what you typed. Questions about using Sehatra are answered by Saathi itself.",
   "(a month of cover plus the distributor's lead time) − stock, rounded up to whole packs. Below-safety items with no recent sales are topped up to twice the safety level.",
   "(also in the footer and in your account menu) to switch live location on or off.",
   "(bottom right of every page) or the Help section of the app",
@@ -1309,6 +1310,7 @@
   "Dr. Full name",
   "Dr. Meera Iyer",
   "Dr. Pooja Saxena",
+  "Dr7.ai",
   "Draft added — check every line before you sign",
   "Draft an advisory",
   "Draft claim — all checks passed. NHCX submission isn't connected yet.",

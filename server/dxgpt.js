@@ -7,7 +7,7 @@
 const crypto = require('crypto');
 
 const BASE = (process.env.DXGPT_BASE_URL || 'https://dxgpt-apim.azure-api.net/api').replace(/\/+$/, '');
-const TIMEOUT_MS = Math.max(5000, Number(process.env.DXGPT_TIMEOUT_MS) || 45000);
+const TIMEOUT_MS = Math.max(5000, Number(process.env.DXGPT_TIMEOUT_MS) || 30000);
 // Calls per day PER KEY (the free tier allows 50). Each health question uses 1–2 calls.
 const DAILY_LIMIT = Math.max(0, Number(process.env.DXGPT_DAILY_LIMIT ?? 50));
 
