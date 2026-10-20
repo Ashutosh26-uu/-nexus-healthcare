@@ -16,6 +16,7 @@ export default function TwoStepModal({ open, onClose }) {
   const [stage, setStage] = useState('status'); // status | scan | codes | renew | off
   const [setup, setSetup] = useState(null);
   const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
   const [backupCodes, setBackupCodes] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -28,7 +29,11 @@ export default function TwoStepModal({ open, onClose }) {
   }, [open]);
 
   const run = async (fn) => { setBusy(true); setErr(''); try { await fn(); } catch (e) { setErr(e.message); setCode(''); } finally { setBusy(false); } };
-  const start = () => run(async () => { setSetup(await api.post('/auth/mfa/setup')); setCode(''); setStage('scan'); });
+  const start = () => run(async () => {
+    if (status?.needsPassword && !password) { setErr('Enter your current password to turn on two-step login.'); return; }
+    setSetup(await api.post('/auth/mfa/setup', status?.needsPassword ? { password } : {}));
+    setPassword(''); setCode(''); setStage('scan');
+  });
   const enable = () => run(async () => {
     const r = await api.post('/auth/mfa/enable', { code });
     await signIn(r.token); // other devices were signed out; this one continues
@@ -54,8 +59,9 @@ export default function TwoStepModal({ open, onClose }) {
 
       {stage === 'status' && status && !status.enabled && (
         <div className="stack">
-          {status.recommended && <div className="badge sun" style={{ alignSelf: 'flex-start' }}>Recommended for your role</div>}
+          {status.required ? <div className="badge rose" style={{ alignSelf: 'flex-start' }}>Required for your role</div> : status.recommended && <div className="badge sun" style={{ alignSelf: 'flex-start' }}>Recommended for your role</div>}
           <p className="small mb-0">You&apos;ll need a free authenticator app on your phone — Google Authenticator, Microsoft Authenticator, Authy or similar. Each time you sign in, the app shows a new 6-digit code. Codes work even without internet on the phone.</p>
+          {status.needsPassword && <Field label="Confirm your current password" hint="So only you can turn this on."><input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} /></Field>}
           <Button icon={ShieldCheck} onClick={start} loading={busy}>Set up two-step login</Button>
         </div>
       )}

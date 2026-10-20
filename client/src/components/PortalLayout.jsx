@@ -28,6 +28,8 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
   const [mfaOpen, setMfaOpen] = useState(false);
   // Admins and officials can see many people's data: until two-step login is on, the menu button carries a dot.
   const nudgeMfa = ['super_admin', 'official'].includes(user?.role) && user?.mfaEnabled === false;
+  // Admins, officials and hospital admins must use two-step login: show a standing banner until it's on.
+  const mustMfa = user?.mfaSetupRequired === true;
   const [notes, setNotes] = useState([]);
   const location = useLocation();
   const navigate = useNavigate();
@@ -151,6 +153,13 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
             )}
           </div>
         </header>
+        {mustMfa && (
+          <div className="mfa-gate" role="alert">
+            <ShieldCheck size={18} />
+            <span className="grow"><strong>Turn on two-step login.</strong> Your role can see many people&apos;s health data, so Sehatra requires a second step at sign-in. It takes about a minute.</span>
+            <button type="button" className="btn sm" onClick={() => setMfaOpen(true)}>Set up now</button>
+          </div>
+        )}
         <main className="portal-content" key={location.pathname}>{children}</main>
       </div>
       <PasswordModal open={pwOpen} onClose={() => setPwOpen(false)} />

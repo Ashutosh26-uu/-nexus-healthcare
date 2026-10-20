@@ -94,7 +94,9 @@ const istDay = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: AP
 const ageOf = (dob) => (dob ? Math.floor((Date.now() - new Date(dob)) / (365.25 * 86400000)) : null);
 // tokenVersion is session-revocation state — never part of what a screen (or the admin list) sees.
 // The two-step login secret and backup-code hashes never leave the server — screens only learn whether it's on.
-const publicUser = ({ passwordHash: _h, tokenVersion: _tv, aadhaarRefHash: _ar, mfa: m, e2e: k, ...u }) => ({ ...u, mfaEnabled: Boolean(m?.enabledAt), e2eReady: Boolean(k?.publicKey) });
+// Roles that can see many people's data must use two-step login; the client forces setup when this is true.
+const MFA_REQUIRED_ROLES = new Set(['super_admin', 'official', 'hospital_admin']);
+const publicUser = ({ passwordHash: _h, tokenVersion: _tv, aadhaarRefHash: _ar, mfa: m, e2e: k, ...u }) => ({ ...u, mfaEnabled: Boolean(m?.enabledAt), e2eReady: Boolean(k?.publicKey), mfaSetupRequired: MFA_REQUIRED_ROLES.has(u.role) && !m?.enabledAt });
 
 function sign(user) {
   return jwt.sign({ sub: user.id, role: user.role, tv: user.tokenVersion || 0 }, JWT_SECRET, { algorithm: 'HS256', expiresIn: '7d' });
@@ -1042,12 +1044,18 @@ app.post('/api/auth/mfa', mfaLimiter, (req, res) => {
 
 app.get('/api/auth/mfa', auth, (req, res) => {
   const m = req.user.mfa || {};
-  res.json({ enabled: Boolean(m.enabledAt), enabledAt: m.enabledAt || null, backupCodesLeft: m.enabledAt ? (m.recovery || []).length : 0, recommended: ['super_admin', 'official'].includes(req.user.role) });
+  res.json({ enabled: Boolean(m.enabledAt), enabledAt: m.enabledAt || null, backupCodesLeft: m.enabledAt ? (m.recovery || []).length : 0, recommended: MFA_REQUIRED_ROLES.has(req.user.role), required: MFA_REQUIRED_ROLES.has(req.user.role), needsPassword: Boolean(req.user.passwordHash) });
 });
 
 // Step 1: a fresh secret (held as "pending" until a code from the app proves it was scanned correctly).
-app.post('/api/auth/mfa/setup', auth, passwordChangeLimiter, (req, res) => {
+app.post('/api/auth/mfa/setup', auth, passwordChangeLimiter, async (req, res) => {
   if (req.user.mfa?.enabledAt) return res.status(409).json({ error: 'Two-step login is already on.' });
+  // A current password proves it's really the account holder, so a stolen session alone can't enrol an
+  // authenticator and lock the real owner out. Accounts created by one-time code have no password to check.
+  if (req.user.passwordHash) {
+    const pw = typeof req.body?.password === 'string' ? req.body.password.slice(0, 200) : '';
+    if (!pw || !(await bcrypt.compare(pw, req.user.passwordHash))) return res.status(400).json({ error: 'Enter your current password to turn on two-step login.', needPassword: true });
+  }
   const secret = mfa.newSecret();
   req.user.mfa = { pending: mfa.seal(secret), pendingAt: nowIso() };
   store.save();
@@ -1191,6 +1199,13 @@ function validateApplicant(b) {
   // A string only: an object would become the password "[object Object]".
   if (typeof b.password !== 'string' || b.password.length < 8 || b.password.length > 200) return 'Choose a password of at least 8 characters.';
   if (findUserByEmail(clean(b.email, 160))) return 'This email is already registered. Sign in instead, or use a different email.';
+  // The email must be proven by a one-time code first, so no one can sign up with someone else's address,
+  // squat a rival's email, or later claim a clinic's listing without owning the inbox.
+  const emailLc = clean(b.email, 160).toLowerCase();
+  try {
+    const t = jwt.verify(String(b.emailTicket || ''), JWT_SECRET, JWT_VERIFY);
+    if (t.purpose !== 'signup' || String(t.email || '').toLowerCase() !== emailLc) throw new Error();
+  } catch { return 'Please verify your email address with the code we send you before continuing.'; }
   return '';
 }
 
@@ -1405,7 +1420,7 @@ app.get('/api/patient/home', auth, role('patient', 'caregiver'), (req, res) => {
   const openDeliveryOtp = new Map();
   for (const x of d.deliveries) if (x.kind === 'prescription' && rxIds.has(x.refId) && x.status !== 'delivered' && !openDeliveryOtp.has(x.refId)) openDeliveryOtp.set(x.refId, x.otp);
   res.json({
-    patient: { ...p, age: ageOf(p.dob), bookingMissing: bookingMissing(p) },
+    patient: { ...p, age: ageOf(p.dob), bookingMissing: bookingMissing(p), cardSig: cardSigFor(p.id) },
     profiles: profilesFor(req.user).map((x) => ({ id: x.id, name: x.name, age: ageOf(x.dob), gender: x.gender, relation: x.relation, self: x.userId === req.user.id })),
     medicineOrders: (d.medOrders || []).filter((o) => o.patientId === p.id && !['delivered', 'collected', 'declined', 'cancelled'].includes(o.status) && o.status !== 'awaiting_payment').length,
     upcoming: consults.filter((c) => ['scheduled', 'queued', 'in_progress'].includes(c.status)),
@@ -5298,19 +5313,36 @@ function kioskOpen(req, res, p, how) {
   res.json(kioskPatientView(p));
 }
 const kioskTicket = (req, p) => jwt.sign({ uid: req.user.id, pid: p.id, purpose: 'kiosk-checkin' }, JWT_SECRET, { algorithm: 'HS256', expiresIn: '15m' });
+// A short signature printed on the Health Passport QR (`/s/p/<id>?k=<sig>`). Scanning the real card proves the
+// patient is holding it, so it opens the record directly; a typed or guessed passport number never carries a
+// valid signature, so it must pass the emailed code instead. Signature follows JWT_SECRET, so rotating the
+// secret quietly retires old printed cards to the code path — safe, not broken.
+const cardSigFor = (id) => crypto.createHmac('sha256', JWT_SECRET).update(`kiosk-card|${id}`).digest('base64url').slice(0, 22);
+function signedPassportId(q) {
+  // Accept the scanned card URL (…/s/p/<id>?k=<sig>) or a bare "<id>.<sig>".
+  const m = /(?:\/s\/p\/|^)([A-Za-z0-9-]{4,40})(?:\?k=|\.)([A-Za-z0-9_-]{22})(?:$|&)/.exec(q);
+  if (!m) return null;
+  const want = Buffer.from(cardSigFor(m[1]));
+  const got = Buffer.from(m[2]);
+  return want.length === got.length && crypto.timingSafeEqual(want, got) ? m[1] : null;
+}
 app.post('/api/kiosk/identify', auth, role('kiosk_operator'), identifyLimiter, async (req, res) => {
-  const q = String(req.body?.query || '').trim().slice(0, 40);
+  const q = String(req.body?.query || '').trim().slice(0, 200);
   const users = db().users;
-  const byId = db().patients.find((x) => !x.erasedAt && x.id.toLowerCase() === q.toLowerCase());
-  const asPhone = !byId && q.replace(/\D/g, '').length >= 6 ? normalizePhone(q, req.body?.dialCode) : null;
+  // A validly-signed card (scanned) opens straight away — the patient is physically present with it.
+  const signedId = signedPassportId(q);
+  if (signedId) { const sp = db().patients.find((x) => !x.erasedAt && x.id === signedId); if (sp) return kioskOpen(req, res, sp, 'signed Health Passport card'); }
+  const plainId = /^[A-Za-z0-9-]{4,40}$/.test(q) ? q : '';
+  const byId = plainId ? db().patients.find((x) => !x.erasedAt && x.id.toLowerCase() === plainId.toLowerCase()) : null;
+  const asPhone = !byId && q.replace(/\D/g, '').length >= 6 && q.replace(/\D/g, '').length <= 15 ? normalizePhone(q, req.body?.dialCode) : null;
   // The phone's owner is looked up once — not a scan of every user for every patient.
   const owner = asPhone ? users.find((u) => ['patient', 'caregiver'].includes(u.role) && u.phone && samePhone(u.phone, asPhone)) : null;
   const p = byId || (asPhone ? db().patients.find((x) => !x.erasedAt && ((owner && x.userId === owner.id)
     || x.emergencyContacts?.some((e) => e.relation === 'Mobile' && samePhone(e.phone, asPhone)))) : null);
   if (!p) return res.status(404).json({ error: 'No Health Passport found. You can register this patient now.' });
-  if (byId) return kioskOpen(req, res, p, 'Health Passport card');
+  // A typed passport number (not a scanned card) now needs the emailed code too, like the mobile-number path.
   const email = p.privacy?.kioskOtp === false ? null : kioskEmailOf(p);
-  if (!email) return kioskOpen(req, res, p, p.privacy?.kioskOtp === false ? 'mobile number (patient turned the code off)' : 'mobile number (no email on the passport for a code)');
+  if (!email) return kioskOpen(req, res, p, p.privacy?.kioskOtp === false ? 'typed lookup (patient turned the code off)' : 'typed lookup (no email on the passport for a code)');
   try {
     const sent = await otp.sendCode({ channel: 'email', email, lang: 'en', ip: req.ip, purpose: 'kiosk' });
     audit(req.user, 'kiosk_code_sent', p.id, 'passport', 'Check-in code emailed');

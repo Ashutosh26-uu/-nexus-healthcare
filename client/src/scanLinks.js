@@ -2,7 +2,10 @@
 // Codes are web links where they can be: then any phone camera opens them, no app needed.
 const origin = () => (typeof window !== 'undefined' ? window.location.origin : '');
 
-export const passportUrl = (patientId) => `${origin()}/s/p/${encodeURIComponent(patientId)}`;
+// The `?k=<sig>` lets an E-Clinic kiosk open the record straight from a scan (the patient is holding the card);
+// a phone camera just lands on /s/p/<id> and ignores it. A typed passport number has no signature, so it needs
+// the emailed code instead. sig comes from the server (patient.cardSig).
+export const passportUrl = (patientId, sig) => `${origin()}/s/p/${encodeURIComponent(patientId)}${sig ? `?k=${encodeURIComponent(sig)}` : ''}`;
 export const verifyUrl = (kind, id, sig) => (sig ? `${origin()}/v/${kind}/${encodeURIComponent(id)}.${sig}` : null);
 // A visit pass (NEXUS-VISIT:<consult>:<6-digit code>) as a link: reception's scanner reads it, and a phone camera
 // opens a page that checks the patient in (signed-in staff) or explains what the pass is (anyone else).

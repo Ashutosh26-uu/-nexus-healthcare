@@ -212,7 +212,7 @@ function PassportCard({ patient: p }) {
           <div className="pt-passport-name" translate="no">{p.name}</div>
           <div className="pt-passport-id mono" dir="ltr" translate="no">{p.id}</div>
         </div>
-        <div className="pt-passport-qr"><PassportQR value={passportUrl(p.id)} size={88} label="Health Passport QR — scan to open on Sehatra" /></div>
+        <div className="pt-passport-qr"><PassportQR value={passportUrl(p.id, p.cardSig)} size={88} label="Health Passport QR — scan to open on Sehatra" /></div>
       </div>
       <dl className="pt-passport-grid">
         <div><dt>Blood group</dt><dd><Droplet size={14} className="inline-ic" /> {p.bloodGroup || '—'}</dd></div>

@@ -10,6 +10,7 @@ import LanguagePicker from '../components/LanguagePicker';
 import { api } from '../api';
 import { COUNTRIES, guessCountry } from '../i18n/countries';
 import { Button, Field, cx } from '../components/ui';
+import VerifyEmailModal from '../components/VerifyEmail';
 import './auth.css';
 import './join.css';
 
@@ -90,14 +91,17 @@ function FacilityForm({ options, onDone }) {
     }
     return '';
   };
+  const [verifyEmail, setVerifyEmail] = useState('');
   const next = () => { const v = validate(); setError(v); if (!v) setStep((s) => s + 1); };
-  const submit = async () => {
+  const doPost = async (emailTicket) => {
     setBusy(true); setError('');
-    try { onDone(await api.post('/public/join/facility', { ...form, ownerName: form.name })); } catch (e) { setError(e.message); } finally { setBusy(false); }
+    try { onDone(await api.post('/public/join/facility', { ...form, ownerName: form.name, emailTicket })); } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
+  const submit = () => { const v = validate(); if (v) return setError(v); setError(''); setVerifyEmail(form.email.trim()); return undefined; };
 
   return (
     <div className="auth-card wide fade-in" key={step}>
+      <VerifyEmailModal email={verifyEmail} open={!!verifyEmail} onClose={() => setVerifyEmail('')} onVerified={(t) => { setVerifyEmail(''); doPost(t); }} />
       <Steps steps={FAC_STEPS} step={step} />
       {step === 0 && (
         <div className="stack">
@@ -180,23 +184,29 @@ function DoctorSignup() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', country: guessCountry().iso, ownClinic: false, clinicName: '' });
+  const [verifyEmail, setVerifyEmail] = useState('');
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-  const submit = async (e) => {
+  const doPost = async (emailTicket) => {
+    setBusy(true); setError('');
+    try {
+      const r = await api.post('/public/join/doctor', { ...form, clinicName: form.ownClinic ? form.clinicName : '', emailTicket });
+      await signIn(r.token);
+      navigate('/doctor', { replace: true });
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
+  };
+  const submit = (e) => {
     e.preventDefault();
     if (form.name.trim().length < 3) return setError('Please enter your full name.');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(form.email.trim())) return setError('Please enter a valid email address.');
     if (!/^\+?[\d\s-]{7,18}$/.test(form.phone)) return setError('Please enter a valid mobile number.');
     if (form.password.length < 8) return setError('Choose a password of at least 8 characters.');
     if (form.ownClinic && form.clinicName.trim().length < 3) return setError('Please enter the name of your clinic.');
-    setBusy(true); setError('');
-    try {
-      const r = await api.post('/public/join/doctor', { ...form, clinicName: form.ownClinic ? form.clinicName : '' });
-      await signIn(r.token);
-      navigate('/doctor', { replace: true });
-    } catch (err) { setError(err.message); } finally { setBusy(false); }
+    setError(''); setVerifyEmail(form.email.trim()); // prove the email, then doPost runs with the ticket
+    return undefined;
   };
   return (
     <form className="auth-card fade-in" onSubmit={submit}>
+      <VerifyEmailModal email={verifyEmail} open={!!verifyEmail} onClose={() => setVerifyEmail('')} onVerified={(t) => { setVerifyEmail(''); doPost(t); }} />
       <span className="eyebrow">For doctors</span>
       <h1 className="auth-title">Create your doctor account</h1>
       <p className="muted">Just your name, email and mobile to start. You&apos;ll complete your profile inside the portal — it takes about 3 minutes.</p>
@@ -221,23 +231,29 @@ function PharmacySignup() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState({ storeName: '', name: '', email: '', phone: '', password: '', country: guessCountry().iso });
+  const [verifyEmail, setVerifyEmail] = useState('');
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-  const submit = async (e) => {
+  const doPost = async (emailTicket) => {
+    setBusy(true); setError('');
+    try {
+      const r = await api.post('/public/join/pharmacy', { ...form, emailTicket });
+      await signIn(r.token);
+      navigate('/pharmacy', { replace: true });
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
+  };
+  const submit = (e) => {
     e.preventDefault();
     if (form.storeName.trim().length < 3) return setError('Please enter the name of your medical store.');
     if (form.name.trim().length < 3) return setError('Please enter your full name.');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(form.email.trim())) return setError('Please enter a valid email address.');
     if (!/^\+?[\d\s-]{7,18}$/.test(form.phone)) return setError('Please enter a valid mobile number.');
     if (form.password.length < 8) return setError('Choose a password of at least 8 characters.');
-    setBusy(true); setError('');
-    try {
-      const r = await api.post('/public/join/pharmacy', form);
-      await signIn(r.token);
-      navigate('/pharmacy', { replace: true });
-    } catch (err) { setError(err.message); } finally { setBusy(false); }
+    setError(''); setVerifyEmail(form.email.trim());
+    return undefined;
   };
   return (
     <form className="auth-card fade-in" onSubmit={submit}>
+      <VerifyEmailModal email={verifyEmail} open={!!verifyEmail} onClose={() => setVerifyEmail('')} onVerified={(t) => { setVerifyEmail(''); doPost(t); }} />
       <span className="eyebrow">For medical stores &amp; pharmacists</span>
       <h1 className="auth-title">Put your medical store on Sehatra</h1>
       <p className="muted">Patients within 50 km send you medicine orders. Start with the basics — add your location, store photo and licence inside the portal.</p>

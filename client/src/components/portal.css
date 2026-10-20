@@ -78,3 +78,8 @@
 /* Two-step login nudge on the account button (admins and officials). */
 .user-btn { position: relative; }
 .menu-item .badge { flex: none; }
+
+/* Required two-step login banner (admins/officials). */
+.mfa-gate { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; background: var(--sun-soft); color: #87590b; font-size: 0.85rem; }
+.mfa-gate .btn { flex: none; }
+.mfa-gate svg { flex: none; }

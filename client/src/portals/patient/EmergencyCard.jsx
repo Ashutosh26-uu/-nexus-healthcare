@@ -40,7 +40,7 @@ export default function EmergencyCard() {
 
           <div className="pt-ecard-body">
             <div className="pt-ecard-qr">
-              <PassportQR value={passportUrl(p.id)} size={150} label="Health Passport QR" />
+              <PassportQR value={passportUrl(p.id, p.cardSig)} size={150} label="Health Passport QR" />
               <div className="mono small" dir="ltr" translate="no">{p.id}</div>
               <div className="tiny">Doctors: scan to open the record · Emergency: call 108</div>
             </div>
