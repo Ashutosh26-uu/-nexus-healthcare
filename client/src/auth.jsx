@@ -88,9 +88,9 @@ export function AuthProvider({ children }) {
     retry.current.attempt = 0;
     disconnectLive();
     forgetKeys(); // encrypted-chat keys on this device; the passphrase brings them back
-    // Anything a shared device kept for this person goes too (kiosk visit in progress, lab signer pick) —
-    // on every sign-out, including an automatic one when the session expires.
-    try { ['oc_kiosk_flow', 'nx_lab_signer'].forEach((k) => { sessionStorage.removeItem(k); localStorage.removeItem(k); }); } catch { /* storage blocked */ }
+    // Anything a shared device kept for this person goes too (kiosk visit in progress, lab signer pick, Saathi chat,
+    // family and place picks) — on every sign-out, including an automatic one when the session expires.
+    try { ['oc_kiosk_flow', 'nx_lab_signer', 'oc_chat', 'oc_relations', 'oc_pref_place'].forEach((k) => { sessionStorage.removeItem(k); localStorage.removeItem(k); }); } catch { /* storage blocked */ }
     setState(SIGNED_OUT);
   }, []);
 

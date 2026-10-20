@@ -1724,7 +1724,7 @@ app.post('/api/consults', auth, role('kiosk_operator'), (req, res) => {
   d.consults.push(consult);
   // Consult implies time-limited consent for the treating doctor (patient approves at booking).
   d.consents.push({ id: store.id('cst'), patientId: p.id, granteeType: 'doctor', granteeId: doctor.id, granteeName: doctor.name, scope: ['history', 'prescriptions', 'labs', 'allergies'], purpose: 'Kiosk teleconsult (patient present at kiosk)', start: nowIso(), expiry: new Date(Date.now() + 2 * 86400000).toISOString(), status: 'active' });
-  doctorInbox(d, doctor).forEach((uid) => notify(uid, type === 'scheduled' ? 'New booking' : 'New patient in your queue', `${p.name} · ${consult.triage.level.replace('_', ' ')} · ${consult.triage.symptoms}`));
+  doctorInbox(d, doctor).forEach((uid) => notify(uid, type === 'scheduled' ? 'New booking' : 'New patient in your queue', `${p.name} · ${consult.triage.level.replace('_', ' ')} — open the visit for symptoms`));
   audit(req.user, 'booked_consult', p.id, 'consult', consult.id);
   store.save();
   broadcast('consults', 'queue');
@@ -1834,11 +1834,13 @@ const b64u = (v, min, max) => typeof v === 'string' && v.length >= min && v.leng
 const okJwk = (k) => k && typeof k === 'object' && k.kty === 'EC' && k.crv === 'P-256' && b64u(k.x, 43, 43) && b64u(k.y, 43, 43);
 const jwkOf = (k) => ({ kty: 'EC', crv: 'P-256', x: k.x, y: k.y });
 const e2eEnabledFor = (c) => !c.kioskId;
-function e2eParticipants(c, requester) {
+function e2eParticipants(c) {
   const p = patientById(c.patientId);
-  const ids = new Set([doctorById(c.doctorId)?.userId, ...(p ? patientOwnerUserIds(p) : [])].filter(Boolean));
-  // A clinic owner answering for one of their doctors is in the conversation too.
-  if (requester && requester.role === 'doctor') ids.add(requester.id);
+  const doc = doctorById(c.doctorId);
+  // The doctor's side is whoever handledDoctorIds() lets answer: the doctor's own login, or — for a clinic doctor
+  // without one — the clinic owner. Computed the same way for both sides, so every reader gets a sealed key.
+  const docUsers = doc?.userId ? [doc.userId] : doc ? db().doctors.filter((x) => x.userId && x.ownsFacilityId && x.ownsFacilityId === doc.facilityId).map((x) => x.userId) : [];
+  const ids = new Set([...docUsers, ...(p ? patientOwnerUserIds(p) : [])].filter(Boolean));
   return [...ids].map((id) => userById(id)).filter((u) => u && u.status !== 'deleted');
 }
 function cleanE2eMessage(m, c) {
@@ -1880,7 +1882,7 @@ app.get('/api/consults/:id/e2e', auth, (req, res) => {
   if (!canAccessConsult(req.user, c)) return res.status(403).json({ error: 'You don\'t have access to this consult.' });
   res.json({
     enabled: e2eEnabledFor(c),
-    participants: e2eParticipants(c, req.user).map((u) => ({ userId: u.id, name: u.name, role: u.role, publicKey: u.e2e?.publicKey || null })),
+    participants: e2eParticipants(c).map((u) => ({ userId: u.id, name: u.name, role: u.role, publicKey: u.e2e?.publicKey || null })),
   });
 });
 
@@ -2919,7 +2921,7 @@ function finalizePayment(d, pay, user) {
     // Booking a doctor implies a time-limited consent for that doctor to see the history.
     d.consents.push({ id: store.id('cst'), patientId: p.id, granteeType: 'doctor', granteeId: doc.id, granteeName: doc.name, scope: ['history', 'prescriptions', 'labs', 'allergies'], purpose: 'Booked consultation', start: nowIso(), expiry: new Date(Math.max(Date.now(), Date.parse(c.scheduledAt || 0)) + 3 * 86400000).toISOString(), status: 'active' });
     const where = c.mode === 'in_person' ? ` · in person at ${c.location?.name}` : ` · ${c.mode} consult`;
-    doctorInbox(d, doc).forEach((uid) => notify(uid, 'New paid booking', `${doc.userId ? '' : `For ${doc.name}: `}${p.name} · ${c.triage.symptoms.slice(0, 80)}${where}${c.scheduledAt ? ` · ${new Date(c.scheduledAt).toLocaleString('en-IN', { timeZone: APP_TZ })}` : ' · now'}`));
+    doctorInbox(d, doc).forEach((uid) => notify(uid, 'New paid booking', `${doc.userId ? '' : `For ${doc.name}: `}${p.name}${where}${c.scheduledAt ? ` · ${new Date(c.scheduledAt).toLocaleString('en-IN', { timeZone: APP_TZ })}` : ' · now'}`));
     patientOwnerUserIds(p).forEach((u) => notify(u, 'Booking confirmed', `${doc.name}${where}. ${c.mode === 'in_person' ? 'Show your visit QR at the reception.' : 'We\'ll alert you when the doctor joins.'}`));
     audit(user, 'paid_booking', p.id, 'consult', `${c.id} · ₹${pay.amount}`);
     automation.emit('booking.confirmed', { consultId: c.id, patientId: p.id, doctorId: doc.id, doctorName: doc.name, mode: c.mode, location: c.location?.name || null, scheduledAt: c.scheduledAt || null, amount: pay.amount }, { contact: autoContact(p) });
@@ -3707,6 +3709,8 @@ async function erasePatient(p, { by = 'system' } = {}) {
   for (const o of d.medOrders || []) if (mine(o)) { o.address = null; o.rxFileId = null; o.note = ''; }
   for (const o of d.labOrders || []) if (mine(o)) { o.reportFileId = null; if (o.booking) o.booking = { ...o.booking, address: null }; }
   for (const r of d.referrals || []) if (mine(r)) { r.patientName = ERASED_NAME; r.age = null; }
+  // The visit chat (plain or end-to-end sealed) is conversation, not the clinical record: it goes with the person.
+  for (const c of d.consults || []) if (mine(c) && c.messages?.length) c.messages = [];
   // Nothing may stay waiting for a person who no longer exists here: open visits and unfilled orders are cancelled.
   const gone = { cancelledAt: nowIso(), cancelReason: 'Patient account deleted' };
   for (const c of d.consults || []) if (mine(c) && ['awaiting_payment', 'queued', 'scheduled', 'in_progress'].includes(c.status)) Object.assign(c, { status: 'cancelled', cancelledBy: 'system' }, gone);
@@ -5573,7 +5577,7 @@ app.post('/api/hospital/reception/visits', auth, role('hospital_admin'), (req, r
   d.consults.push(c);
   // The patient is standing at the desk asking to see this doctor: same short consent a booking implies.
   d.consents.push({ id: store.id('cst'), patientId: p.id, granteeType: 'doctor', granteeId: doc.id, granteeName: doc.name, scope: ['history', 'prescriptions', 'labs', 'allergies'], purpose: `Walk-in visit at ${f.name}`, start: nowIso(), expiry: new Date(Date.now() + 24 * 3600000).toISOString(), status: 'active' });
-  doctorInbox(d, doc).forEach((uid) => notify(uid, 'Walk-in in your queue', `Token ${c.token} · ${p.name} · ${symptoms.slice(0, 80)}`));
+  doctorInbox(d, doc).forEach((uid) => notify(uid, 'Walk-in in your queue', `Token ${c.token} · ${p.name}`));
   patientOwnerUserIds(p).forEach((u) => notify(u, `Your token: ${c.token}`, `${doc.name} at ${f.name}. Please wait — we'll call your number.`));
   audit(req.user, 'reception_walkin', p.id, 'consult', `${c.id} · token ${c.token} · ${doc.name}${fee ? ` · ₹${fee} at desk` : ''}`);
   store.save();
@@ -7927,7 +7931,7 @@ app.use((err, _req, res, _next) => {
 // ---------- automatic reminders & patient emails ----------
 // Emails carry NO medical details (no symptoms, diagnosis, medicines, tests or results) — only who, when, where,
 // what to bring, and a link to the app, where the patient signs in to see the rest.
-const APP_URL = () => (process.env.APP_URL || process.env.PUBLIC_URL || 'https://nexus-healthcare-50046997916.development.catalystappsail.in').trim().replace(/\/+$/, '');
+const APP_URL = () => (process.env.APP_URL || process.env.PUBLIC_URL || 'https://sehatra-50046997916.development.catalystappsail.in').trim().replace(/\/+$/, '');
 // Demo networks are full of seeded people — only a live network (or an explicit opt-in) emails anyone.
 const reminderEmailsOn = () => DATA_MODE === 'live' || process.env.REMINDER_EMAILS === 'true';
 const escHtml = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
