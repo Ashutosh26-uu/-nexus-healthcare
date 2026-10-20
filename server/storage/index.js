@@ -8,6 +8,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const { sealed } = require('./sealed');
 
 function keyOf(collection, rec) {
   if (rec === null || typeof rec !== 'object') return String(rec);
@@ -18,7 +19,11 @@ function keyOf(collection, rec) {
   return JSON.stringify(rec).slice(0, 200);
 }
 
+// Every adapter is wrapped so rows, documents, files and code lookups are encrypted at rest (see sealed.js).
 function createAdapter() {
+  return sealed(rawAdapter());
+}
+function rawAdapter() {
   if (process.env.DATABASE_URL) return require('./postgres')(process.env.DATABASE_URL);
   const file = process.env.SQLITE_FILE
     ? path.resolve(process.env.SQLITE_FILE)

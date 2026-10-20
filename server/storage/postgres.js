@@ -131,6 +131,11 @@ module.exports = function postgresAdapter(url) {
     async filePut(f) { await q('INSERT INTO files (id, owner_patient_id, uploaded_by, name, mime, size, data) VALUES ($1,$2,$3,$4,$5,$6,$7)', [f.id, f.ownerPatientId, f.uploadedBy, f.name, f.mime, f.size, f.data]); },
     // Account erasure: every upload that belongs to one Health Passport. Returns how many were removed.
     async fileDeleteByOwner(patientId) { return (await q('DELETE FROM files WHERE owner_patient_id = $1', [patientId])).rowCount || 0; },
+    // After a one-time re-encryption: rewrite the tables so the old plain-text row versions are gone from the
+    // data files (VACUUM FULL takes a short lock — it only runs at start-up, before the server takes traffic).
+    async compact() { await (ready ||= init()); for (const t of [...tables, 'kv', 'files', 'otp_codes']) await pool.query('VACUUM FULL ' + t); },
+    async fileIds() { return (await q('SELECT id FROM files')).rows.map((r) => r.id); },
+    async fileReplace(id, name, data) { await q('UPDATE files SET name = $2, data = $3 WHERE id = $1', [id, name, data]); },
     async fileGet(id) {
       const r = (await q('SELECT * FROM files WHERE id = $1', [id])).rows[0];
       return r ? { id: r.id, ownerPatientId: r.owner_patient_id, uploadedBy: r.uploaded_by, name: r.name, mime: r.mime, size: r.size, data: r.data } : null;

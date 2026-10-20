@@ -378,7 +378,9 @@ async function init() {
   const fresh = require('./seed').shape();
   for (const [k, v] of Object.entries(fresh)) if (root[k] === undefined && !SKIP.has(k)) root[k] = v;
   install(root);
-  console.log(`[db] loaded ${adapter.kind} database${adapter.file ? ` (${adapter.file})` : ''}`);
+  console.log(`[db] loaded ${adapter.kind} database${adapter.file ? ` (${adapter.file})` : ''}${adapter.encrypted ? ' · encrypted at rest' : ''}`);
+  // Uploads stored before encryption was on (or under an old key) are re-encrypted in the background.
+  adapter.resealFiles?.().catch((e) => console.error('[storage] file re-encryption stopped:', e.message));
   return db;
 }
 

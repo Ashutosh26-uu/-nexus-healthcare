@@ -28,6 +28,7 @@ Set these as **secrets in the console**, never in files:
 | `DATA_MODE` | `live` (clean network) — `demo` only for investor demos |
 | `DATABASE_URL` | Neon **production** branch, pooled: run `neon connection-string production --pooled --project-id cold-waterfall-95831485` and change `sslmode=require` to `sslmode=verify-full`. Paste it only into the Catalyst console. |
 | `JWT_SECRET` | 64+ random characters (`node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`) |
+| `DATA_ENCRYPTION_KEY` | 64 hex characters (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`). Encrypts every record and upload; required in production. Keep a copy in a password manager — without it the data (and every backup) is unreadable. |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | first super-admin |
 | `CORS_ORIGIN` | your app URL, e.g. `https://nexus-xxxx.development.catalystappsail.in` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | email codes, visit reminders and "prescription ready" notes |

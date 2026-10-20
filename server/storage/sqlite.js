@@ -11,6 +11,7 @@ module.exports = function sqliteAdapter(file) {
   const db = new DatabaseSync(file);
   db.exec(`
     PRAGMA journal_mode = WAL;
+    PRAGMA secure_delete = ON;
     PRAGMA synchronous = NORMAL;
     CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS otp_codes (
@@ -106,6 +107,10 @@ module.exports = function sqliteAdapter(file) {
     },
     // Account erasure: every upload that belongs to one Health Passport. Returns how many were removed.
     async fileDeleteByOwner(patientId) { return db.prepare('DELETE FROM files WHERE owner_patient_id = ?').run(patientId).changes; },
+    // After a one-time re-encryption: rebuild the file so freed pages holding old plain text are dropped.
+    async compact() { db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); db.exec('VACUUM'); db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); },
+    async fileIds() { return db.prepare('SELECT id FROM files').all().map((r) => r.id); },
+    async fileReplace(id, name, data) { db.prepare('UPDATE files SET name = ?, data = ? WHERE id = ?').run(name, data, id); },
     async fileGet(id) {
       const r = db.prepare('SELECT * FROM files WHERE id = ?').get(id);
       return r ? { id: r.id, ownerPatientId: r.owner_patient_id, uploadedBy: r.uploaded_by, name: r.name, mime: r.mime, size: r.size, data: Buffer.from(r.data) } : null;

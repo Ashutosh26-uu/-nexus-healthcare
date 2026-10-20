@@ -16,6 +16,7 @@ Browser / installed app ──HTTPS──▶  Node (Express)  ──▶  Postgre
 |---|---|---|
 | ☐ | **A domain + HTTPS** (e.g. `app.nexushealthcare.in`) | Required for the installable app, device location and secure cookies. |
 | ☐ | `JWT_SECRET` — 48+ random characters | The server refuses to start in production without it. |
+| ☐ | `DATA_ENCRYPTION_KEY` — 64 hex characters, **backed up in a password manager** | Encrypts all stored data and uploads; the server refuses to start in production without it. Losing it means losing the data. |
 | ☐ | `DATA_MODE=live`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Starts a **clean network** with only your admin — no demo accounts. |
 | ☐ | SMTP (your Gmail app password works) | One-time codes by email — works on day one. |
 | ☐ | **SMS provider** — MSG91 (India, needs DLT template) or Twilio | So patients without email get codes by SMS. Until then email is used automatically. |
@@ -98,6 +99,7 @@ See [`.env.production.example`](.env.production.example) for the full, commented
 |---|---|---|
 | `NODE_ENV=production` | yes | |
 | `JWT_SECRET` | yes | 48+ random chars |
+| `DATA_ENCRYPTION_KEY` | yes | 64 hex chars; back it up. `DATA_ENCRYPTION_KEYS_OLD` (comma-separated) while rotating |
 | `DATA_MODE` | yes | `live` for real users. `demo` is refused in production (public demo passwords) unless `ALLOW_DEMO_IN_PRODUCTION=true` for a private investor demo |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | first start | creates the first super-admin |
 | `DATABASE_URL` | recommended | PostgreSQL; omit to use SQLite on the volume |
