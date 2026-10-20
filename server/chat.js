@@ -5,7 +5,6 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const dxgpt = require('./dxgpt');
 const corti = require('./corti');
-const dr7 = require('./dr7');
 const i18n = require('./i18n');
 
 // The real support contact, only if the operator configured one (SUPPORT_PHONE / SUPPORT_EMAIL) — never a
@@ -129,7 +128,7 @@ const NEED_MORE = 'Could you tell me a little more — the age of the person, ho
 const IDENTITY_Q = /(which|what|kaun\s*s[aei]|kon\s*s[aei]|konsa|kaunsa|kis)\s+(ai|a\.i\.?|model|llm|engine|technology|tech|api|chatbot|bot)\b|who\s+(made|built|created|developed|trained|owns)\s+you|kisne\s+banaya|aap(ko)?\s+kisne|powered\s+by|are\s+you\s+(chat\s*gpt|gpt|gemini|claude|openai|llama|a\s+bot|human|real)|which\s+company\s+(made|built)|what\s+are\s+you\b/i;
 const IDENTITY_REPLY = "I'm **Saathi**, Sehatra's AI health assistant. I can't share details about the technology behind me — but I'm here to help you understand symptoms, find the right doctor, and use your Health Passport and medicines. What would you like help with?";
 // Provider outputs never name a vendor or model, whatever the person asked.
-const VENDOR_NAMES = /\b(DxGPT|Dx29|Foundation\s?29|Corti(\s?AI)?|Dr7(\.ai)?|MedGemma[\w.-]*|Med-PaLM[\w.-]*|Meditron|OpenAI|Chat\s?GPT|GPT-?\d[\w.-]*|Anthropic|Claude|Gemini|Llama[\w.-]*|Mistral)\b/gi;
+const VENDOR_NAMES = /\b(DxGPT|Dx29|Foundation\s?29|Corti(\s?AI)?|MedGemma[\w.-]*|Med-PaLM[\w.-]*|Meditron|OpenAI|Chat\s?GPT|GPT-?\d[\w.-]*|Anthropic|Claude|Gemini|Llama[\w.-]*|Mistral)\b/gi;
 const brandSafe = (t) => String(t || '').replace(VENDOR_NAMES, 'Saathi');
 
 async function healthReply(message, ctx, lang, seed) {
@@ -137,21 +136,16 @@ async function healthReply(message, ctx, lang, seed) {
   try {
     r = await dxgpt.answer(message, seed); // walks through every DxGPT key until one has quota
   } catch (e) {
-    // Every DxGPT key used up (or DxGPT down) → the next AI in line answers the same question: Corti, then
-    // Dr7.ai. Silent to the person — same wording, same safety footer. Only their own typed words go, never
-    // the record and never our earlier replies (they can include the allergy reminder).
-    console.warn(`[chat] DxGPT unavailable (${e.message}) — trying the next provider`);
+    // Every DxGPT key used up (or DxGPT down) → Corti answers the same question. Silent to the person — same
+    // wording, same safety footer. Only their own typed words go, never the record and never our earlier
+    // replies (they can include the allergy reminder). If Corti fails too, the caller uses a built-in answer.
+    if (!corti.configured()) throw e;
+    console.warn(`[chat] DxGPT unavailable (${e.message}) — trying Corti`);
     const langName = i18n.langInfo(lang)?.name || 'English';
-    const prompt = [
+    const text = await corti.complete([
       { role: 'system', content: `${SYSTEM_PROMPT}${genericContext(ctx)}\n\nThe app language is ${langName}; reply in the language the person writes in.` },
       { role: 'user', content: message },
-    ];
-    let text = null; let lastErr = e;
-    for (const [name, p] of [['Corti', corti], ['Dr7.ai', dr7]]) {
-      if (!p.configured()) continue;
-      try { text = await p.complete(prompt); break; } catch (err) { lastErr = err; console.warn(`[chat] ${name} unavailable (${err.message}) — trying the next provider`); }
-    }
-    if (!text) throw lastErr;
+    ]);
     r = { kind: 'answer', text: brandSafe(text), sources: '' };
   }
   let out;
@@ -242,7 +236,7 @@ async function handleChat(req, res, ctx) {
   if (!anthropic) {
     let text = null;
     // Health questions → DxGPT (only the typed message is sent); app questions → built-in answers.
-    if (!req.chatOffline && (dxgpt.enabled() || corti.configured() || dr7.configured()) && !isAppQuestion(last.content)) {
+    if (!req.chatOffline && (dxgpt.enabled() || corti.configured()) && !isAppQuestion(last.content)) {
       // The person's own last few messages, so a follow-up ("he is 4, since 6 hours") keeps its context.
       const typed = history.filter((m) => m.role === 'user').slice(-3).map((m) => m.content.trim()).join('\n');
       try { text = await healthReply(typed, ctx, lang, ctx?.user?.id || req.ip); } catch (e) { console.warn('[chat] DxGPT unavailable, using a built-in answer:', e.message); }
@@ -288,4 +282,4 @@ The person has chosen ${langName} for the app. Reply in ${langName} unless they 
   res.end();
 }
 
-module.exports = { handleChat, aiEnabled: () => Boolean(process.env.ANTHROPIC_API_KEY) || dxgpt.enabled() || corti.configured() || dr7.configured(), isAppQuestion };
+module.exports = { handleChat, aiEnabled: () => Boolean(process.env.ANTHROPIC_API_KEY) || dxgpt.enabled() || corti.configured(), isAppQuestion };
