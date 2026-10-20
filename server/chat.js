@@ -141,7 +141,20 @@ const IDENTITY_Q = /(which|what|kaun\s*s[aei]|kon\s*s[aei]|konsa|kaunsa|kis)\s+(
 const IDENTITY_REPLY = "I'm **Saathi**, Sehatra's AI health assistant. I can't share details about the technology behind me — but I'm here to help you understand symptoms, find the right doctor, and use your Health Passport and medicines. What would you like help with?";
 // Provider outputs never name a vendor or model, whatever the person asked.
 const VENDOR_NAMES = /\b(DxGPT|Dx29|Foundation\s?29|Corti(\s?AI)?|MedGemma[\w.-]*|Med-PaLM[\w.-]*|Meditron|OpenAI|Chat\s?GPT|GPT-?\d[\w.-]*|Anthropic|Claude|Gemini|Llama[\w.-]*|Mistral)\b/gi;
-const brandSafe = (t) => String(t || '').replace(VENDOR_NAMES, 'Saathi');
+// Providers sometimes write maths in LaTeX — "\(38^\circ\text{C}\)" — which the chat bubble shows as code.
+// Turn the common bits into plain text: 38°C, ≥, ×, ½…
+function plainMath(t) {
+  return String(t || '')
+    .replace(/\\\(|\\\)|\\\[|\\\]/g, '')
+    .replace(/\\(?:text|mathrm|textbf|mathbf)\{([^{}]*)\}/g, '$1')
+    .replace(/\^\s*\{?\\circ\}?/g, '°')
+    .replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, '$1/$2')
+    .replace(/\\(?:geq|ge)\b/g, '≥').replace(/\\(?:leq|le)\b/g, '≤')
+    .replace(/\\times\b/g, '×').replace(/\\pm\b/g, '±').replace(/\\approx\b/g, '≈').replace(/\\to\b|\\rightarrow\b/g, '→')
+    .replace(/\\%/g, '%').replace(/\\,|\\ /g, ' ')
+    .replace(/\$([^$\n]{1,40})\$/g, '$1');
+}
+const brandSafe = (t) => plainMath(t).replace(VENDOR_NAMES, 'Saathi');
 
 async function healthReply(message, ctx, lang, seed) {
   let r;
