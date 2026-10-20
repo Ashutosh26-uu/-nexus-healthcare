@@ -79,7 +79,7 @@ async function call(path, description, seed) {
       throw e; // a timeout or DxGPT itself failing: the next key wouldn't do better
     }
   }
-  throw lastErr instanceof LimitError || !lastErr ? new LimitError('Every DxGPT key is out of quota') : lastErr;
+  throw lastErr instanceof LimitError || !lastErr ? new LimitError('every DxGPT key is out of quota or rejected') : lastErr;
 }
 
 // "[2][3]" citation markers → removed; the sources become one short line instead.

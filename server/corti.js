@@ -4,12 +4,14 @@
 //   CORTI_API_KEY                                   a "Corti Models Service API Key" from the Corti Console, or
 //   CORTI_CLIENT_ID + CORTI_CLIENT_SECRET + CORTI_TENANT  an API client (OAuth client credentials).
 // CORTI_REGION = eu (default) | us. Like DxGPT, Corti only ever gets what the person typed — never their record.
-const REGION = () => (String(process.env.CORTI_REGION || 'eu').toLowerCase() === 'us' ? 'us' : 'eu');
+// The Corti Console's "Copy all as .env" names (CORTI_TENANT_NAME, CORTI_ENVIRONMENT) work as well.
+const TENANT = () => process.env.CORTI_TENANT || process.env.CORTI_TENANT_NAME;
+const REGION = () => (String(process.env.CORTI_REGION || process.env.CORTI_ENVIRONMENT || 'eu').toLowerCase() === 'us' ? 'us' : 'eu');
 const MODEL = () => process.env.CORTI_MODEL || 'corti-s1-mini-instant';
 const TIMEOUT_MS = Math.max(5000, Number(process.env.CORTI_TIMEOUT_MS) || 40000);
 const DAILY_LIMIT = Math.max(0, Number(process.env.CORTI_DAILY_LIMIT ?? 200));
 
-const configured = () => Boolean(process.env.CORTI_API_KEY || (process.env.CORTI_CLIENT_ID && process.env.CORTI_CLIENT_SECRET && process.env.CORTI_TENANT));
+const configured = () => Boolean(process.env.CORTI_API_KEY || (process.env.CORTI_CLIENT_ID && process.env.CORTI_CLIENT_SECRET && TENANT()));
 const state = { day: '', used: 0, blockedUntil: 0, warned: false, token: null, tokenExp: 0 };
 
 class LimitError extends Error {}
@@ -23,7 +25,7 @@ async function withTimeout(url, opts) {
 async function bearer() {
   if (process.env.CORTI_API_KEY) return process.env.CORTI_API_KEY;
   if (state.token && Date.now() < state.tokenExp) return state.token;
-  const url = `https://auth.${REGION()}.corti.app/realms/${encodeURIComponent(process.env.CORTI_TENANT)}/protocol/openid-connect/token`;
+  const url = `https://auth.${REGION()}.corti.app/realms/${encodeURIComponent(TENANT())}/protocol/openid-connect/token`;
   const r = await withTimeout(url, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
