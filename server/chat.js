@@ -105,7 +105,19 @@ const isAppQuestion = (t) => GREETING.test(t) || APP_WORDS.test(t) || t.trim().l
 
 const DIFF_INTRO = 'From what you have described, these are some things a doctor would usually consider:';
 const DIFF_OUTRO = 'This is **not a diagnosis** — only a doctor who examines you can tell. **See a doctor today** if you feel very unwell, it gets worse or lasts more than 2–3 days, or you notice confusion, trouble breathing, a stiff neck, bleeding or a rash. Tap **Find a doctor** to book — in an emergency call **108**.';
-const ANSWER_FOOTER = "_This is general health information, not a diagnosis. If you're worried or it isn't getting better, **book a doctor** — in an emergency call **108**._";
+// Plain text only: the chat bubble renders **bold** but not _italics_ (underscores would show as-is).
+const ANSWER_FOOTER = "If you're worried or it isn't getting better, **book a doctor** — in an emergency call **108**.";
+// Ends every AI-written reply, like other AI assistants do.
+const AI_NOTE = '⚠️ **Saathi is an AI and can make mistakes.** Please consult a doctor before following this advice.';
+// The language to write our own lines in: the language the answer came back in (DxGPT detects it), or
+// Hindi when the person typed in Devanagari, else the app language. Romanised Hindi ("hi-Latn") keeps the
+// app language, since our translations are in the native script.
+function replyLang(detected, message, appLang) {
+  if (/[ऀ-ॿ]/.test(message)) return 'hi'; // typed in Devanagari → Hindi, whatever a provider reports
+  const base = String(detected || '').split('-')[0].toLowerCase();
+  if (base && base !== 'en' && !/latn/i.test(String(detected)) && i18n.langInfo(base)) return base;
+  return appLang;
+}
 
 // The built-in self-care advice for this symptom, if there is one (ORS for loose motions, fluids for fever…).
 function selfCareTip(message) {
@@ -146,30 +158,34 @@ async function healthReply(message, ctx, lang, seed) {
       { role: 'system', content: `${SYSTEM_PROMPT}${genericContext(ctx)}\n\nThe app language is ${langName}; reply in the language the person writes in.` },
       { role: 'user', content: message },
     ]);
-    r = { kind: 'answer', text: brandSafe(text), sources: '' };
+    r = { kind: 'answer', text: brandSafe(text), lang: '' };
   }
+  // Our own lines (intro, tips, footer, AI note) go in the same language as the answer itself.
+  const L = replyLang(r.lang, message, lang);
+  const t = (s) => localise(s, L);
   let out;
   if (r.kind === 'need-more') {
     const tip = selfCareTip(message);
-    out = `${await localise(NEED_MORE, lang)}${tip ? `\n\n${await localise(TIP_TITLE, lang)} ${await localise(tip, lang)}` : ''}\n\n${await localise(ANSWER_FOOTER, lang)}`;
+    out = `${await t(NEED_MORE)}${tip ? `\n\n${await t(TIP_TITLE)} ${await t(tip)}` : ''}\n\n${await t(ANSWER_FOOTER)}`;
   } else if (r.kind === 'differential') {
     const list = r.items.map((x, i) => `${i + 1}. **${brandSafe(x.name)}** — ${brandSafe(x.about)}`).join('\n');
     const tip = selfCareTip(message);
-    const tipText = tip ? `\n\n${await localise(TIP_TITLE, lang)} ${await localise(tip, lang)}` : '';
-    out = `${await localise(DIFF_INTRO, lang)}\n\n${list}${tipText}\n\n${await localise(DIFF_OUTRO, lang)}`;
+    const tipText = tip ? `\n\n${await t(TIP_TITLE)} ${await t(tip)}` : '';
+    out = `${await t(DIFF_INTRO)}\n\n${list}${tipText}\n\n${await t(DIFF_OUTRO)}`;
   } else {
-    out = `${brandSafe(r.text)}${r.sources ? `\n\n${r.sources}` : ''}\n\n${await localise(ANSWER_FOOTER, lang)}`;
+    out = `${brandSafe(r.text)}\n\n${await t(ANSWER_FOOTER)}`;
   }
   // Same allergy reminder as the built-in answers — read from the record on our server, never sent to DxGPT.
   const allergies = (ctx?.patient?.allergies || []).filter(Boolean);
   if (allergies.length && /medicine|tablet|take|dose|ibuprofen|amoxicillin|penicillin|painkiller|antibiotic|dawa|dawai|goli/i.test(message)) {
-    out += `\n\n${(await localise(ALLERGY_NOTE, lang)).replace('{0}', `**${allergies.join(', ')}**`)}`;
+    out += `\n\n${(await t(ALLERGY_NOTE)).replace('{0}', `**${allergies.join(', ')}**`)}`;
   }
+  out += `\n\n${await t(AI_NOTE)}`; // every AI-written reply ends with the AI disclaimer
   return out;
 }
 
 // Fixed help texts may be translated by the i18n engine (they contain no personal data).
-i18n.registerServerStrings([EMERGENCY_REPLY, ...FAQ.map((f) => f.a), NO_MATCH, ALLERGY_NOTE, DIFF_INTRO, DIFF_OUTRO, ANSWER_FOOTER, TIP_TITLE, NEED_MORE, IDENTITY_REPLY]);
+i18n.registerServerStrings([EMERGENCY_REPLY, ...FAQ.map((f) => f.a), NO_MATCH, ALLERGY_NOTE, DIFF_INTRO, DIFF_OUTRO, ANSWER_FOOTER, AI_NOTE, TIP_TITLE, NEED_MORE, IDENTITY_REPLY]);
 
 async function localise(text, lang) {
   try { return await i18n.translateServerText(lang, text); } catch { return text; }
@@ -242,7 +258,12 @@ async function handleChat(req, res, ctx) {
       try { text = await healthReply(typed, ctx, lang, ctx?.user?.id || req.ip); } catch (e) { console.warn('[chat] DxGPT unavailable, using a built-in answer:', e.message); }
     }
     if (res.writableEnded || res.destroyed) return undefined; // the chat was closed while we waited
-    await streamFallback(res, text || await fallbackText(last.content, ctx, lang));
+    if (!text) {
+      text = await fallbackText(last.content, ctx, lang);
+      // A health question answered from the built-in tips still gets the same AI disclaimer at the end.
+      if (!isAppQuestion(last.content)) text += `\n\n${await localise(AI_NOTE, replyLang('', last.content, lang))}`;
+    }
+    await streamFallback(res, text);
     res.write('data: [DONE]\n\n');
     return res.end();
   }

@@ -82,31 +82,24 @@ async function call(path, description, seed) {
   throw lastErr instanceof LimitError || !lastErr ? new LimitError('every DxGPT key is out of quota or rejected') : lastErr;
 }
 
-// "[2][3]" citation markers → removed; the sources become one short line instead.
+// "[2][3]" citation markers are removed (Saathi doesn't show sources), and so are the citation links.
 const clean = (t) => String(t || '').replace(/\s*\[\d+\](\[\d+\])*/g, '').replace(/[ \t]+\n/g, '\n').trim();
-function sourcesLine(citations) {
-  const hosts = [];
-  for (const u of citations || []) {
-    try { const h = new URL(u).hostname.replace(/^www\./, ''); if (!hosts.includes(h)) hosts.push(h); } catch { /* skip */ }
-    if (hosts.length >= 3) break;
-  }
-  return hosts.length ? `_Sources: ${hosts.join(' · ')}_` : '';
-}
 
 /**
- * Answer a health message. Returns { kind: 'answer', text, sources } for a question, or
- * { kind: 'differential', items: [{ name, about }] } when it reads as a description of someone's symptoms.
+ * Answer a health message. Returns { kind: 'answer', text, lang } for a question, or
+ * { kind: 'differential', items: [{ name, about }], lang } when it reads as a description of someone's
+ * symptoms. `lang` is the language DxGPT detected (e.g. 'hi', 'hi-Latn', 'en').
  */
 async function answer(message, seed) {
   const a = await call('/ask', message, seed);
   const text = clean(a.medicalAnswer);
-  if (text) return { kind: 'answer', text, sources: sourcesLine(a.sonarData?.citations) };
+  if (text) return { kind: 'answer', text, lang: a.detectedLang || '' };
   // An empty answer means DxGPT read it as a case ("go"/"enrich") — ask it for the likely causes instead.
   const d = await call('/diagnose', message, seed);
   const items = (d.data || []).slice(0, 3).map((x) => ({ name: clean(x.diagnosis), about: clean(x.description) })).filter((x) => x.name);
-  if (items.length) return { kind: 'differential', items };
+  if (items.length) return { kind: 'differential', items, lang: d.detectedLang || a.detectedLang || '' };
   // Nothing from either endpoint: DxGPT wants more context ("enrich") — ask the person for it.
-  return { kind: 'need-more', reason: d.intentReason || a.intentReason || '' };
+  return { kind: 'need-more', reason: d.intentReason || a.intentReason || '', lang: d.detectedLang || a.detectedLang || '' };
 }
 
 module.exports = { enabled, answer, anonUuid, keys, LimitError, _keyState: keyState };
