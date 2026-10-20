@@ -1,0 +1,26 @@
+{
+  "name": "sehatra-mobile",
+  "version": "1.0.0",
+  "description": "Sehatra Android app (Capacitor shell around the live web app)",
+  "scripts": {
+    "sync": "cap sync android",
+    "open": "cap open android",
+    "assets": "capacitor-assets generate --android",
+    "apk": "cap sync android && cd android && gradlew.bat assembleDebug"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.4"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.5.3"
+  },
+  "private": true
+}

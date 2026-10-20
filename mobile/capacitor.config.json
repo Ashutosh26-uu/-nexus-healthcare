@@ -1,0 +1,29 @@
+{
+  "appId": "in.sehatra.app",
+  "appName": "Sehatra",
+  "webDir": "www",
+  "server": {
+    "url": "https://nexus-healthcare-50046997916.development.catalystappsail.in",
+    "errorPath": "offline.html",
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#fbf7f0"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1200,
+      "launchAutoHide": true,
+      "backgroundColor": "#fbf7f0",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "backgroundColor": "#fbf7f0",
+      "style": "LIGHT",
+      "overlaysWebView": false
+    },
+    "SystemBars": {
+      "insetsHandling": "disable"
+    }
+  }
+}

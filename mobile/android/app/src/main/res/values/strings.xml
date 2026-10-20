@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Sehatra</string>
+    <string name="title_activity_main">Sehatra</string>
+    <string name="package_name">in.sehatra.app</string>
+    <string name="custom_url_scheme">in.sehatra.app</string>
+</resources>
