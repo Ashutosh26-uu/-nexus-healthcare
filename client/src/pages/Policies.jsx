@@ -84,7 +84,7 @@ export function PrivacyPolicy() {
           <li><strong>Zoho Catalyst</strong> runs the application (India).</li>
           <li><strong>Neon</strong> hosts our database in its Singapore region. It only ever holds data we have already encrypted.</li>
           <li>An <strong>email delivery service</strong> sends your one-time sign-in codes and notifications.</li>
-          <li><strong>DxGPT</strong> (by Foundation29, a non-profit) answers health questions you type to Saathi. Only the message you type is sent — never your name, Health Passport, records or medicines — and DxGPT removes any personal details it still finds. Questions about using Sehatra are answered by Saathi itself.</li>
+          <li><strong>DxGPT</strong> (by Foundation29, a non-profit) answers health questions you type to Saathi. Only the message you type is sent — never your name, Health Passport, records or medicines — and DxGPT removes any personal details it still finds. If DxGPT is busy or out of capacity, the same question goes to <strong>Corti</strong> (a medical AI company, servers in the EU) under the same rule — only what you typed. Questions about using Sehatra are answered by Saathi itself.</li>
           <li><strong>Razorpay</strong>, only if card or net-banking payments are switched on for the network — it then handles those payments on its own secure pages.</li>
           <li>Your <strong>browser’s speech service</strong> when you use voice input, as described above.</li>
           <li>An <strong>AI provider</strong> for the consult scribe assistant, only when a doctor switches it on and you agree. It is currently off.</li>

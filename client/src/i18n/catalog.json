@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-10-20T14:40:24.345Z",
+ "generatedAt": "2026-10-20T16:06:27.092Z",
  "strings": [
   "% advance confirms the order. If the chemist can't fulfil it, the advance is refunded.",
   "% complete",
@@ -19,10 +19,11 @@
   "(AI)",
   "(ASHA)",
   "(Reg",
+  "(a medical AI company, servers in the EU) under the same rule — only what you typed. Questions about using Sehatra are answered by Saathi itself.",
   "(a month of cover plus the distributor's lead time) − stock, rounded up to whole packs. Below-safety items with no recent sales are topped up to twice the safety level.",
   "(also in the footer and in your account menu) to switch live location on or off.",
   "(bottom right of every page) or the Help section of the app",
-  "(by Foundation29, a non-profit) answers health questions you type to Saathi. Only the message you type is sent — never your name, Health Passport, records or medicines — and DxGPT removes any personal details it still finds. Questions about using Sehatra are answered by Saathi itself.",
+  "(by Foundation29, a non-profit) answers health questions you type to Saathi. Only the message you type is sent — never your name, Health Passport, records or medicines — and DxGPT removes any personal details it still finds. If DxGPT is busy or out of capacity, the same question goes to",
   "(display-mode: standalone)",
   "(estimate)",
   "(for example Google’s on Android/Chrome or Apple’s on iPhone) and only the text reaches Sehatra. The AI assistant that drafts notes from that text is",
@@ -1016,6 +1017,7 @@
   "Copy the date from the vaccination card if you have it.",
   "Copy the rows from your supplier's sheet or invoice and paste them here — no typing one by one.",
   "Corridor closed",
+  "Corti",
   "Cough",
   "Could not load the file.",
   "Could not load the payment window. Check your connection.",

@@ -4,6 +4,7 @@
 // person's record — only what they typed. Anything failing falls back to the built-in assistant.
 const Anthropic = require('@anthropic-ai/sdk');
 const dxgpt = require('./dxgpt');
+const corti = require('./corti');
 const i18n = require('./i18n');
 
 // The real support contact, only if the operator configured one (SUPPORT_PHONE / SUPPORT_EMAIL) — never a
@@ -123,7 +124,21 @@ const TIP_TITLE = '**What you can do now:**';
 const NEED_MORE = 'Could you tell me a little more — the age of the person, how long it has been going on, and any other symptoms (fever, vomiting, rash, pain, weakness)? That helps me give a better answer.';
 
 async function healthReply(message, ctx, lang, seed) {
-  const r = await dxgpt.answer(message, seed);
+  let r;
+  try {
+    r = await dxgpt.answer(message, seed); // walks through every DxGPT key until one has quota
+  } catch (e) {
+    // Every DxGPT key used up (or DxGPT down) → Corti answers the same question. Only the person's own typed
+    // words go — never the record, and never our earlier replies (they can include the allergy reminder).
+    if (!corti.configured()) throw e;
+    console.warn(`[chat] DxGPT unavailable (${e.message}) — trying Corti`);
+    const langName = i18n.langInfo(lang)?.name || 'English';
+    const text = await corti.complete([
+      { role: 'system', content: `${SYSTEM_PROMPT}${genericContext(ctx)}\n\nThe app language is ${langName}; reply in the language the person writes in.` },
+      { role: 'user', content: message },
+    ]);
+    r = { kind: 'answer', text, sources: '' };
+  }
   let out;
   if (r.kind === 'need-more') {
     const tip = selfCareTip(message);
@@ -206,7 +221,7 @@ async function handleChat(req, res, ctx) {
   if (!anthropic) {
     let text = null;
     // Health questions → DxGPT (only the typed message is sent); app questions → built-in answers.
-    if (!req.chatOffline && dxgpt.enabled() && !isAppQuestion(last.content)) {
+    if (!req.chatOffline && (dxgpt.enabled() || corti.configured()) && !isAppQuestion(last.content)) {
       // The person's own last few messages, so a follow-up ("he is 4, since 6 hours") keeps its context.
       const typed = history.filter((m) => m.role === 'user').slice(-3).map((m) => m.content.trim()).join('\n');
       try { text = await healthReply(typed, ctx, lang, ctx?.user?.id || req.ip); } catch (e) { console.warn('[chat] DxGPT unavailable, using a built-in answer:', e.message); }
@@ -252,4 +267,4 @@ The person has chosen ${langName} for the app. Reply in ${langName} unless they 
   res.end();
 }
 
-module.exports = { handleChat, aiEnabled: () => Boolean(process.env.ANTHROPIC_API_KEY) || dxgpt.enabled(), isAppQuestion };
+module.exports = { handleChat, aiEnabled: () => Boolean(process.env.ANTHROPIC_API_KEY) || dxgpt.enabled() || corti.configured(), isAppQuestion };
