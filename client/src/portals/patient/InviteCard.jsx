@@ -8,7 +8,7 @@ export default function InviteCard() {
       <span className="pt-quick-ic" style={{ flex: 'none' }}><Gift /></span>
       <span className="grow">
         <strong className="block">Invite friends, you both get ₹50</strong>
-        <span className="small muted">Nexus credit after their first paid consult or lab test.</span>
+        <span className="small muted">Sehatra credit after their first paid consult or lab test.</span>
       </span>
       <ChevronRight size={18} className="muted" />
     </Link>

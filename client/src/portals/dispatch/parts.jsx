@@ -3,7 +3,7 @@ import { Snowflake, MapPin, Package, Navigation, Camera, X, CheckCircle2, Store,
 import { fmtMoney, cx } from '../../components/ui';
 
 /* ---------- money & state helpers ---------- */
-// No rider pay rate is stored in Nexus yet, so this is an ESTIMATE (₹30 + ₹6/km, +₹20 cold chain) and always labelled as one.
+// No rider pay rate is stored in Sehatra yet, so this is an ESTIMATE (₹30 + ₹6/km, +₹20 cold chain) and always labelled as one.
 export const payFor = (job) => 30 + Math.round((job.distanceKm || 0) * 6) + (job.coldChain ? 20 : 0);
 export const isToday = (iso) => iso && new Date(iso).toDateString() === new Date().toDateString();
 
@@ -167,7 +167,7 @@ export function DeliverSheet({ job, open, onClose, onSubmit }) {
               <h3 className="mb-0">Confirm delivery</h3>
               <button type="button" className="icon-btn" onClick={onClose} aria-label="Close"><X /></button>
             </div>
-            <p className="small muted">Ask {shortPlace(job.drop)} for the 4-digit code from their Nexus Healthcare app or SMS.</p>
+            <p className="small muted">Ask {shortPlace(job.drop)} for the 4-digit code from their Sehatra app or SMS.</p>
             <div className={cx('dj-otp', error && 'shake')} dir="ltr">
               {digits.map((d, i) => (
                 <input key={i} ref={refs[i]} value={d} inputMode="numeric" autoComplete="one-time-code" maxLength={i === 0 ? 4 : 1}

@@ -34,7 +34,7 @@ export default function StaffScan({ onPatient, onVisit, label = 'Scan a patient 
       } else if (s.type === 'verify') {
         navigate(s.path);
       } else {
-        toast('That isn’t a Nexus Healthcare patient code. Try the QR on the Health Passport or emergency card.', 'error');
+        toast('That isn’t a Sehatra patient code. Try the QR on the Health Passport or emergency card.', 'error');
       }
     } catch (e) {
       toast(e.message, 'error');

@@ -23,7 +23,7 @@ const MODE_LABEL = { video: 'Video consult', audio: 'Audio call consult', chat: 
 const MISSING_LABEL ={ age: 'your age', address: 'your permanent address', aadhaar: 'Aadhaar or a government ID', id: 'a passport / national ID', profile: 'your profile' };
 
 // Book a doctor: video, or in person at the doctor's own hospital / clinic → pay → booking ID + QR.
-// Nexus E-Clinics show as "coming soon". In person: a ₹100 booking amount now, doctor's fee at the clinic.
+// Sehatra E-Clinics show as "coming soon". In person: a ₹100 booking amount now, doctor's fee at the clinic.
 export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', onClose }) {
   const navigate = useNavigate();
   const { reloadHome, patient } = usePatient();
@@ -143,7 +143,7 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
                   <Video /><span><strong>Online consult</strong><span className="tiny muted block">From home — video, audio call or chat · {fmtMoney(fees.video)}</span></span>
                 </button>
                 <button type="button" disabled className="pt-bk-type soon">
-                  <MonitorSmartphone /><span><strong>At a Nexus E-Clinic <span className="soon-badge">Coming soon</span></strong><span className="tiny muted block">Our own clinics with vitals checked on arrival</span></span>
+                  <MonitorSmartphone /><span><strong>At a Sehatra E-Clinic <span className="soon-badge">Coming soon</span></strong><span className="tiny muted block">Our own clinics with vitals checked on arrival</span></span>
                 </button>
               </div>
               {place?.hours && <p className="tiny muted mt-1 mb-0"><Clock size={12} style={{ verticalAlign: '-2px' }} /> {place.hours}</p>}
@@ -235,7 +235,7 @@ export default function BookingFlow({ doctor, symptoms: initialSymptoms = '', on
           )}
           {/* For family: who, when, where — never the symptoms. */}
           <ShareButton label="Tell family on WhatsApp"
-            text={`I've booked a doctor on Nexus Healthcare: ${d.name}, ${later && slot ? fmtDateTime(slot) : 'today, right now'} — ${visitType === 'video' ? (MODE_LABEL[booking.consult.mode] || MODE_LABEL.video).toLowerCase() : `at ${place?.name || 'the clinic'}`}.`} />
+            text={`I've booked a doctor on Sehatra: ${d.name}, ${later && slot ? fmtDateTime(slot) : 'today, right now'} — ${visitType === 'video' ? (MODE_LABEL[booking.consult.mode] || MODE_LABEL.video).toLowerCase() : `at ${place?.name || 'the clinic'}`}.`} />
         </div>
       )}
     </Modal>

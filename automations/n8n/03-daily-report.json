@@ -1,5 +1,5 @@
 {
-  "name": "Nexus · Daily report (email)",
+  "name": "Sehatra · Daily report (email)",
   "nodes": [
     {
       "parameters": {
@@ -39,7 +39,7 @@
             {
               "id": "45c35dbe-a0ec-4a0f-bd90-b39626f0a372",
               "name": "fromEmail",
-              "value": "Nexus Automations <no-reply@yourdomain.com>",
+              "value": "Sehatra Automations <no-reply@yourdomain.com>",
               "type": "string"
             }
           ]
@@ -55,7 +55,7 @@
         220,
         300
       ],
-      "notes": "Edit these once: your Nexus URL, who gets alerts, and the sender address."
+      "notes": "Edit these once: your Sehatra URL, who gets alerts, and the sender address."
     },
     {
       "parameters": {
@@ -77,13 +77,13 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "nexusAutomationKey",
-          "name": "Nexus automation key"
+          "name": "Sehatra automation key"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "const s = $input.first().json;\nconst rupee = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');\nconst lines = [\n  `Nexus Healthcare — ${s.date}${s.mode !== 'live' ? ' (demo data)' : ''}`,\n  '',\n  `New patients: ${s.patients.new}  (total ${s.patients.total})`,\n  `Doctor bookings: ${s.consults.booked} · consults done: ${s.consults.completed} · follow-ups booked: ${s.consults.followUpsBooked}`,\n  `Prescriptions: ${s.prescriptions}`,\n  `Lab tests: ${s.labs.advised} advised · ${s.labs.booked} booked · ${s.labs.reported} reported${s.labs.critical ? ` · ${s.labs.critical} CRITICAL` : ''}`,\n  `Medicine orders: ${s.medicineOrders.placed} placed · ${s.medicineOrders.delivered} delivered/collected · ${s.medicineOrders.declined} declined · ${s.medicineOrders.cancelled} cancelled`,\n  `Payments: ${s.payments.count} · ${rupee(s.payments.amount)}`,\n  ...Object.entries(s.payments.byPurpose || {}).map(([k, v]) => `   ${k}: ${rupee(v)}`),\n  '',\n  `Refunds waiting: ${s.refundsPending}`,\n  `Waiting for verification: ${s.awaitingVerification.doctors} doctors, ${s.awaitingVerification.facilities} facilities`,\n];\nreturn [{ json: { subject: `Nexus daily report — ${s.date}: ${s.consults.booked} bookings, ${rupee(s.payments.amount)}`, text: lines.join('\\n') } }];"
+        "jsCode": "const s = $input.first().json;\nconst rupee = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');\nconst lines = [\n  `Sehatra — ${s.date}${s.mode !== 'live' ? ' (demo data)' : ''}`,\n  '',\n  `New patients: ${s.patients.new}  (total ${s.patients.total})`,\n  `Doctor bookings: ${s.consults.booked} · consults done: ${s.consults.completed} · follow-ups booked: ${s.consults.followUpsBooked}`,\n  `Prescriptions: ${s.prescriptions}`,\n  `Lab tests: ${s.labs.advised} advised · ${s.labs.booked} booked · ${s.labs.reported} reported${s.labs.critical ? ` · ${s.labs.critical} CRITICAL` : ''}`,\n  `Medicine orders: ${s.medicineOrders.placed} placed · ${s.medicineOrders.delivered} delivered/collected · ${s.medicineOrders.declined} declined · ${s.medicineOrders.cancelled} cancelled`,\n  `Payments: ${s.payments.count} · ${rupee(s.payments.amount)}`,\n  ...Object.entries(s.payments.byPurpose || {}).map(([k, v]) => `   ${k}: ${rupee(v)}`),\n  '',\n  `Refunds waiting: ${s.refundsPending}`,\n  `Waiting for verification: ${s.awaitingVerification.doctors} doctors, ${s.awaitingVerification.facilities} facilities`,\n];\nreturn [{ json: { subject: `Sehatra daily report — ${s.date}: ${s.consults.booked} bookings, ${rupee(s.payments.amount)}`, text: lines.join('\\n') } }];"
       },
       "id": "bff23e08-0ae0-45c2-89ba-90615ff91f73",
       "name": "Write report",

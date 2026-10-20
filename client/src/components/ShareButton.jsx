@@ -15,7 +15,7 @@ export function WhatsAppGlyph({ size = 16 }) {
   );
 }
 
-export default function ShareButton({ text, url, title = 'Nexus Healthcare', label = 'Share on WhatsApp', size = 'sm', variant = 'secondary', className, iconOnly = false }) {
+export default function ShareButton({ text, url, title = 'Sehatra', label = 'Share on WhatsApp', size = 'sm', variant = 'secondary', className, iconOnly = false }) {
   const [busy, setBusy] = useState(false);
   const share = async () => {
     if (busy) return;

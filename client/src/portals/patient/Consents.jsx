@@ -180,7 +180,7 @@ export default function Consents() {
                       <div className="grow">
                         <div className="small"><strong>{me ? 'You' : a.actorName}</strong> <span className="muted">· {ACTIONS[a.action] || a.action.replace(/_/g, ' ')}</span>{a.recordType ? <span className="muted"> · {a.recordType}</span> : null}</div>
                         {a.reason && <div className="tiny muted">{bg ? 'Reason given: ' : ''}{a.reason}</div>}
-                        {bg && <div className="tiny pt-glass-note"><ShieldAlert size={12} className="inline-ic" /> Emergency access is reviewed by a Nexus Healthcare admin.{support.phone ? <> If this wasn&apos;t you or a real emergency, call <a href={telHref(support.phone)} translate="no">{support.phone}</a>.</> : support.email ? <> If this wasn&apos;t you or a real emergency, email <a href={`mailto:${support.email}`} translate="no">{support.email}</a>.</> : null}</div>}
+                        {bg && <div className="tiny pt-glass-note"><ShieldAlert size={12} className="inline-ic" /> Emergency access is reviewed by a Sehatra admin.{support.phone ? <> If this wasn&apos;t you or a real emergency, call <a href={telHref(support.phone)} translate="no">{support.phone}</a>.</> : support.email ? <> If this wasn&apos;t you or a real emergency, email <a href={`mailto:${support.email}`} translate="no">{support.email}</a>.</> : null}</div>}
                       </div>
                       <span className="tiny muted nowrap" title={fmtDateTime(a.at)}>{timeAgo(a.at)}</span>
                     </div>

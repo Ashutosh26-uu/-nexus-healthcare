@@ -39,11 +39,11 @@ function verifySignature({ orderId, paymentId, signature }) {
 function upiUri({ amount, ref, note }) {
   const vpa = process.env.UPI_VPA;
   if (!vpa) return null;
-  const name = process.env.UPI_PAYEE_NAME || 'Nexus Healthcare';
+  const name = process.env.UPI_PAYEE_NAME || 'Sehatra';
   const am = Number(amount);
   if (!Number.isFinite(am) || am <= 0) return null; // never a QR for "₹NaN"
-  // Percent-encoding (%20), not form-encoding (+): UPI apps decode upi:// as a URI and would show "Nexus+Healthcare".
-  const q = { pa: vpa, pn: name, am: am.toFixed(2), cu: 'INR', tn: String(note || 'Nexus Healthcare').slice(0, 60), tr: String(ref || '') };
+  // Percent-encoding (%20), not form-encoding (+): UPI apps decode upi:// as a URI and would show "Sehatra+Healthcare".
+  const q = { pa: vpa, pn: name, am: am.toFixed(2), cu: 'INR', tn: String(note || 'Sehatra').slice(0, 60), tr: String(ref || '') };
   return `upi://pay?${Object.entries(q).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')}`;
 }
 
@@ -51,12 +51,12 @@ function publicPayment(p, { dataMode }) {
   return {
     id: p.id, purpose: p.purpose, refId: p.refId, amount: p.amount, status: p.status, provider: p.provider, label: p.label,
     orderId: p.orderId || null, keyId: p.provider === 'razorpay' ? keyId() : null,
-    upi: upiUri({ amount: p.amount, ref: p.id, note: p.label || 'Nexus Healthcare' }),
+    upi: upiUri({ amount: p.amount, ref: p.id, note: p.label || 'Sehatra' }),
     demo: p.provider === 'demo', demoConfirmAllowed: p.provider === 'demo' && demoAllowed(dataMode), paidAt: p.paidAt || null,
     // Live network, real UPI ID, no gateway: the patient sends the UTR and the admin confirms (see /payments/:id/claim).
     manualConfirm: p.provider === 'demo' && Boolean(process.env.UPI_VPA) && !demoAllowed(dataMode),
     utr: p.utr || null, claimedAt: p.claimedAt || null, rejectReason: p.rejectReason || null,
-    // Nexus credit (credits.js): `amount` is what's left to pay; `gross` is the price before credit.
+    // Sehatra credit (credits.js): `amount` is what's left to pay; `gross` is the price before credit.
     gross: p.gross ?? p.amount, creditApplied: p.creditApplied || 0, method: p.method || null,
   };
 }

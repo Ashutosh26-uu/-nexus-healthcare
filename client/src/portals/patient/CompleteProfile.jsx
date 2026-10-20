@@ -191,7 +191,7 @@ export default function CompleteProfile() {
           <Field label={india ? 'District / city' : 'City'}><input className="input" value={form.district} onChange={(e) => set('district', e.target.value)} /></Field>
           <Field label={india ? 'State' : 'State / region'}><input className="input" value={form.state} onChange={(e) => set('state', e.target.value)} /></Field>
         </div>
-        <p className="tiny muted mb-0"><ShieldCheck size={12} style={{ verticalAlign: '-2px' }} /> Your location is used only to find doctors within 20 km and chemists within 50 km. It stays on Nexus Healthcare&apos;s servers, rounded to about 100 m.</p>
+        <p className="tiny muted mb-0"><ShieldCheck size={12} style={{ verticalAlign: '-2px' }} /> Your location is used only to find doctors within 20 km and chemists within 50 km. It stays on Sehatra&apos;s servers, rounded to about 100 m.</p>
       </Card>
 
       <Card title={<h4 className="row mb-0" style={{ gap: 8 }}><Fingerprint size={17} />Identity <span className="badge">Optional</span></h4>} action={<span className="tiny muted">{india ? 'Helps hospitals match your records — Aadhaar or any one ID' : 'Helps the clinic match your records — passport or national ID'}</span>}>

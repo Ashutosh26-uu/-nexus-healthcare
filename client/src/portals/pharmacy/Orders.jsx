@@ -23,7 +23,7 @@ export function RespondButtons({ o, reload, pharmacy, onDone }) {
     return (
       <div className="stack" style={{ gap: 8 }}>
         <Field label="Who will deliver it?">
-          <Pills value={deliveryBy} onChange={setDeliveryBy} options={[{ value: 'store', label: 'We deliver ourselves' }, { value: 'nexus', label: 'Send a Nexus rider' }]} />
+          <Pills value={deliveryBy} onChange={setDeliveryBy} options={[{ value: 'store', label: 'We deliver ourselves' }, { value: 'nexus', label: 'Send a Sehatra rider' }]} />
         </Field>
         <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
           <Button variant="ghost" size="sm" onClick={() => setMode(null)}>Back</Button>
@@ -100,7 +100,7 @@ function Advance({ o, reload }) {
   const step = (status, otp) => run(`s-${o.id}`, async () => { await api.post(`/medicine-orders/${o.id}/status`, { status, otp }); reload(); setAsking(false); setCode(''); }, { packed: 'Marked packed', out_for_delivery: 'Out for delivery', delivered: 'Delivered ✓', collected: 'Collected ✓' }[status]);
   const nexus = o.fulfilment === 'delivery' && o.deliveryBy === 'nexus';
   if (o.status === 'accepted') return <Button size="sm" icon={Package} loading={busy === `s-${o.id}`} onClick={() => step('packed')}>Mark packed</Button>;
-  if (o.status === 'packed' && nexus) return <span className="tiny muted row" style={{ gap: 4 }}><Bike size={13} /> A Nexus rider is coming to collect it</span>;
+  if (o.status === 'packed' && nexus) return <span className="tiny muted row" style={{ gap: 4 }}><Bike size={13} /> A Sehatra rider is coming to collect it</span>;
   if (o.status === 'packed' && o.fulfilment === 'delivery') return <Button size="sm" icon={Truck} loading={busy === `s-${o.id}`} onClick={() => step('out_for_delivery')}>Out for delivery</Button>;
   const final = (o.status === 'packed' && o.fulfilment === 'pickup') ? 'collected' : o.status === 'out_for_delivery' && !nexus ? 'delivered' : null;
   if (!final) return null;
@@ -139,7 +139,7 @@ export default function Orders({ home, reload }) {
                   <strong>{o.orderNo}</strong>
                   <span className="small" translate="no">{o.patientName}</span>
                   {o.open && <span className="badge sun"><Megaphone size={11} /> Asked to all nearby</span>}
-                  {o.fulfilment === 'delivery' && o.deliveryBy && <span className="badge">{o.deliveryBy === 'store' ? 'You deliver' : 'Nexus rider'}</span>}
+                  {o.fulfilment === 'delivery' && o.deliveryBy && <span className="badge">{o.deliveryBy === 'store' ? 'You deliver' : 'Sehatra rider'}</span>}
                 </div>
                 <StatusBadge status={['declined', 'cancelled'].includes(o.status) ? 'cancelled' : ['delivered', 'collected'].includes(o.status) ? 'delivered' : o.status === 'requested' ? 'pending' : o.status}>{LABEL[o.status] || o.status}</StatusBadge>
               </div>

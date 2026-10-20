@@ -1,6 +1,6 @@
-# Launching Nexus Healthcare
+# Launching Sehatra
 
-Nexus Healthcare is a **full-stack application**: a React web app (installable as a phone/desktop app — PWA) served by a Node/Express API, with SQLite or PostgreSQL storage. In production everything runs as **one service on one port**.
+Sehatra is a **full-stack application**: a React web app (installable as a phone/desktop app — PWA) served by a Node/Express API, with SQLite or PostgreSQL storage. In production everything runs as **one service on one port**.
 
 ```
 Browser / installed app ──HTTPS──▶  Node (Express)  ──▶  PostgreSQL  (or SQLite on a volume)
@@ -73,7 +73,7 @@ npm run prod:local        # builds the web app, starts on http://localhost:4000 
 
 ## 5. The app on phones
 
-* **Android / desktop Chrome & Edge:** visitors see an **“Install Nexus Healthcare”** prompt; the app gets its own icon and opens full-screen.
+* **Android / desktop Chrome & Edge:** visitors see an **“Install Sehatra”** prompt; the app gets its own icon and opens full-screen.
 * **iPhone:** Safari → Share → *Add to Home Screen* (the app shows these steps automatically).
 * **Google Play Store:** wrap the live site as a Trusted Web Activity with [Bubblewrap](https://github.com/GoogleChromeLabs/bubblewrap) — `bubblewrap init --manifest https://YOUR-DOMAIN/manifest.webmanifest`. No separate codebase needed.
 * **Apple App Store:** needs a native shell (e.g. Capacitor) — plan this after launch.
@@ -85,7 +85,7 @@ The service worker caches only the app shell (code, icons, fonts) so the app ope
 ## 6. After launch — first steps in the Admin portal
 
 1. Sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` → change the password.
-2. **Kiosk fleet → Add E-Clinic** for each Nexus-owned clinic.
+2. **Kiosk fleet → Add E-Clinic** for each Sehatra-owned clinic.
 3. **Users & roles** → create E-Clinic operator accounts (one per clinic).
 4. Share `https://YOUR-DOMAIN/join` with doctors, clinics, hospitals, labs and pharmacies — their applications arrive in **Onboarding** for verification.
 5. Patients sign up themselves at `https://YOUR-DOMAIN/signup`.

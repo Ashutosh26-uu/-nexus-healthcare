@@ -20,7 +20,7 @@ export default function Connectors({ orders }) {
       <PageHeader title="LIS & data feed" subtitle="How results move in from your lab software, and what leaves the lab for public health." />
       <div className="grid two">
         <Card title={<h3 className="row" style={{ gap: 8 }}><PlugZap size={18} /> LIS connector</h3>} action={<PreviewBadge>Coming soon</PreviewBadge>}>
-          <p className="small muted">Your lab software isn&apos;t connected to Nexus Healthcare yet, so results don&apos;t flow in automatically. For now, enter results on each order with <strong>Enter results</strong> — they go to the doctor and patient as soon as they&apos;re signed.</p>
+          <p className="small muted">Your lab software isn&apos;t connected to Sehatra yet, so results don&apos;t flow in automatically. For now, enter results on each order with <strong>Enter results</strong> — they go to the doctor and patient as soon as they&apos;re signed.</p>
           <p className="small muted">We&apos;re building an HL7 / FHIR connector so analyser results can be pulled in directly.</p>
           <div className="row mt-2" style={{ gap: 10 }}>
             <Button variant="secondary" size="sm" icon={RefreshCw} disabled>Pull results now</Button>

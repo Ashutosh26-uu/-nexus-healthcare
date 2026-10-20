@@ -1,4 +1,4 @@
-// Nexus credit + Refer & earn.
+// Sehatra credit + Refer & earn.
 //  • Credit is a rupee ledger (collection `credits`, one row per change; balance = sum of rows). Every positive
 //    row is a "lot" that expires CREDIT_DAYS after it was earned; spends use the soonest-expiring lot first.
 //  • A referral pays nothing at sign-up (fake accounts are free to make) — both people get REFERRAL_AMOUNT
@@ -16,7 +16,7 @@ const PURPOSES = new Set(['consult', 'lab_advance', 'med_order_advance']); // wh
 const MIN_GATEWAY = 1; // Razorpay / UPI can't take less than ₹1 — a remainder is either 0 or ≥ ₹1
 const CODE_ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I — read aloud and typed from WhatsApp
 const CODE_LEN = 7; // 32^7 ≈ 34 billion: not guessable by walking the space
-const SYSTEM = { id: 'system', name: 'Nexus Healthcare', role: 'system' };
+const SYSTEM = { id: 'system', name: 'Sehatra', role: 'system' };
 
 const r2 = (x) => Math.round(Number(x) * 100) / 100;
 const nowIso = () => new Date().toISOString();
@@ -133,12 +133,12 @@ function rewardReferral(d, pay) {
   u.referralRewarded = nowIso(); u.referralPaymentId = pay.id;
   pay.referralQualified = true;
   add(d, SYSTEM, u.id, REFERRAL_AMOUNT, 'referral_welcome', pay.id);
-  hooks.notify(u.id, `You earned ₹${REFERRAL_AMOUNT} Nexus credit 🎉`, `Thanks for joining with ${firstName(ref?.name)}'s invite. Use it on your next consult, lab test or medicines within ${CREDIT_DAYS} days.`);
+  hooks.notify(u.id, `You earned ₹${REFERRAL_AMOUNT} Sehatra credit 🎉`, `Thanks for joining with ${firstName(ref?.name)}'s invite. Use it on your next consult, lab test or medicines within ${CREDIT_DAYS} days.`);
   const rewarded = ref ? d.users.filter((x) => x.referredBy === ref.id && x.referrerCredited).length : REFERRAL_CAP;
   if (ref && ref.status !== 'suspended' && rewarded < REFERRAL_CAP) {
     u.referrerCredited = true;
     add(d, SYSTEM, ref.id, REFERRAL_AMOUNT, 'referral_bonus', u.id);
-    hooks.notify(ref.id, `You earned ₹${REFERRAL_AMOUNT} Nexus credit 🎉`, `${firstName(u.name)} joined with your invite and booked their first visit. Thank you for spreading the word!`);
+    hooks.notify(ref.id, `You earned ₹${REFERRAL_AMOUNT} Sehatra credit 🎉`, `${firstName(u.name)} joined with your invite and booked their first visit. Thank you for spreading the word!`);
   }
 }
 

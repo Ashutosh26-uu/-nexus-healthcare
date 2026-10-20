@@ -107,7 +107,7 @@ export async function decodeQrFrom(source, w, h) {
 }
 
 // Indian medicine packs carry GS1 codes: (01) GTIN, (17) expiry, (10) batch, (21) unique serial.
-// Nexus looks packs up by batch (what chemists enter in stock) — fall back to the serial, then the raw text.
+// Sehatra looks packs up by batch (what chemists enter in stock) — fall back to the serial, then the raw text.
 export function packCodeFrom(raw) {
   const s = String(raw || '').replace(/^\]d2|^\]Q3/, '').replace(/[()]/g, '');
   if (!/^01\d{14}/.test(s)) return String(raw || '').trim();

@@ -77,7 +77,7 @@ export default function Clinic() {
   if (!data.clinic) {
     return (
       <div className="stack lg">
-        <PageHeader eyebrow="Your clinic" title="Add your clinic" subtitle="Run your own clinic? Put it on Nexus Healthcare — patients within 20 km find it, and you list every doctor who practises there." />
+        <PageHeader eyebrow="Your clinic" title="Add your clinic" subtitle="Run your own clinic? Put it on Sehatra — patients within 20 km find it, and you list every doctor who practises there." />
         <Card>
           <Field label="Clinic name"><input className="input" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Sai Care Clinic" /></Field>
           <Button icon={Building2} disabled={newName.trim().length < 3} loading={busy === 'create'} onClick={() => run('create', async () => { await api.post('/doctor/clinic', { name: newName }); await load(); }, 'Clinic added — now fill in its details')}>Add my clinic</Button>

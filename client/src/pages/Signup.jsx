@@ -103,7 +103,7 @@ export default function Signup() {
               <h1 className="auth-title mb-0">Just three things to start</h1>
               <p className="muted mb-0">Your name, email and mobile number. You can add the rest later, whenever you like.</p>
               {inviter && (
-                <div className="callout green small"><Gift size={16} /><div>You were invited by <strong translate="no">{inviter.firstName}</strong> — you&apos;ll get ₹{inviter.reward} Nexus credit after your first consult.</div></div>
+                <div className="callout green small"><Gift size={16} /><div>You were invited by <strong translate="no">{inviter.firstName}</strong> — you&apos;ll get ₹{inviter.reward} Sehatra credit after your first consult.</div></div>
               )}
               <Field label="Your full name"><input className="input" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Your full name" autoFocus autoComplete="name" /></Field>
               <Field label="Email">

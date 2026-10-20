@@ -13,7 +13,7 @@ import './landing.css';
 import { usePublicConfig, useSupport, telHref } from '../config';
 
 const FAQS = [
-  { q: 'I live in a village and don\'t have a smartphone. Can I still use Nexus Healthcare?', a: 'Yes. A family member can book for you from their phone, and you can speak your symptoms instead of typing. Nexus Healthcare E-Clinics — at your PHC, railway station or panchayat bhawan, with a health worker who checks your BP, sugar and oxygen — are coming soon.' },
+  { q: 'I live in a village and don\'t have a smartphone. Can I still use Sehatra?', a: 'Yes. A family member can book for you from their phone, and you can speak your symptoms instead of typing. Sehatra E-Clinics — at your PHC, railway station or panchayat bhawan, with a health worker who checks your BP, sugar and oxygen — are coming soon.' },
   { q: 'Is my health data safe? Who can see it?', a: 'Only people you allow. Every request to see your records comes to you first, and you choose what they see and for how long. Every single view is written to an access log you can read anytime. Government officers only ever see anonymous totals — never your name. Your data is encrypted in storage and in transit.' },
   { q: 'What does a consult cost?', a: 'Booking a visit at a doctor\'s hospital or clinic costs ₹100 online — that confirms your slot and keeps fake bookings away. You pay the doctor\'s own fee at the clinic. Video consults are paid online in full — you see each doctor\'s fee before you book.' },
   { q: 'Are the doctors real and verified?', a: 'Before a doctor can see patients, our team checks their registration number on the official medical register and reviews their degree. You can see their qualification, languages and real patient reviews before you book.' },
@@ -105,7 +105,7 @@ export default function Landing() {
               </span>
             </h1>
             <p className="l-lead">
-              Nexus Healthcare connects every Indian — in a metro or a village — to the same verified doctors, one lifelong
+              Sehatra connects every Indian — in a metro or a village — to the same verified doctors, one lifelong
               health record, and the medicines they need. On your phone, or at an E-Clinic down the road.
             </p>
             <div className="row wrap" style={{ gap: 12 }}>
@@ -176,7 +176,7 @@ export default function Landing() {
           <div className="l-section-head">
             <span className="eyebrow">Free tools · no sign-in</span>
             <h2>Check prices and find a doctor — free.</h2>
-            <p className="muted">Prices from verified chemists and labs on Nexus, and verified doctors with reviews only from real visits.</p>
+            <p className="muted">Prices from verified chemists and labs on Sehatra, and verified doctors with reviews only from real visits.</p>
           </div>
           <div className="l-portals">
             {FREE_TOOLS.map((p) => (
@@ -284,7 +284,7 @@ export default function Landing() {
           <div className="l-join">
             <div>
               <h3>Run a clinic or hospital? Or a doctor with free evenings?</h3>
-              <p className="muted mb-0">List your facility on the network for free — or consult at Nexus Healthcare-owned E-Clinics and earn on your own schedule.</p>
+              <p className="muted mb-0">List your facility on the network for free — or consult at Sehatra-owned E-Clinics and earn on your own schedule.</p>
             </div>
             <div className="row wrap" style={{ gap: 10 }}>
               <Link to="/join?track=facility" className="btn secondary"><Building2 size={17} /> List my facility</Link>
@@ -355,7 +355,7 @@ export default function Landing() {
             <Logo />
             <p className="muted small" style={{ marginTop: 12, maxWidth: 300 }}>An independent health-tech startup. Built in India, for every Indian.</p>
             <div className="l-social">
-              <a href="https://www.linkedin.com/company/nexus-healthcare-official/" target="_blank" rel="noopener noreferrer" aria-label="Nexus Healthcare on LinkedIn" title="Follow us on LinkedIn">
+              <a href="https://www.linkedin.com/company/nexus-healthcare-official/" target="_blank" rel="noopener noreferrer" aria-label="Sehatra on LinkedIn" title="Follow us on LinkedIn">
                 {/* LinkedIn mark (brand icons aren't in our icon set) */}
                 <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="currentColor"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.86 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13ZM7.12 20.45H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z" /></svg>
                 <span>LinkedIn</span>
@@ -369,7 +369,7 @@ export default function Landing() {
           </div>
           <div>
             <h4>Partners</h4>
-            <Link to="/join?track=doctor">Doctors — join Nexus</Link><Link to="/join?track=facility">List your clinic or hospital</Link><Link to="/join?track=pharmacy">Medical stores</Link><Link to="/join?track=facility">Labs</Link><Link to="/login">Partner sign in</Link>
+            <Link to="/join?track=doctor">Doctors — join Sehatra</Link><Link to="/join?track=facility">List your clinic or hospital</Link><Link to="/join?track=pharmacy">Medical stores</Link><Link to="/join?track=facility">Labs</Link><Link to="/login">Partner sign in</Link>
           </div>
           <div>
             <h4>Help</h4>
@@ -377,8 +377,8 @@ export default function Landing() {
           </div>
         </div>
         <div className="l-container l-footer-bottom">
-          <span>© {new Date().getFullYear()} Nexus Healthcare · Made in India</span>
-          <span>Nexus Healthcare gives guidance, not diagnosis. In an emergency, call 108.</span>
+          <span>© {new Date().getFullYear()} Sehatra · Made in India</span>
+          <span>Sehatra gives guidance, not diagnosis. In an emergency, call 108.</span>
         </div>
       </footer>
     </div>

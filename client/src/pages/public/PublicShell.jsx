@@ -39,12 +39,12 @@ export function PublicPage({ children }) {
             <Link to="/lab-tests">Lab test prices</Link>
             <Link to="/find/doctors">Find a doctor</Link>
             <Link to="/find/labs">Labs</Link>
-            <Link to="/join">Doctors &amp; clinics — join Nexus</Link>
+            <Link to="/join">Doctors &amp; clinics — join Sehatra</Link>
             <Link to="/testimonials">Testimonials</Link>
             <Link to="/privacy">Privacy policy</Link>
             <Link to="/cookies">Cookie policy</Link>
           </div>
-          <p className="tiny muted mb-0">Nexus Healthcare gives guidance, not diagnosis. Prices shown are indicative. In an emergency, call 108.</p>
+          <p className="tiny muted mb-0">Sehatra gives guidance, not diagnosis. Prices shown are indicative. In an emergency, call 108.</p>
         </div>
       </footer>
     </div>

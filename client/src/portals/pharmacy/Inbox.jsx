@@ -20,7 +20,7 @@ export default function Inbox({ home, reload }) {
 
   return (
     <>
-      <PageHeader title="E-prescriptions" subtitle="Digitally signed prescriptions from Nexus Healthcare doctors. Check, pack, and hand over — the patient gets an update at each step." />
+      <PageHeader title="E-prescriptions" subtitle="Digitally signed prescriptions from Sehatra doctors. Check, pack, and hand over — the patient gets an update at each step." />
       <Advisory advisories={home.advisories} />
       <Tabs value={tab} onChange={setTab} tabs={TABS.map((t) => ({ value: t.value, label: t.label, count: home.inbox.filter((r) => t.match.includes(r.status)).length }))} />
       {list.length === 0 ? (

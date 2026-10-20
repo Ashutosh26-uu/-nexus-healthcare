@@ -1,6 +1,6 @@
-# Deploying Nexus Healthcare on Zoho Catalyst (AppSail)
+# Deploying Sehatra on Zoho Catalyst (AppSail)
 
-Nexus runs on **Catalyst AppSail** as one Node.js service: the Express API also serves the built React app.
+Sehatra runs on **Catalyst AppSail** as one Node.js service: the Express API also serves the built React app.
 
 ## What you need first
 1. A Catalyst account and project — https://catalyst.zoho.com (pick the data centre nearest your users, e.g. India).
@@ -37,7 +37,7 @@ Set these as **secrets in the console**, never in files:
 | `UPI_VPA` | optional UPI QR |
 | `BOOKING_FEE` | optional, default `100` |
 | `N8N_WEBHOOK_URL`, `N8N_WEBHOOK_SECRET` | optional — send events to n8n (see [AUTOMATIONS.md](AUTOMATIONS.md)) |
-| `N8N_API_KEY`, `N8N_SHARE_CONTACT`, `N8N_EVENTS` | optional — let n8n workflows call Nexus; include patient contact for reminders; limit which events are sent |
+| `N8N_API_KEY`, `N8N_SHARE_CONTACT`, `N8N_EVENTS` | optional — let n8n workflows call Sehatra; include patient contact for reminders; limit which events are sent |
 | `TURN_URL`, `TURN_USERNAME`, `TURN_CREDENTIAL` | optional but recommended — TURN relay for video/audio calls (some mobile networks can't connect peer-to-peer with STUN alone). `TURN_URL` may list several URLs, comma-separated |
 
 The listening port is read automatically from `X_ZOHO_CATALYST_LISTEN_PORT`.

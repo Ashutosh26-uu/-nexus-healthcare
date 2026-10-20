@@ -1,7 +1,3 @@
-.logo { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; }
-.logo-text { display: flex; flex-direction: column; line-height: 1.1; }
-.logo-name { font-family: var(--serif); font-weight: 700; font-size: 1.22rem; letter-spacing: -0.02em; }
-.logo-sub { font-size: 0.72rem; color: var(--ink-3); font-weight: 600; letter-spacing: 0.02em; }
 
 .portal { display: flex; min-height: 100vh; }
 .sidebar {

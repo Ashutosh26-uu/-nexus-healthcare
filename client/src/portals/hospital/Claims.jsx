@@ -23,7 +23,7 @@ export default function Claims() {
     <div className="stack lg">
       <PageHeader eyebrow="Claims-ready records" title={<span className="row wrap" style={{ gap: 10 }}>Insurance claims <PreviewBadge /></span>}
         subtitle="Each completed visit at your hospital is drafted as a claim, with duplicate and completeness checks." />
-      <div className="callout"><Info /><span>Draft claims — NHCX submission isn&apos;t connected yet. Amounts come only from payments recorded on Nexus; a line with no recorded payment shows “Not recorded”.</span></div>
+      <div className="callout"><Info /><span>Draft claims — NHCX submission isn&apos;t connected yet. Amounts come only from payments recorded on Sehatra; a line with no recorded payment shows “Not recorded”.</span></div>
 
       <div className="grid three">
         <Card className="stat"><span className="label"><FileCheck2 size={15} /> Drafts with all checks passed</span><span className="value" style={{ color: 'var(--green-2)' }}>{ready}</span></Card>

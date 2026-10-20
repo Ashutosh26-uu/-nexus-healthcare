@@ -319,7 +319,7 @@ export default function OrderMedicines() {
               </div>
             )}
           </div>
-          {!quote.shops.length && !quote.chemistsNearby && <Empty icon={Store} title={`No chemist on Nexus within ${quote.radiusKm} km yet`}>You can still buy from any chemist using your prescription.</Empty>}
+          {!quote.shops.length && !quote.chemistsNearby && <Empty icon={Store} title={`No chemist on Sehatra within ${quote.radiusKm} km yet`}>You can still buy from any chemist using your prescription.</Empty>}
           {error && <div className="form-error mt-1">{error}</div>}
           <div className="row between mt-2">
             <Button variant="ghost" icon={ArrowLeft} onClick={() => setStep(0)}>Change medicines</Button>
@@ -370,7 +370,7 @@ export default function OrderMedicines() {
                 <div className="callout green small" style={{ textAlign: 'left' }}><BadgeIndianRupee /><div className="stack" style={{ gap: 8 }}>
                   <span>You saved <strong>{fmtMoney(genericSaved)}</strong> by choosing same-salt generics.</span>
                   {/* The amount only — never which medicines. */}
-                  <ShareButton label="Share the tip" url={window.location.origin} text={`I saved ${fmtMoney(genericSaved)} on medicines with Nexus Healthcare — it shows cheaper same-salt, same-strength options your doctor allows:`} />
+                  <ShareButton label="Share the tip" url={window.location.origin} text={`I saved ${fmtMoney(genericSaved)} on medicines with Sehatra — it shows cheaper same-salt, same-strength options your doctor allows:`} />
                 </div></div>
               )}
               <Button icon={Package} onClick={() => navigate('/patient/medicines')}>Track my order</Button>

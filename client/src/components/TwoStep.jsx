@@ -39,7 +39,7 @@ export default function TwoStepModal({ open, onClose }) {
 
   const copy = () => { navigator.clipboard?.writeText(backupCodes.join('\n')).then(() => toast('Backup codes copied.')).catch(() => {}); };
   const download = () => {
-    const text = `Nexus Healthcare — two-step login backup codes\nEach code works once. Keep them somewhere safe and private.\n\n${backupCodes.join('\n')}\n`;
+    const text = `Sehatra — two-step login backup codes\nEach code works once. Keep them somewhere safe and private.\n\n${backupCodes.join('\n')}\n`;
     const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
     const a = document.createElement('a'); a.href = url; a.download = 'nexus-backup-codes.txt'; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
@@ -75,7 +75,7 @@ export default function TwoStepModal({ open, onClose }) {
           <ol className="small" style={{ paddingInlineStart: 18, margin: 0 }}>
             <li>Open your authenticator app and tap <strong>+</strong> / <strong>Add account</strong>.</li>
             <li>Scan this QR code. On this phone? Choose &ldquo;Enter a setup key&rdquo; and type the key below.</li>
-            <li>Type the 6-digit code the app now shows for Nexus Healthcare.</li>
+            <li>Type the 6-digit code the app now shows for Sehatra.</li>
           </ol>
           <div className="row wrap" style={{ gap: 16, alignItems: 'center' }}>
             <QR value={setup.otpauth} size={176} />

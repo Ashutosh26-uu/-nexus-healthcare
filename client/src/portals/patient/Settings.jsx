@@ -217,7 +217,7 @@ export default function Settings() {
             <strong>Delete {isSelf ? 'my account' : `${firstName(patient.name)}’s profile`}</strong>
             {deletion
               ? <p className="small mb-0">Deletion requested on <strong>{fmtDate(deletion.at)}</strong>. Everything will be erased on <strong>{fmtDate(deletion.scheduledFor || new Date(Date.parse(deletion.at) + 90 * 86400000).toISOString())}</strong>. Until then nothing is removed and you can cancel.</p>
-              : <p className="small muted mb-0">Erases the passport and its records from Nexus Healthcare 90 days after you ask — you can change your mind until then.</p>}
+              : <p className="small muted mb-0">Erases the passport and its records from Sehatra 90 days after you ask — you can change your mind until then.</p>}
           </div>
           {deletion
             ? <Button variant="secondary" loading={busy === 'undelete'} onClick={cancelDeletion}>Cancel request</Button>

@@ -16,18 +16,18 @@ function Contact() {
 }
 
 export function PrivacyPolicy() {
-  useSeo({ title: 'Privacy policy · Nexus Healthcare', description: 'What Nexus Healthcare collects, who can see it, where it is stored and the choices you have — written in plain language.', path: '/privacy' });
+  useSeo({ title: 'Privacy policy · Sehatra', description: 'What Sehatra collects, who can see it, where it is stored and the choices you have — written in plain language.', path: '/privacy' });
   return (
     <PublicPage>
       <article className="pb-legal">
         <section className="pb-hero">
-          <span className="pb-eyebrow">Nexus Healthcare</span>
+          <span className="pb-eyebrow">Sehatra</span>
           <h1 className="row" style={{ gap: 10 }}><ShieldCheck size={30} /> Privacy policy</h1>
           <p className="muted">Last updated {UPDATED}. Plain language, no surprises: this describes what the app does today.</p>
         </section>
 
         <h2>1. Who we are</h2>
-        <p>Nexus Healthcare is an independent health-technology startup based in India. We run the Nexus Healthcare website and app, which connect patients with doctors, hospitals, laboratories, medical stores and village E-Clinics (kiosks). When we say “we” or “Nexus” we mean Nexus Healthcare; when we say “you” we mean anyone using the service, whether as a patient, a caregiver or a health worker.</p>
+        <p>Sehatra is an independent health-technology startup based in India. We run the Sehatra website and app, which connect patients with doctors, hospitals, laboratories, medical stores and village E-Clinics (kiosks). When we say “we” or “Sehatra” we mean Sehatra; when we say “you” we mean anyone using the service, whether as a patient, a caregiver or a health worker.</p>
         <p>This policy follows India’s Digital Personal Data Protection Act, 2023 and the Telemedicine Practice Guidelines, 2020. We only collect what the service needs, and you decide who sees your health information.</p>
 
         <h2>2. What we collect</h2>
@@ -42,7 +42,7 @@ export function PrivacyPolicy() {
         <ul>
           <li>Symptoms and triage answers, consult notes, prescriptions, lab orders and reports, home readings (blood pressure, sugar, weight and the like), allergies, conditions and your emergency card.</li>
           <li>Family members you add to your Health Passport, with the same protections.</li>
-          <li>When a doctor uses voice notes or the ambient scribe during a consult, the recording is turned into text by <strong>your browser’s own speech service</strong> (for example Google’s on Android/Chrome or Apple’s on iPhone) and only the text reaches Nexus. The AI assistant that drafts notes from that text is <strong>off by default</strong> and is used only when the doctor turns it on and you agree during the consult.</li>
+          <li>When a doctor uses voice notes or the ambient scribe during a consult, the recording is turned into text by <strong>your browser’s own speech service</strong> (for example Google’s on Android/Chrome or Apple’s on iPhone) and only the text reaches Sehatra. The AI assistant that drafts notes from that text is <strong>off by default</strong> and is used only when the doctor turns it on and you agree during the consult.</li>
         </ul>
         <h3>Your location</h3>
         <ul>
@@ -107,44 +107,44 @@ export function PrivacyPolicy() {
         </ul>
 
         <h2>8. Children</h2>
-        <p>Children use Nexus through a parent’s or caregiver’s account, who adds them as a family member and manages consent on their behalf.</p>
+        <p>Children use Sehatra through a parent’s or caregiver’s account, who adds them as a family member and manages consent on their behalf.</p>
 
         <h2>9. Security</h2>
         <p>Everything travels over HTTPS. Passwords are hashed, sign-in codes expire, requests are rate-limited, access is role-based and logged, and the database is encrypted at rest by our provider. No system is perfectly secure; if we ever learn of a breach that affects you, we will tell you and the authorities as the law requires.</p>
 
         <h2>10. Changes</h2>
         <p>When this policy changes, we update the date at the top and, for significant changes, tell you in the app. This policy applies alongside the <Link to="/cookies">cookie policy</Link>.</p>
-        <p className="muted small">Nexus Healthcare gives guidance, not diagnosis. In an emergency, call 108.</p>
+        <p className="muted small">Sehatra gives guidance, not diagnosis. In an emergency, call 108.</p>
       </article>
     </PublicPage>
   );
 }
 
 export function CookiePolicy() {
-  useSeo({ title: 'Cookie policy · Nexus Healthcare', description: 'Nexus Healthcare sets no tracking cookies. Here is exactly what your browser stores for the app, and how to change it.', path: '/cookies' });
+  useSeo({ title: 'Cookie policy · Sehatra', description: 'Sehatra sets no tracking cookies. Here is exactly what your browser stores for the app, and how to change it.', path: '/cookies' });
   const Row = ({ k, what }) => <tr><td><code translate="no">{k}</code></td><td>{what}</td></tr>;
   return (
     <PublicPage>
       <article className="pb-legal">
         <section className="pb-hero">
-          <span className="pb-eyebrow">Nexus Healthcare</span>
+          <span className="pb-eyebrow">Sehatra</span>
           <h1 className="row" style={{ gap: 10 }}><Cookie size={30} /> Cookie policy</h1>
           <p className="muted">Last updated {UPDATED}.</p>
         </section>
 
         <h2>The short version</h2>
         <ul>
-          <li>Nexus Healthcare <strong>sets no cookies</strong> of its own — not for tracking, not for advertising, not for analytics.</li>
-          <li>Like any app, it keeps a small amount of information in your browser’s own storage so that you stay signed in and the app remembers your choices. That storage never leaves your device except to sign your requests to Nexus.</li>
+          <li>Sehatra <strong>sets no cookies</strong> of its own — not for tracking, not for advertising, not for analytics.</li>
+          <li>Like any app, it keeps a small amount of information in your browser’s own storage so that you stay signed in and the app remembers your choices. That storage never leaves your device except to sign your requests to Sehatra.</li>
           <li>The only choice that affects your privacy is <strong>live location</strong>, and it is off until you allow it.</li>
         </ul>
 
-        <h2>What your browser stores for Nexus</h2>
+        <h2>What your browser stores for Sehatra</h2>
         <h3>Essential — always on</h3>
         <p>Without these the app cannot work. They are removed when you sign out or clear your browser’s site data.</p>
         <table className="pb-table">
           <tbody>
-            <Row k="oc_token" what="Your sign-in, so you do not have to sign in again on every page. It is sent with each request to Nexus to prove it is you." />
+            <Row k="oc_token" what="Your sign-in, so you do not have to sign in again on every page. It is sent with each request to Sehatra to prove it is you." />
             <Row k="oc_lang · oc_country · oc_i18n_*" what="Your language and country, and a copy of the translated text so pages load fast offline." />
             <Row k="nx_consent" what="The choice you made in the cookie banner, so we do not ask again." />
             <Row k="oc_login_tab · oc_ref · oc_chunk_reload" what="Which sign-in method you last used, the invite code you arrived with, and a one-time guard that reloads the page after an update." />
@@ -153,7 +153,7 @@ export function CookiePolicy() {
         <h3>Preferences — yours to change</h3>
         <table className="pb-table">
           <tbody>
-            <Row k="nx_location" what="Your live location (rounded to about 100 m) or the town you typed, only after you allow it. Signed-in patients also send it to Nexus so that searches start from where they are." />
+            <Row k="nx_location" what="Your live location (rounded to about 100 m) or the town you typed, only after you allow it. Signed-in patients also send it to Sehatra so that searches start from where they are." />
             <Row k="nx_radius_*" what="How far you chose to search for doctors or chemists." />
             <Row k="oc_patient_notifs · oc_pref_place · oc_relations" what="Notification settings, your usual place and the family relationships you use, so forms are pre-filled." />
             <Row k="oc_chat · oc_chat_nudged · oc_install_snooze_until" what="Your Saathi help chat on this device, and whether you dismissed the ‘get the app’ prompt." />

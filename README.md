@@ -1,8 +1,8 @@
-# Nexus Healthcare
+# Sehatra
 
 > **Launching?** See **[DEPLOY.md](DEPLOY.md)** — one-container deploy (Docker / Render / Railway / VPS with Postgres + HTTPS), clean live-mode database, installable phone app (PWA), and the go-live checklist.
 
-A full-stack Nexus Healthcare national health network (spec: *Nexus Healthcare — Product & Build Specification*, Oct 2026, Reasonate AI Pvt. Ltd.).
+A full-stack Sehatra national health network (spec: *Sehatra — Product & Build Specification*, Oct 2026, Reasonate AI Pvt. Ltd.).
 
 8 portals + the dispatch app on one shared backend, with real authentication, role-based access, live updates across portals, and the **Saathi** patient chat assistant.
 

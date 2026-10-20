@@ -226,7 +226,7 @@ export default function Onboarding() {
 
         return (
           <>
-            <PageHeader eyebrow="Onboarding" title="Verification queues" subtitle="Nobody treats patients or dispenses medicine on Nexus Healthcare until a person has checked their credentials." />
+            <PageHeader eyebrow="Onboarding" title="Verification queues" subtitle="Nobody treats patients or dispenses medicine on Sehatra until a person has checked their credentials." />
             <Tabs tabs={tabs} value={tab} onChange={setTab} />
             <div className="row between wrap mb-2" style={{ gap: 10 }}>
               <span className="small muted">{isDoc ? 'Look each registration number up on the official medical register before approving.' : 'Licences and certificates were uploaded at sign-up; verify the details match.'}</span>

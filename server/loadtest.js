@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Dependency-free HTTP load test for the Nexus Healthcare API.
+// Dependency-free HTTP load test for the Sehatra API.
 //
 //   node loadtest.js [--url http://localhost:4100/api] [--concurrency 200] [--duration 20] [--warmup 2]
 //                    [--writes 0.1] [--timeout 30000]

@@ -1,4 +1,4 @@
-// Seed data for the Nexus Healthcare proof of concept.
+// Seed data for the Sehatra proof of concept.
 // Pilot district: Barabanki (UP), with network partners across India.
 const bcrypt = require('bcryptjs');
 
@@ -76,7 +76,7 @@ function demoSeed() {
     { id: 'u_rider1', name: 'Manoj Kushwaha', email: 'rider@omnicare.in', phone: '9876500080', role: 'delivery', status: 'active', region: { state: 'Uttar Pradesh', district: 'Barabanki' } },
     { id: 'u_gov1', name: 'Dr. A. K. Tripathi (CMO)', email: 'official@omnicare.in', phone: '9876500090', role: 'official', scope: 'district', status: 'active', region: { state: 'Uttar Pradesh', district: 'Barabanki' } },
     { id: 'u_gov2', name: 'Shalini Rao, IAS', email: 'national@omnicare.in', phone: '9876500091', role: 'official', scope: 'national', status: 'active', region: { state: 'Delhi', district: 'New Delhi' } },
-    { id: 'u_admin1', name: 'Nexus Ops Team', email: 'admin@omnicare.in', phone: '9876500099', role: 'super_admin', status: 'active', region: { state: 'Uttar Pradesh', district: 'Lucknow' } },
+    { id: 'u_admin1', name: 'Sehatra Ops Team', email: 'admin@omnicare.in', phone: '9876500099', role: 'super_admin', status: 'active', region: { state: 'Uttar Pradesh', district: 'Lucknow' } },
   ].map((u) => ({ ...u, passwordHash: hash, createdAt: ago(60) }));
 
   const patients = [
@@ -222,10 +222,10 @@ function demoSeed() {
     outbreak: { multiplier: 3, minTests: 10 },
     supply: { radiusSteps: ['5 km', 'district', 'state', 'national'], preferNearExpiry: true },
     history: [
-      { version: 1, at: ago(90), by: 'Nexus Ops Team', note: 'Initial rule set signed off by medical advisor' },
-      { version: 2, at: ago(60), by: 'Nexus Ops Team', note: 'Added snake bite & poisoning to red flags' },
-      { version: 3, at: ago(30), by: 'Nexus Ops Team', note: 'Language weight 15 → 20 after pilot feedback' },
-      { version: 4, at: ago(7), by: 'Nexus Ops Team', note: 'Outbreak multiplier 2.5 → 3 to cut false alerts' },
+      { version: 1, at: ago(90), by: 'Sehatra Ops Team', note: 'Initial rule set signed off by medical advisor' },
+      { version: 2, at: ago(60), by: 'Sehatra Ops Team', note: 'Added snake bite & poisoning to red flags' },
+      { version: 3, at: ago(30), by: 'Sehatra Ops Team', note: 'Language weight 15 → 20 after pilot feedback' },
+      { version: 4, at: ago(7), by: 'Sehatra Ops Team', note: 'Outbreak multiplier 2.5 → 3 to cut false alerts' },
     ],
   };
 
@@ -263,7 +263,7 @@ function demoSeed() {
       { id: 'mo_demo1', orderNo: 'MO-418203', patientId: 'OC-2041-5521', userId: 'u_pat2', rxId: null, rxFileId: null, source: 'other', items: [{ drug: 'Paracetamol 500mg', qty: 10, unit: 'tablet', unitPrice: 0.45, lineTotal: 4.5 }, { drug: 'ORS sachet', qty: 6, unit: 'sachet', unitPrice: 9.45, lineTotal: 56.7 }], pharmacyId: 'fac_p1', candidates: [], fulfilment: 'pickup', address: null, medicines: 61.2, deliveryFee: 0, total: 61.2, advance: 0, balance: 61.2, advancePaid: 0, status: 'requested', otp: '5590', createdAt: ago(0, 0.2), note: '' },
     ],
     careTransfers: [],
-    credits: [], // Nexus credit ledger (credits.js)
+    credits: [], // Sehatra credit ledger (credits.js)
     vitalsLog: [],
     monitorAlerts: [], carePlans: [], bills: [], gtinMap: [], stories: [], // remote-monitoring alerts (monitoring.js)
   };
@@ -297,7 +297,7 @@ function liveSeed({ withAdmin = true } = {}) {
     console.warn(`[seed] ADMIN_PASSWORD missing or short — generated one for ${email}: ${password}  (development only; change it after first sign-in)`);
   }
   const now = new Date().toISOString();
-  const admin = { id: 'u_admin', name: process.env.ADMIN_NAME || 'Nexus Healthcare Admin', email, phone: process.env.ADMIN_PHONE || '', role: 'super_admin', status: 'active', region: { state: '', district: '' }, passwordHash: bcrypt.hashSync(password, 10), createdAt: now };
+  const admin = { id: 'u_admin', name: process.env.ADMIN_NAME || 'Sehatra Admin', email, phone: process.env.ADMIN_PHONE || '', role: 'super_admin', status: 'active', region: { state: '', district: '' }, passwordHash: bcrypt.hashSync(password, 10), createdAt: now };
   const out = { ...full, meta: { seededAt: now, mode: 'live' }, users: [admin], otps: {} };
   for (const k of empty) out[k] = [];
   return out;

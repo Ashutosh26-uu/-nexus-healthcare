@@ -34,7 +34,7 @@ export default function MfaPrompt({ ticket, onDone, onCancel }) {
         <ShieldCheck size={22} style={{ flex: 'none', marginTop: 2, color: 'var(--green)' }} />
         <div>
           <strong>Two-step login</strong>
-          <p className="small muted mb-0">{backup ? 'Type one of the backup codes you saved when you turned two-step login on. Each one works once.' : 'Open your authenticator app (Google Authenticator, Microsoft Authenticator…) and type the 6-digit code for Nexus Healthcare.'}</p>
+          <p className="small muted mb-0">{backup ? 'Type one of the backup codes you saved when you turned two-step login on. Each one works once.' : 'Open your authenticator app (Google Authenticator, Microsoft Authenticator…) and type the 6-digit code for Sehatra.'}</p>
         </div>
       </div>
       {error && <div className="form-error">{error}</div>}

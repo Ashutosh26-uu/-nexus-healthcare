@@ -8,7 +8,7 @@ import { PackageCard } from './LabTests';
 function LabBadges({ l }) {
   return (
     <div className="pb-tags">
-      <span className="badge green"><BadgeCheck /> Verified by Nexus</span>
+      <span className="badge green"><BadgeCheck /> Verified by Sehatra</span>
       {l.nabl && <span className="badge sky"><BadgeCheck /> NABL accredited</span>}
       {l.homeCollection && <span className="badge"><HomeIcon /> Home collection</span>}
       {l.government && <span className="badge clay"><Landmark /> Government</span>}
@@ -22,7 +22,7 @@ function LabList() {
   const district = params.get('district') || '';
   const { data, error } = usePublicJson(`/public/labs${qs({ district: near.loc ? '' : district, ...(near.loc || {}) })}`);
   useSeo({
-    title: `Verified labs & diagnostic centres${district ? ` in ${district}` : ''} | Nexus Healthcare`,
+    title: `Verified labs & diagnostic centres${district ? ` in ${district}` : ''} | Sehatra`,
     description: 'Verified labs with test prices, NABL accreditation, home sample collection and real patient ratings. Book a test online.',
     path: '/find/labs',
   });
@@ -123,7 +123,7 @@ function LabProfile({ slug }) {
           <p>Choose the test, home collection and a time. Pay {Math.round(data.advanceShare * 100)}% online to confirm. Your report comes to your phone.</p>
           <a className="btn clay" href="#lab-tests-list">Choose a test <ArrowRight /></a>
         </div>
-        <ShareBar title={`${l.name} — test prices`} path={`/find/labs/${l.slug}`} text={`${l.name}${l.district ? `, ${l.district}` : ''} — test prices on Nexus Healthcare:`} />
+        <ShareBar title={`${l.name} — test prices`} path={`/find/labs/${l.slug}`} text={`${l.name}${l.district ? `, ${l.district}` : ''} — test prices on Sehatra:`} />
       </aside>
     </div>
   );

@@ -54,9 +54,9 @@ export default function MedicineScan() {
   return (
     <div className="stack lg">
       <PageHeader eyebrow="Medicine Authenticity" title="Is my medicine real?"
-        subtitle={camera ? 'Scan the barcode on the pack with your camera, or type the batch number. We look it up among the stock that chemists on Nexus Healthcare have listed.' : 'Type the batch number printed on the pack. We look it up among the stock that chemists on Nexus Healthcare have listed.'} />
+        subtitle={camera ? 'Scan the barcode on the pack with your camera, or type the batch number. We look it up among the stock that chemists on Sehatra have listed.' : 'Type the batch number printed on the pack. We look it up among the stock that chemists on Sehatra have listed.'} />
 
-      <div className="callout"><Info /><span><PreviewBadge /> This only knows batches stocked by chemists on Nexus Healthcare. It can&apos;t tell you a pack is fake — if in doubt, ask your pharmacist.</span></div>
+      <div className="callout"><Info /><span><PreviewBadge /> This only knows batches stocked by chemists on Sehatra. It can&apos;t tell you a pack is fake — if in doubt, ask your pharmacist.</span></div>
 
       <div className="grid side">
         <Card>
@@ -91,17 +91,17 @@ export default function MedicineScan() {
               <span className="pt-scan-badge" style={{ background: `color-mix(in srgb, ${v.c} 15%, transparent)`, color: v.c }}><v.icon size={34} /></span>
               <h3 className="mb-0" style={{ color: v.c }}>{v.label}</h3>
               {result.drug && <div className="strong" translate="no">{result.drug}{result.batch ? ` · ${result.batch}` : ''}</div>}
-              {result.status === 'genuine' && <p className="small mb-0">A chemist on Nexus Healthcare has listed this batch in its stock. Expires {fmtDate(result.expiry)}.</p>}
+              {result.status === 'genuine' && <p className="small mb-0">A chemist on Sehatra has listed this batch in its stock. Expires {fmtDate(result.expiry)}.</p>}
               {result.status === 'expired' && <p className="small mb-0">This batch expired on {fmtDate(result.expiry)}. Please don&apos;t use it — take it back to the chemist.</p>}
               {result.status === 'recall' && <p className="small mb-0">{result.message}</p>}
-              {result.status === 'unknown' && <p className="small mb-0">We couldn&apos;t find this batch in the stock listed by chemists on Nexus Healthcare. That doesn&apos;t mean it&apos;s fake — check the code, or ask your pharmacist.</p>}
+              {result.status === 'unknown' && <p className="small mb-0">We couldn&apos;t find this batch in the stock listed by chemists on Sehatra. That doesn&apos;t mean it&apos;s fake — check the code, or ask your pharmacist.</p>}
               {result.status === 'invalid' && <p className="small mb-0">{result.message}</p>}
               {read && (
                 <p className="tiny muted mb-0" translate="no">
                   Read from the pack: {read.batch ? `Batch ${read.batch}` : ''}{read.expiry ? ` · Expiry ${fmtDate(read.expiry)}` : ''}{read.serial ? ` · Serial ${read.serial}` : ''}
                 </p>
               )}
-              {result.status === 'genuine' && <div className="row tiny" style={{ color: 'var(--green-2)', gap: 6 }}><CheckCircle2 size={14} /> Matched against Nexus Healthcare chemist stock</div>}
+              {result.status === 'genuine' && <div className="row tiny" style={{ color: 'var(--green-2)', gap: 6 }}><CheckCircle2 size={14} /> Matched against Sehatra chemist stock</div>}
               <Button variant="ghost" size="sm" icon={camera ? Camera : undefined} onClick={() => { setResult(null); setCode(''); setRead(null); if (camera) setScanning(true); }}>Scan another</Button>
             </div>
           )}

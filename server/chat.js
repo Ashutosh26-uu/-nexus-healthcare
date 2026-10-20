@@ -11,14 +11,14 @@ const SUPPORT_EMAIL = String(process.env.SUPPORT_EMAIL || '').trim().slice(0, 12
 const SUPPORT_HOURS = String(process.env.SUPPORT_HOURS || '').trim().slice(0, 60);
 const SUPPORT = SUPPORT_PHONE
   ? `call our team at **${SUPPORT_PHONE}**${SUPPORT_HOURS ? ` (${SUPPORT_HOURS})` : ''}${SUPPORT_EMAIL ? ` or email ${SUPPORT_EMAIL}` : ''}`
-  : SUPPORT_EMAIL ? `email our team at **${SUPPORT_EMAIL}**` : 'contact the Nexus Healthcare team';
+  : SUPPORT_EMAIL ? `email our team at **${SUPPORT_EMAIL}**` : 'contact the Sehatra team';
 
 const EMERGENCY_WORDS = ['सीने में दर्द', 'छाती में दर्द', 'सांस नहीं', 'साँस नहीं', 'बेहोश', 'दौरा', 'खून की उल्टी', 'आत्महत्या', 'सांप ने काटा', 'ज़हर', 'dolor de pecho', 'no puedo respirar', 'douleur thoracique', 'ألم في الصدر', 'سینے میں درد', 'chest pain', 'can\'t breathe', 'cannot breathe', 'breathless', 'unconscious', 'seizure', 'fits', 'stroke', 'heavy bleeding', 'vomiting blood', 'suicide', 'kill myself', 'snake bite', 'poison', 'face drooping', 'slurred'];
 
 const EMERGENCY_REPLY =
-  "This sounds like it could be an emergency. **Please call 108 (ambulance) right now**, or go to the nearest emergency department. If you're at a Nexus Healthcare E-Clinic, tell the operator immediately — they will help you call and show you the nearest hospital.\n\nIf you have thoughts of harming yourself, please call **Tele-MANAS at 14416** — it's free and open 24/7.";
+  "This sounds like it could be an emergency. **Please call 108 (ambulance) right now**, or go to the nearest emergency department. If you're at a Sehatra E-Clinic, tell the operator immediately — they will help you call and show you the nearest hospital.\n\nIf you have thoughts of harming yourself, please call **Tele-MANAS at 14416** — it's free and open 24/7.";
 
-const SYSTEM_PROMPT = `You are Saathi, the friendly help assistant on the Nexus Healthcare website — a health network that started in India and serves people worldwide that connects patients (including villages, via E-Clinic kiosks) with verified doctors, a Universal Health Passport, and medicines.
+const SYSTEM_PROMPT = `You are Saathi, the friendly help assistant on the Sehatra website — a health network that started in India and serves people worldwide that connects patients (including villages, via E-Clinic kiosks) with verified doctors, a Universal Health Passport, and medicines.
 
 How to talk:
 - Warm, plain, short. Most answers 2–5 sentences. Use simple words in whatever language the person uses — any language in the world, including Indian languages written in Latin script (Hinglish, Tanglish).
@@ -34,7 +34,7 @@ What you know about the platform (use it to guide people):
 - E-prescriptions appear in the app and can be sent to a chosen chemist; pick up or order delivery where the chemist offers it.
 - Consent Manager: patients approve/deny who sees records and for how long; every access is in their access log. Emergency "break-glass" access is time-limited and logged.
 - Family profiles for children and elderly parents; a Health tracker for home BP, sugar, weight, oxygen and temperature readings; a child vaccination schedule.
-- Nexus E-Clinics are assisted kiosks with a trained operator; don't claim where they are or how many there are.
+- Sehatra E-Clinics are assisted kiosks with a trained operator; don't claim where they are or how many there are.
 - Support: ${SUPPORT}. Never invent a phone number, email, address, price, statistic or certification.`;
 
 // Privacy: nothing from the person's record — no name, passport id, allergies, conditions, medicines,
@@ -53,10 +53,10 @@ const FAQ = [
   { k: ['passport', 'health id', 'abha', 'aadhaar', 'register', 'sign up', 'signup', 'account'], a: "Your **Health Passport** is one secure ID for all your records. To create one: tap **Get started**, enter your email, type the one-time code we send there, and add basics like blood group and allergies. You can add your ABHA number too, and verify your Aadhaar if you want to. You'll get a QR health card for emergencies." },
   { k: ['otp', 'login', 'log in', 'password', 'sign in'], a: "Sign in with your **email and a one-time code** sent to your inbox, or with your password if you set one. If the code doesn't arrive in a minute, check your spam folder and tap *Resend*. Forgot your password? Use *Forgot password* to get a reset code by email." },
   { k: ['consent', 'privacy', 'who can see', 'data', 'share my'], a: "You're in control. In **Consent Manager** you can see every request to view your records, approve or deny it, and choose how long access lasts. Every view is written to your **access log**. Officials only ever see anonymous totals, never your name." },
-  { k: ['medicine', 'pharmacy', 'delivery', 'order', 'prescription'], a: "After a consult your e-prescription appears under **Medicines**. From there you can see which nearby chemists on Nexus have it in stock, and choose **pick up** or **home delivery** where the chemist offers it. If no single chemist nearby has everything, you can send an open request to chemists near you — the first to accept takes the order." },
-  { k: ['kiosk', 'e-clinic', 'eclinic', 'village', 'no smartphone'], a: "Nexus E-Clinics are assisted kiosks: a trained operator helps you register, records your BP, sugar, oxygen and temperature, and connects you to a doctor on video — no smartphone needed. If there's one near you, it shows up when you book." },
+  { k: ['medicine', 'pharmacy', 'delivery', 'order', 'prescription'], a: "After a consult your e-prescription appears under **Medicines**. From there you can see which nearby chemists on Sehatra have it in stock, and choose **pick up** or **home delivery** where the chemist offers it. If no single chemist nearby has everything, you can send an open request to chemists near you — the first to accept takes the order." },
+  { k: ['kiosk', 'e-clinic', 'eclinic', 'village', 'no smartphone'], a: "Sehatra E-Clinics are assisted kiosks: a trained operator helps you register, records your BP, sugar, oxygen and temperature, and connects you to a doctor on video — no smartphone needed. If there's one near you, it shows up when you book." },
   { k: ['fee', 'cost', 'price', 'charge', 'free', 'pay'], a: "Each doctor sets their own fee, and you see it before you book. Video consults are paid online; for a clinic visit you pay a small booking amount online and the doctor's fee at the clinic. Medicine and lab test prices are shown before you order." },
-  { k: ['language', 'hindi', 'tamil', 'bengali', 'bhasha'], a: "You can use Nexus Healthcare in many languages, including Hindi, Bengali, Tamil, Telugu and Marathi — change it anytime in **Settings**. Each doctor lists the languages they speak, so you can pick one who speaks yours." },
+  { k: ['language', 'hindi', 'tamil', 'bengali', 'bhasha'], a: "You can use Sehatra in many languages, including Hindi, Bengali, Tamil, Telugu and Marathi — change it anytime in **Settings**. Each doctor lists the languages they speak, so you can pick one who speaks yours." },
   { k: ['family', 'child', 'mother', 'father', 'parent', 'elderly'], a: "Add family members under **Family** — children, parents, grandparents. Switch profiles with one tap to book consults or see their records. Each person still has their own Health Passport." },
   { k: ['emergency card', 'qr', 'blood group'], a: "Your **Emergency card** shows blood group, allergies and emergency contacts with a QR code. Any verified doctor can scan it in an emergency, even offline — and you'll be notified every time it's opened." },
   { k: ['fever', 'temperature', 'bukhar'], a: "For a fever: rest, drink plenty of fluids (ORS is good), and you can take **paracetamol** as per the label. See a doctor if it's above **102°F**, lasts more than **2 days**, or comes with rash, bleeding gums, severe headache or confusion (these can be signs of dengue)." },
@@ -65,7 +65,7 @@ const FAQ = [
   { k: ['headache', 'sir dard'], a: "Common headaches often ease with rest, water, and paracetamol at label dose. Please seek help urgently if it's the **worst headache of your life**, comes with a stiff neck, fever, weakness on one side, or confusion." },
   { k: ['diarrhoea', 'diarrhea', 'loose motion', 'vomit', 'dast'], a: "Keep drinking — **ORS after every loose stool** is the most important thing. Eat light food like khichdi or banana. See a doctor if there's blood, high fever, signs of dehydration (very little urine, dizziness), or if it's a small child or elderly person." },
   { k: ['dengue', 'malaria', 'mosquito'], a: "To protect against dengue and malaria: empty standing water weekly, use nets and repellents, and wear full sleeves. Get tested if you have high fever with body ache, pain behind the eyes, or rash. **Avoid ibuprofen/aspirin** for suspected dengue — paracetamol is safer." },
-  { k: ['hello', 'hi', 'namaste', 'hey'], a: "Namaste! 🙏 I'm **Saathi**, Nexus Healthcare's help assistant. I can help you book a doctor, understand your Health Passport, find medicines, or answer general health questions. What can I do for you?" },
+  { k: ['hello', 'hi', 'namaste', 'hey'], a: "Namaste! 🙏 I'm **Saathi**, Sehatra's help assistant. I can help you book a doctor, understand your Health Passport, find medicines, or answer general health questions. What can I do for you?" },
   { k: ['thank', 'dhanyavad', 'shukriya'], a: "You're welcome! Take care, and I'm here whenever you need me. 💚" },
   { k: ['contact', 'support', 'help line', 'helpline', 'phone number', 'call'], a: `For help with your account or a booking, ${SUPPORT}. For emergencies always call **108**.` },
 ];

@@ -104,7 +104,7 @@ export function PageSkeleton() {
 export const relationOf = (p) => (p.self ? 'You' : p.relation || (p.age < 18 ? 'Child' : 'Family'));
 
 // Medicine pack check: a verdict only counts when the server matched a batch actually stocked by a chemist on
-// Nexus (those come back with an expiry date). Anything else is "not found" — never a guessed genuine/fake/recall.
+// Sehatra (those come back with an expiry date). Anything else is "not found" — never a guessed genuine/fake/recall.
 export function scanVerdict(r) {
   if (!r) return null;
   if (r.status === 'invalid' || r.status === 'recall' || (['genuine', 'expired'].includes(r.status) && r.expiry)) return r; // a recall must never be softened to "unknown"

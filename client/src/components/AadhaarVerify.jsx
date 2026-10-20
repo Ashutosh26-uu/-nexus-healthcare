@@ -102,7 +102,7 @@ export default function AadhaarVerify({ target, forPatient = false, verification
                 <li>The QR, the photo, the address, the full date of birth, or the mobile number and email linked to Aadhaar.</li>
               </ul>
             </div>
-            <p className="tiny muted mb-0">The QR is sent securely to Nexus Healthcare only for this one check, then thrown away. This is optional — everything on Nexus Healthcare works without it.</p>
+            <p className="tiny muted mb-0">The QR is sent securely to Sehatra only for this one check, then thrown away. This is optional — everything on Sehatra works without it.</p>
             <label className="check small">
               <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
               {forPatient ? 'The patient has agreed to this Aadhaar check.' : 'I agree to this one-time Aadhaar check.'}

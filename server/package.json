@@ -1,7 +1,7 @@
 {
   "name": "server",
   "version": "1.0.0",
-  "description": "Nexus Healthcare API",
+  "description": "Sehatra API",
   "main": "index.js",
   "scripts": {
     "dev": "node --watch index.js",

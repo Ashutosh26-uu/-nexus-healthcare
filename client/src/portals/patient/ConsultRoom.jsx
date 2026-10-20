@@ -10,13 +10,13 @@ import { usePatient, PageSkeleton } from './shared';
 import VisitPass from './VisitPass';
 import PaymentStep from './Payment';
 
-// In-person appointment (doctor's hospital/clinic or a Nexus E-Clinic): the live QR pass to show at reception.
+// In-person appointment (doctor's hospital/clinic or a Sehatra E-Clinic): the live QR pass to show at reception.
 function InPersonVisit({ c }) {
   const where = c.location || {};
   return (
     <Card className="pt-visit">
       <div className="pt-visit-info">
-        <span className="eyebrow">{where.kind === 'eclinic' ? 'Nexus E-Clinic visit' : 'In-person visit'}</span>
+        <span className="eyebrow">{where.kind === 'eclinic' ? 'Sehatra E-Clinic visit' : 'In-person visit'}</span>
         <h2 className="mb-0" translate="no">{c.doctorName}</h2>
         <p className="small muted mb-0">{c.doctorSpecialty}</p>
         <div className="pt-visit-where">

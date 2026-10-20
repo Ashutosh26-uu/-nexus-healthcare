@@ -41,7 +41,7 @@ export default function Records() {
   return (
     <div className="stack lg">
       <PageHeader eyebrow="My records" title={isSelf ? 'Your health, in order' : `${firstName(p?.name)}’s health records`}
-        subtitle="Every visit, report and prescription from any Nexus Healthcare doctor, lab or clinic — all in one timeline.">
+        subtitle="Every visit, report and prescription from any Sehatra doctor, lab or clinic — all in one timeline.">
         <Button icon={ScanLine} onClick={() => setUploading(true)}>Add an old report</Button>
       </PageHeader>
 

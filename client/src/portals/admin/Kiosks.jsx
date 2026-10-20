@@ -38,7 +38,7 @@ function AddClinic({ open, onClose, onAdded }) {
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const save = () => run('add', async () => { const r = await api.post('/admin/facilities', { ...f, type: 'kiosk' }); onAdded(r); setF({ name: '', address: '', district: '', state: '', pincode: '', phone: '' }); }, 'E-Clinic added — create an operator for it in Users & roles');
   return (
-    <Modal open={open} onClose={onClose} title="Add an E-Clinic" subtitle="A Nexus-owned clinic. Partner doctors can then pick it and check in there."
+    <Modal open={open} onClose={onClose} title="Add an E-Clinic" subtitle="A Sehatra-owned clinic. Partner doctors can then pick it and check in there."
       footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button icon={Plus} loading={busy === 'add'} disabled={f.name.trim().length < 3 || !f.district.trim() || !f.state.trim()} onClick={save}>Add E-Clinic</Button></>}>
       <div className="stack">
         <Field label="Name / location"><input className="input" value={f.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Dewa PHC" autoFocus /></Field>
@@ -65,7 +65,7 @@ export default function Kiosks() {
         const list = kiosks.filter((k) => (filter === 'all' ? true : filter === 'online' ? k.status === 'online' : k.status !== 'online'));
         return (
           <>
-            <PageHeader eyebrow="Kiosk fleet" title="E-Clinic kiosks" subtitle="Every Nexus E-Clinic and whether its operator has it open right now. Device health and remote updates are coming soon.">
+            <PageHeader eyebrow="Kiosk fleet" title="E-Clinic kiosks" subtitle="Every Sehatra E-Clinic and whether its operator has it open right now. Device health and remote updates are coming soon.">
               <Button icon={Plus} onClick={() => setAdding(true)}>Add E-Clinic</Button>
             </PageHeader>
             <AddClinic open={adding} onClose={() => setAdding(false)} onAdded={() => { setAdding(false); live.reload(); }} />

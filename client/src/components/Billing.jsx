@@ -102,7 +102,7 @@ function NewBill({ setup, onClose, onDone }) {
     if (f.batch) { const same = rows.filter((r) => r.batch === f.batch); if (same.length) rows = same; }
     rows = rows.filter((r) => r.qty > 0).sort((a, b) => String(a.expiry).localeCompare(String(b.expiry)));
     const r = rows[0];
-    if (!r) { setScanMsg('That pack isn\u2019t in your stock on Nexus yet — add it once under Inventory (scan there), then it scans straight onto bills.'); return; }
+    if (!r) { setScanMsg('That pack isn\u2019t in your stock on Sehatra yet — add it once under Inventory (scan there), then it scans straight onto bills.'); return; }
     setLines((ls) => (ls.some((l) => l.key === r.inventoryId) ? ls.map((l) => (l.key === r.inventoryId ? { ...l, qty: Math.min(Number(l.qty) + 1, r.qty) } : l)) : [...ls, lineFromRow(r, 1)]));
     setScanMsg(`Added ${r.drug} · batch ${r.batch || '—'}.`);
   };
@@ -184,7 +184,7 @@ function NewBill({ setup, onClose, onDone }) {
 
         <div className="grid two">
           {type === 'warehouse' && (
-            <Field label="Bill to a chemist on Nexus">
+            <Field label="Bill to a chemist on Sehatra">
               <select className="select" value={customer.facilityId} onChange={(e) => setCustomer({ ...customer, facilityId: e.target.value })}>
                 <option value="">Someone else (type below)</option>
                 {setup.customers.map((c) => <option key={c.facilityId} value={c.facilityId}>{c.name} · {c.district}</option>)}

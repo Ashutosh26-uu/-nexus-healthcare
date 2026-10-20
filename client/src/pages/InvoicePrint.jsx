@@ -114,7 +114,7 @@ export default function InvoicePrint() {
         <p className="rxp-note">
           {inv.gstIndicative && <>* GST rate is an indicative default (12% for most medicines) — confirm against the store&apos;s billing records. </>}
           {!s.gstin && <>This store has not added a GSTIN, so this is a bill of supply; the GST columns show the tax included in the MRP, for reference. </>}
-          MRPs are inclusive of GST. Prices shown are indicative catalogue prices for this pilot. Computer-generated invoice from Nexus Healthcare; no signature required.
+          MRPs are inclusive of GST. Prices shown are indicative catalogue prices for this pilot. Computer-generated invoice from Sehatra; no signature required.
         </p>
       </article>
     </div>

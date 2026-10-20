@@ -10,7 +10,7 @@ import { usePatient } from './shared';
 
 /* ---------- find a doctor ---------- */
 // Doctors within 20 km for the patient's symptoms or chosen department — hospital doctors, doctors with
-// their own clinic and Nexus virtual-clinic doctors — with "All of India" to look further.
+// their own clinic and Sehatra virtual-clinic doctors — with "All of India" to look further.
 export default function Consult() {
   const { patient, home } = usePatient();
   const navigate = useNavigate();

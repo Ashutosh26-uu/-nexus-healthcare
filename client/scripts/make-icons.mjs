@@ -1,4 +1,4 @@
-// Generates the PWA / app-store PNG icons (no dependencies): brand-green tile, cream heart, clay pulse.
+// Generates the PWA / app-store PNG icons (no dependencies): brand-green tile, cream heart, clay road to a dot (Sehatra).
 import { writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 
@@ -15,7 +15,11 @@ function png(size, px) {
 // Heart polygon (classic parametric heart) in unit space.
 const heart = Array.from({ length: 240 }, (_, i) => { const t = (i / 240) * Math.PI * 2; return [16 * Math.sin(t) ** 3, -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t))]; });
 const inPoly = (x, y, poly) => { let inside = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside; } return inside; };
-const pulse = [[-9, 1.5], [-3.5, 1.5], [-1.5, -3], [1.5, 5.5], [3.5, 1], [9, 1]];
+// The road (sehat + yatra): from the heart's tip it winds up through the heart to a destination dot.
+const cubic = (p0, p1, p2, p3, n = 24) => Array.from({ length: n + 1 }, (_, i) => { const t = i / n, m = 1 - t; return [0, 1].map((k) => m * m * m * p0[k] + 3 * m * m * t * p1[k] + 3 * m * t * t * p2[k] + t * t * t * p3[k]); });
+const fit = ([x, y]) => [x * 0.82, y * 0.82 + 2.6];
+const pulse = [...cubic([5, -4.5], [2.5, -8.5], [-6, -7.5], [-5, -2.5]), ...cubic([-5, -2.5], [-4, 1.5], [5, 0.5], [5, 5]).slice(1), ...cubic([5, 5], [5, 10], [-2.5, 11.5], [-5.5, 8]).slice(1)].map(fit);
+const DOT = fit([5.6, -5.2]), DOT_R = 2.1;
 const segDist = (px, py, [ax, ay], [bx, by]) => { const dx = bx - ax, dy = by - ay; const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy))); return Math.hypot(px - ax - t * dx, py - ay - t * dy); };
 function icon(size, { maskable }) {
   const SS = 4; const scale = maskable ? 0.62 : 0.8; const radius = maskable ? 0 : 0.22;
@@ -30,8 +34,9 @@ function icon(size, { maskable }) {
       const hx = (u - 0.5) * 40 / scale, hy = (v - 0.53) * 40 / scale;
       if (inPoly(hx, hy, heart)) {
         col = CREAM;
-        const lw = 1.35;
+        const lw = 1.55;
         for (let i = 0; i < pulse.length - 1; i++) if (segDist(hx, hy, pulse[i], pulse[i + 1]) < lw) { col = CLAY; break; }
+        if (Math.hypot(hx - DOT[0], hy - DOT[1]) < DOT_R) col = CLAY;
       }
       r += col[0]; g += col[1]; b += col[2]; a += 255;
     }

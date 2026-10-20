@@ -255,12 +255,12 @@ function AuthenticityCard() {
           <AlertTriangle />
           <span className="small">
             {result.status === 'expired' && <>This batch expired on {fmtDate(result.expiry)}. Please don&apos;t use it — take it back to the chemist.</>}
-            {result.status === 'unknown' && <>We couldn&apos;t find this batch in the stock listed by chemists on Nexus Healthcare. That doesn&apos;t mean it&apos;s fake — check the code, or ask your pharmacist.</>}
+            {result.status === 'unknown' && <>We couldn&apos;t find this batch in the stock listed by chemists on Sehatra. That doesn&apos;t mean it&apos;s fake — check the code, or ask your pharmacist.</>}
             {!['expired', 'unknown'].includes(result.status) && (result.message || 'We couldn’t check that code right now. Please try again.')}
           </span>
         </div>
       ))}
-      <p className="tiny muted mb-0 mt-1"><PreviewBadge /> Checks only the stock chemists on Nexus have listed — live checks against the national drug registry are coming soon.</p>
+      <p className="tiny muted mb-0 mt-1"><PreviewBadge /> Checks only the stock chemists on Sehatra have listed — live checks against the national drug registry are coming soon.</p>
     </Card>
   );
 }

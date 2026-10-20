@@ -52,7 +52,7 @@ export default function DoctorProfile({ doc, onClose, onConsult, busy, consultLa
             <div className="small muted mt-1">{doc.availability?.label}{doc.availability?.next ? ` · next ${doc.availability.next}` : ''}</div>
           </div>
           <ShareButton iconOnly label="Share this doctor on WhatsApp" url={window.location.origin}
-            text={`${doc.name} (${doc.specialty}${doc.experience ? `, ${doc.experience} yrs experience` : ''}) is on Nexus Healthcare — registration-verified doctors, book from your phone:`} />
+            text={`${doc.name} (${doc.specialty}${doc.experience ? `, ${doc.experience} yrs experience` : ''}) is on Sehatra — registration-verified doctors, book from your phone:`} />
         </div>
         <div className="pt-dp-stats">
           {doc.experience > 0 && <div><Briefcase size={16} /><strong>{doc.experience} yrs</strong><span>experience</span></div>}

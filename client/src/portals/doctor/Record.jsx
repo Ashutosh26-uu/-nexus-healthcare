@@ -42,7 +42,7 @@ export function AccessGate({ record, onChanged, compact }) {
       <h3>{p.name}'s records are private</h3>
       <p className="muted small">
         {p.age} y · {p.gender}. You don't have consent to see their history yet. Ask the patient — they can approve from the
-        Nexus Healthcare app or by OTP at any kiosk, and choose how long you can see it.
+        Sehatra app or by OTP at any kiosk, and choose how long you can see it.
       </p>
       <div className="row wrap" style={{ justifyContent: 'center' }}>
         {record.pendingRequest ? (
@@ -175,7 +175,7 @@ export function HistoryPanel({ data }) {
 
 export function VisitsPanel({ visits, excludeId }) {
   const list = (visits || []).filter((v) => v.id !== excludeId);
-  if (!list.length) return <Empty icon={History} title="No past visits on Nexus Healthcare">This looks like their first consult with the network.</Empty>;
+  if (!list.length) return <Empty icon={History} title="No past visits on Sehatra">This looks like their first consult with the network.</Empty>;
   return (
     <div className="dr-timeline">
       {list.map((v) => (

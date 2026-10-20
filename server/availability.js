@@ -2,7 +2,7 @@
 //
 // Two kinds of doctor, two rules:
 //  • E-Clinic partners (engagement === 'eclinic_partner') control it themselves — they flip a
-//    switch when they arrive at / leave an Nexus Healthcare E-Clinic (`online` + `presenceClinicId`).
+//    switch when they arrive at / leave an Sehatra E-Clinic (`online` + `presenceClinicId`).
 //  • Hospital and partner-clinic doctors follow the weekly hours they set (`slots`), automatically.
 //    They get no switch — once their hours end they show as unavailable.
 //

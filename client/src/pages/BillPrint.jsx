@@ -123,7 +123,7 @@ export default function BillPrint() {
         {bill.notes && <p className="rxp-note"><strong>Note:</strong> {bill.notes}</p>}
         <p className="rxp-note">
           {lab ? 'Healthcare diagnostic services are exempt from GST. ' : b2b ? 'Rates are before GST; GST is added as shown. ' : 'Prices include GST (MRP-inclusive); the taxable value is worked back from the price. '}
-          {f.billTerms ? `${f.billTerms} ` : ''}Generated on Nexus Healthcare by {bill.createdByName || 'the store'}.
+          {f.billTerms ? `${f.billTerms} ` : ''}Generated on Sehatra by {bill.createdByName || 'the store'}.
         </p>
       </article>
     </div>

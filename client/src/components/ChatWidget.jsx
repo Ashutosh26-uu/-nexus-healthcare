@@ -22,7 +22,7 @@ function greeting(user) {
     role: 'assistant',
     content: first
       ? `Namaste ${first} 🙏 I'm **Saathi**. Ask me anything — booking a doctor, your medicines, or a health worry. I'm here 24×7.`
-      : "Namaste 🙏 I'm **Saathi**, Nexus Healthcare's help assistant. Ask me about booking a doctor, your Health Passport, medicines — or any health question.",
+      : "Namaste 🙏 I'm **Saathi**, Sehatra's help assistant. Ask me about booking a doctor, your Health Passport, medicines — or any health question.",
   };
 }
 

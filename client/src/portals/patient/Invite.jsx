@@ -16,7 +16,7 @@ const REASON = {
 };
 const FRIEND = { joined: ['Joined', ''], earned: ['You earned ₹50', 'green'], capped: ['Joined · reward limit reached', ''] };
 
-// Refer & earn: your code + link, a WhatsApp share, who joined, and your Nexus credit.
+// Refer & earn: your code + link, a WhatsApp share, who joined, and your Sehatra credit.
 export default function Invite() {
   const live = useLive('/referrals/me', ['notifications', 'payments']);
   const [copied, setCopied] = useState('');
@@ -27,12 +27,12 @@ export default function Invite() {
 
   const link = `${window.location.origin}${data.path}`;
   const copy = (what, text) => navigator.clipboard?.writeText(text).then(() => setCopied(what)).catch(() => {});
-  const shareMsg = `I use Nexus Healthcare to see verified doctors and save on medicines — join with my link and we both get ₹${data.reward}:`;
+  const shareMsg = `I use Sehatra to see verified doctors and save on medicines — join with my link and we both get ₹${data.reward}:`;
 
   return (
     <div className="stack lg">
       <PageHeader eyebrow="Invite & earn" title={`Give ₹${data.reward}, get ₹${data.reward}`}
-        subtitle="Invite friends and family to Nexus Healthcare. When they finish their first paid consult or lab test, you both get Nexus credit." />
+        subtitle="Invite friends and family to Sehatra. When they finish their first paid consult or lab test, you both get Sehatra credit." />
 
       <section className="pt-inv-hero" aria-label="Your invite">
         <div className="pt-inv-code">
@@ -66,7 +66,7 @@ export default function Invite() {
           <p className="tiny muted mb-0 mt-1">{data.rewardedCount} of {data.cap} rewards earned. Friends see only your first name.</p>
         </Card>
 
-        <Card title={<h3 className="row" style={{ gap: 8 }}><Wallet size={18} /> Your Nexus credit</h3>}>
+        <Card title={<h3 className="row" style={{ gap: 8 }}><Wallet size={18} /> Your Sehatra credit</h3>}>
           <div className="row" style={{ gap: 10, alignItems: 'baseline' }}>
             <strong style={{ fontSize: '1.8rem' }} className="serif">{fmtMoney(data.balance)}</strong>
             <span className="small muted">to spend</span>
@@ -85,7 +85,7 @@ export default function Invite() {
         </Card>
       </div>
 
-      <p className="tiny muted mb-0"><Info size={12} className="inline-ic" /> Rewards are for new accounts only, not your own second account. If that first visit is cancelled and refunded, its rewards are taken back. Nexus credit has no cash value and can&apos;t be transferred.</p>
+      <p className="tiny muted mb-0"><Info size={12} className="inline-ic" /> Rewards are for new accounts only, not your own second account. If that first visit is cancelled and refunded, its rewards are taken back. Sehatra credit has no cash value and can&apos;t be transferred.</p>
     </div>
   );
 }

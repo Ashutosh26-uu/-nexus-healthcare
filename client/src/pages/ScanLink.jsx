@@ -6,7 +6,7 @@ import { useAuth } from '../auth';
 import { PublicPage, Note } from './public/PublicShell';
 import { fmtDate, fmtDateTime } from '../components/ui';
 
-// Where a phone camera lands after scanning a Nexus QR.
+// Where a phone camera lands after scanning a Sehatra QR.
 
 // /s/p/:id — a Health Passport or emergency card. Signed-in care staff go straight to the patient (their usual
 // consent rules apply there); everyone else gets a plain explanation and the emergency number. No patient data
@@ -20,13 +20,13 @@ export function PassportLanding() {
   return (
     <PublicPage>
       <section className="pb-hero">
-        <span className="pb-eyebrow">Nexus Healthcare</span>
+        <span className="pb-eyebrow">Sehatra</span>
         <h1 className="row" style={{ gap: 10 }}><IdCard size={30} /> Health Passport</h1>
         <p className="mono" translate="no" dir="ltr" style={{ fontSize: '1.2rem' }}>{pid}</p>
       </section>
       <div className="stack" style={{ maxWidth: 640 }}>
         <div className="callout rose"><Phone /><span><strong>In an emergency, call 108 now.</strong> The blood group, allergies and conditions are printed on the card itself.</span></div>
-        <Note>This code identifies a patient on Nexus Healthcare. Doctors and hospital staff can sign in to open the record — the patient’s consent rules still apply, and every view is logged.</Note>
+        <Note>This code identifies a patient on Sehatra. Doctors and hospital staff can sign in to open the record — the patient’s consent rules still apply, and every view is logged.</Note>
         {user ? (
           <p className="small muted">You’re signed in as a {user.role.replace('_', ' ')}, which can’t open other patients’ records.</p>
         ) : (
@@ -46,7 +46,7 @@ export function VerifyDocument() {
     fetch(`/api/public/verify/${encodeURIComponent(kind)}/${encodeURIComponent(token)}`, { cache: 'no-store' })
       .then(async (r) => ({ ok: r.ok, body: await r.json().catch(() => ({})) }))
       .then(({ ok, body }) => alive && setState({ loading: false, ok: ok && body.valid, data: body }))
-      .catch(() => alive && setState({ loading: false, ok: false, data: { error: 'Couldn’t reach Nexus Healthcare. Check your connection and try again.' } }));
+      .catch(() => alive && setState({ loading: false, ok: false, data: { error: 'Couldn’t reach Sehatra. Check your connection and try again.' } }));
     return () => { alive = false; };
   }, [kind, token]);
 
@@ -60,10 +60,10 @@ export function VerifyDocument() {
       </section>
       <div className="stack" style={{ maxWidth: 640 }}>
         {state.loading ? (
-          <p className="row muted" style={{ gap: 8 }}><Loader2 className="spin" size={18} /> Checking with Nexus Healthcare…</p>
+          <p className="row muted" style={{ gap: 8 }}><Loader2 className="spin" size={18} /> Checking with Sehatra…</p>
         ) : state.ok ? (
           <div className="card stack" style={{ gap: 10, borderColor: 'var(--green-2)' }}>
-            <div className="row" style={{ gap: 10, color: 'var(--green-2)' }}><ShieldCheck size={28} /><h2 className="mb-0" style={{ color: 'var(--green-2)' }}>Genuine — issued on Nexus Healthcare</h2></div>
+            <div className="row" style={{ gap: 10, color: 'var(--green-2)' }}><ShieldCheck size={28} /><h2 className="mb-0" style={{ color: 'var(--green-2)' }}>Genuine — issued on Sehatra</h2></div>
             <dl className="kv">
               <dt>Document</dt><dd className="mono" translate="no">{d.id}</dd>
               <dt>Issued</dt><dd>{fmtDateTime(d.issuedAt)}</dd>
@@ -73,7 +73,7 @@ export function VerifyDocument() {
                   <dt>Doctor</dt><dd translate="no">{d.doctor?.name}{d.doctor?.qualification ? `, ${d.doctor.qualification}` : ''}{d.doctor?.verified && <span className="badge green" style={{ marginInlineStart: 6 }}><BadgeCheck size={12} /> Verified</span>}</dd>
                   {d.doctor?.regNo && <><dt>Registration</dt><dd className="mono" translate="no">{d.doctor.regNo}</dd></>}
                   <dt>Medicines</dt><dd>{d.medicines}</dd>
-                  <dt>Status</dt><dd>{d.status === 'dispensed' ? `Already dispensed${d.dispensedAt ? ` on ${fmtDate(d.dispensedAt)}` : ''}` : 'Issued — not yet dispensed through Nexus'}</dd>
+                  <dt>Status</dt><dd>{d.status === 'dispensed' ? `Already dispensed${d.dispensedAt ? ` on ${fmtDate(d.dispensedAt)}` : ''}` : 'Issued — not yet dispensed through Sehatra'}</dd>
                 </>
               ) : (
                 <>
@@ -89,7 +89,7 @@ export function VerifyDocument() {
         ) : (
           <div className="card stack" style={{ gap: 8, borderColor: 'var(--rose)' }}>
             <div className="row" style={{ gap: 10, color: 'var(--rose)' }}><ShieldAlert size={28} /><h2 className="mb-0" style={{ color: 'var(--rose)' }}>Not verified</h2></div>
-            <p className="mb-0">{d.error || 'This code doesn’t match any document on Nexus Healthcare.'}</p>
+            <p className="mb-0">{d.error || 'This code doesn’t match any document on Sehatra.'}</p>
           </div>
         )}
       </div>
@@ -118,7 +118,7 @@ export function VisitLanding() {
   return (
     <PublicPage>
       <section className="pb-hero">
-        <span className="pb-eyebrow">Nexus Healthcare</span>
+        <span className="pb-eyebrow">Sehatra</span>
         <h1 className="row" style={{ gap: 10 }}><CalendarClock size={30} /> Visit pass</h1>
         <p className="mono" translate="no" dir="ltr" style={{ fontSize: '1.2rem' }}>{code}</p>
       </section>
@@ -130,7 +130,7 @@ export function VisitLanding() {
         {state === 'error' && <div className="callout rose"><ShieldAlert /><span>{error}</span></div>}
         {staff ? <Link className="btn" to={back}>Back to my screen</Link> : (
           <>
-            <Note>This is a patient&apos;s pass for an in-person appointment booked on Nexus Healthcare. <strong>Show it at the reception desk</strong> — they scan it to check you in and give you a token. The 6-digit code above changes every 30 seconds.</Note>
+            <Note>This is a patient&apos;s pass for an in-person appointment booked on Sehatra. <strong>Show it at the reception desk</strong> — they scan it to check you in and give you a token. The 6-digit code above changes every 30 seconds.</Note>
             {user ? <p className="small muted">You&apos;re signed in as a {user.role.replace('_', ' ')}, which can&apos;t check patients in.</p>
               : <Link className="btn" to="/login" state={{ from: `/s/v/${encodeURIComponent(id)}/${code}` }}><LogIn size={16} /> Reception sign in to check in</Link>}
           </>

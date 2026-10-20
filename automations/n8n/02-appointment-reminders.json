@@ -1,5 +1,5 @@
 {
-  "name": "Nexus · Appointment & lab reminders (WhatsApp)",
+  "name": "Sehatra · Appointment & lab reminders (WhatsApp)",
   "nodes": [
     {
       "parameters": {
@@ -40,7 +40,7 @@
             {
               "id": "33f7661d-522f-4734-8718-c0d15f369d35",
               "name": "fromEmail",
-              "value": "Nexus Automations <no-reply@yourdomain.com>",
+              "value": "Sehatra Automations <no-reply@yourdomain.com>",
               "type": "string"
             },
             {
@@ -62,7 +62,7 @@
         220,
         300
       ],
-      "notes": "Edit these once: your Nexus URL, who gets alerts, and the sender address."
+      "notes": "Edit these once: your Sehatra URL, who gets alerts, and the sender address."
     },
     {
       "parameters": {
@@ -84,7 +84,7 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "nexusAutomationKey",
-          "name": "Nexus automation key"
+          "name": "Sehatra automation key"
         }
       }
     },
@@ -104,7 +104,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const toE164 = (m) => { const d = String(m || '').replace(/\\D/g, ''); return d.length === 10 ? '+91' + d : d ? '+' + d : null; };\n// Reminder text for each upcoming visit or lab slot. Skips demo data and anyone without a mobile number.\nconst live = $('Upcoming visits').first().json.mode === 'live';\nconst out = [];\nfor (const item of $input.all()) {\n  const v = item.json;\n  const c = v.contact || {};\n  if (!live || !c.mobile) continue;\n  const hi = c.firstName ? `Hi ${c.firstName}, ` : 'Hi, ';\n  const text = v.kind === 'lab'\n    ? `${hi}reminder: your test at ${v.labName} is on ${v.when}.${v.homeCollection ? ' A technician will come to your home.' : ''}${v.fastingNeeded ? ' Please don’t eat for 8–10 hours before (water is fine).' : ''} Pay ₹${v.balance} at the lab.`\n    : `${hi}reminder: your ${v.followUp ? 'follow-up ' : ''}appointment with ${v.doctorName} is on ${v.when}${v.mode === 'in_person' ? ` at ${v.location}. Show your visit QR at the reception.` : `. It’s a ${v.mode} consult — open the Nexus app a few minutes early.`}`;\n  out.push({ json: { to: toE164(c.mobile), message: `${text} — Nexus Healthcare`, kind: v.kind, id: v.id } });\n}\nreturn out;"
+        "jsCode": "const toE164 = (m) => { const d = String(m || '').replace(/\\D/g, ''); return d.length === 10 ? '+91' + d : d ? '+' + d : null; };\n// Reminder text for each upcoming visit or lab slot. Skips demo data and anyone without a mobile number.\nconst live = $('Upcoming visits').first().json.mode === 'live';\nconst out = [];\nfor (const item of $input.all()) {\n  const v = item.json;\n  const c = v.contact || {};\n  if (!live || !c.mobile) continue;\n  const hi = c.firstName ? `Hi ${c.firstName}, ` : 'Hi, ';\n  const text = v.kind === 'lab'\n    ? `${hi}reminder: your test at ${v.labName} is on ${v.when}.${v.homeCollection ? ' A technician will come to your home.' : ''}${v.fastingNeeded ? ' Please don’t eat for 8–10 hours before (water is fine).' : ''} Pay ₹${v.balance} at the lab.`\n    : `${hi}reminder: your ${v.followUp ? 'follow-up ' : ''}appointment with ${v.doctorName} is on ${v.when}${v.mode === 'in_person' ? ` at ${v.location}. Show your visit QR at the reception.` : `. It’s a ${v.mode} consult — open the Sehatra app a few minutes early.`}`;\n  out.push({ json: { to: toE164(c.mobile), message: `${text} — Sehatra`, kind: v.kind, id: v.id } });\n}\nreturn out;"
       },
       "id": "2bc5b9e3-4c69-49a9-9a8f-0ee46a787ab6",
       "name": "Write reminder",
@@ -162,7 +162,7 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "nexusAutomationKey",
-          "name": "Nexus automation key"
+          "name": "Sehatra automation key"
         }
       },
       "notes": "So the next run does not remind the same person again."

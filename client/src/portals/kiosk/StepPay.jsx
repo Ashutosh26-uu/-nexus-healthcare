@@ -92,7 +92,7 @@ export default function StepPay() {
               </div>
             )
           )}
-          {method === 'cash' && <p className="k-fine">Operator: collect the cash and give your own receipt — kiosk cash isn&apos;t recorded in Nexus Healthcare yet.</p>}
+          {method === 'cash' && <p className="k-fine">Operator: collect the cash and give your own receipt — kiosk cash isn&apos;t recorded in Sehatra yet.</p>}
           {paid ? (
             <div className="k-paid fade-in"><Check />{method === 'pilot' ? 'All set — nothing to pay today.' : 'Noted. Thank you!'}</div>
           ) : (

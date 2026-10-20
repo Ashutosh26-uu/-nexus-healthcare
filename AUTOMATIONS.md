@@ -1,17 +1,17 @@
 # Automations with n8n
 
-Nexus Healthcare connects to [n8n](https://n8n.io) in two directions:
+Sehatra connects to [n8n](https://n8n.io) in two directions:
 
-- **Nexus → n8n (events).** When something happens, for example a booking is paid or a lab report is uploaded, the server POSTs a small signed JSON event to your n8n webhook. Sending happens in the background, so the app never waits for n8n. If n8n is down, Nexus retries for about 45 minutes (after 10 s, 30 s, 2 min, 10 min and 30 min).
-- **n8n → Nexus (API).** Workflows call `/api/automation/*` with their own key. They can read a daily summary, upcoming visits and low stock, mark reminders as sent, and post in-app notices. The key can't open patient records, act as a user, or reach any admin route.
+- **Sehatra → n8n (events).** When something happens, for example a booking is paid or a lab report is uploaded, the server POSTs a small signed JSON event to your n8n webhook. Sending happens in the background, so the app never waits for n8n. If n8n is down, Sehatra retries for about 45 minutes (after 10 s, 30 s, 2 min, 10 min and 30 min).
+- **n8n → Sehatra (API).** Workflows call `/api/automation/*` with their own key. They can read a daily summary, upcoming visits and low stock, mark reminders as sent, and post in-app notices. The key can't open patient records, act as a user, or reach any admin route.
 
 Everything is **off** until you set the environment variables below. Super Admin → **Automations (n8n)** shows the status, recent deliveries and a **Send test event** button.
 
 ## 1. Run n8n
 
-Use [n8n Cloud](https://n8n.io/cloud) or self-host it (Docker: `docker run -it -p 5678:5678 -v n8n_data:/home/node/.n8n docker.n8n.io/n8nio/n8n`). Self-hosted n8n must be reachable over **https** from your Nexus server.
+Use [n8n Cloud](https://n8n.io/cloud) or self-host it (Docker: `docker run -it -p 5678:5678 -v n8n_data:/home/node/.n8n docker.n8n.io/n8nio/n8n`). Self-hosted n8n must be reachable over **https** from your Sehatra server.
 
-## 2. Set the Nexus environment variables
+## 2. Set the Sehatra environment variables
 
 Catalyst console → AppSail → your app → Configuration (or `server/.env` locally):
 
@@ -45,13 +45,13 @@ In n8n go to **Workflows → Import from file** and import each file in [`automa
 Then:
 
 1. **Create the credentials** in n8n (Credentials → New):
-   - **Nexus webhook token**: type *Header Auth*, name `X-Nexus-Token`, value = your `N8N_WEBHOOK_SECRET`.
-   - **Nexus automation key**: type *Header Auth*, name `Authorization`, value = `Bearer <your N8N_API_KEY>`.
+   - **Sehatra webhook token**: type *Header Auth*, name `X-Nexus-Token`, value = your `N8N_WEBHOOK_SECRET`.
+   - **Sehatra automation key**: type *Header Auth*, name `Authorization`, value = `Bearer <your N8N_API_KEY>`.
    - **SMTP (alerts)**: your mail server (a Gmail app password works).
    - **Twilio (WhatsApp)**: your Twilio account SID and auth token, with a WhatsApp-enabled sender.
-2. **Edit the Config node** in each workflow: your Nexus URL (`baseUrl`), who receives alerts (`alertEmail`), the sender address and the WhatsApp sender number.
+2. **Edit the Config node** in each workflow: your Sehatra URL (`baseUrl`), who receives alerts (`alertEmail`), the sender address and the WhatsApp sender number.
 3. **Activate** the workflows. Copy the webhook's *Production URL* from workflow 01 into `N8N_WEBHOOK_URL`.
-4. In Nexus go to Super Admin → Automations (n8n) → **Send test event** and check that it shows *Delivered*.
+4. In Sehatra go to Super Admin → Automations (n8n) → **Send test event** and check that it shows *Delivered*.
 
 > WhatsApp messages are only sent for events from **live** data (`"mode": "live"`). Demo data uses made-up phone numbers that might belong to real people, so it is never messaged.
 
@@ -74,7 +74,7 @@ Then:
 
 `contact` is only present when `N8N_SHARE_CONTACT=true`.
 
-**Medical details are never sent.** Events contain no symptoms, diagnoses, medicine names, test names or results. Workflows that need more should link to the record in Nexus rather than copy it.
+**Medical details are never sent.** Events contain no symptoms, diagnoses, medicine names, test names or results. Workflows that need more should link to the record in Sehatra rather than copy it.
 
 | Event | When |
 |---|---|

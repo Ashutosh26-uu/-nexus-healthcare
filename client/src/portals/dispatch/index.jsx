@@ -256,7 +256,7 @@ function Profile({ user, me, done, onSignOut }) {
         <dl className="kv">
           <dt>Phone</dt><dd className="row" style={{ gap: 6 }}><Phone size={14} /> <bdi dir="ltr">{me?.phone || user?.phone || 'Not added'}</bdi></dd>
           <dt>Vehicle</dt><dd>{me?.vehicle || 'Not added'}</dd>
-          <dt>Distance logged</dt><dd>{km} km on Nexus Healthcare</dd>
+          <dt>Distance logged</dt><dd>{km} km on Sehatra</dd>
         </dl>
       </div>
       <button className="dj-big-btn ghost" onClick={onSignOut}><LogOut size={18} /> Sign out</button>

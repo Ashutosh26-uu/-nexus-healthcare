@@ -1,4 +1,4 @@
-// Nexus Healthcare service worker.
+// Sehatra service worker.
 // - App shell (HTML, hashed JS/CSS, icons, fonts) is cached so the app opens instantly and offline.
 // - /api/* is NEVER cached: health data always comes fresh from the server and never sits on disk here.
 // - Hashed /assets/ files from older builds are dropped whenever a new index.html arrives, so the cache can't grow forever.

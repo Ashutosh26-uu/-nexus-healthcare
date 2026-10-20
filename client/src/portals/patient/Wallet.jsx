@@ -4,9 +4,9 @@ import { Card, Empty, PreviewBadge } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, firstName } from './shared';
 
-// Data donation + health credits isn't live yet: no research study is enrolling through Nexus Healthcare and no
+// Data donation + health credits isn't live yet: no research study is enrolling through Sehatra and no
 // reward can be redeemed anywhere. Until it is, this page says so plainly instead of showing sample studies,
-// a starter balance or vouchers nobody honours. Real Nexus credit (from invites) lives on "Invite & earn".
+// a starter balance or vouchers nobody honours. Real Sehatra credit (from invites) lives on "Invite & earn".
 export default function Wallet() {
   const { patient, profileKey } = usePatient();
 
@@ -17,7 +17,7 @@ export default function Wallet() {
 
       <Card>
         <Empty icon={Coins} title={<>Data donation is coming soon <PreviewBadge>Coming soon</PreviewBadge></>}>
-          No research studies are enrolling through Nexus Healthcare yet, so there is nothing to join and no health credits to earn or spend here. We&apos;ll tell you when the first approved study opens — nothing is ever shared without your clear yes.
+          No research studies are enrolling through Sehatra yet, so there is nothing to join and no health credits to earn or spend here. We&apos;ll tell you when the first approved study opens — nothing is ever shared without your clear yes.
         </Empty>
       </Card>
 
@@ -36,7 +36,7 @@ export default function Wallet() {
             <span className="pt-ic-tile clay"><Gift size={18} /></span>
             <div className="grow small">
               <strong>Want credit you can use today?</strong>
-              <p className="muted mb-0">Invite friends and family — you both get Nexus credit after their first paid visit. See <Link to="/patient/invite">Invite &amp; earn</Link>.</p>
+              <p className="muted mb-0">Invite friends and family — you both get Sehatra credit after their first paid visit. See <Link to="/patient/invite">Invite &amp; earn</Link>.</p>
             </div>
           </div>
         </Card>

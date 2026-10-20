@@ -113,7 +113,7 @@ export function ReportView() {
       <article className="cc-paper">
         <header className="cc-paper-head">
           <div>
-            <div className="eyebrow">Nexus Healthcare · Health Command Center</div>
+            <div className="eyebrow">Sehatra · Health Command Center</div>
             <h1>{r.title}</h1>
             <div className="small muted">{scopeName(data.scope)} · generated {fmtDateTime(new Date().toISOString())} · prepared for {r.audience}</div>
           </div>

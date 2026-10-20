@@ -15,7 +15,7 @@ export default function Slip({ kiosk, patient, consult, triage, vitals, booking,
       <div className="k-slip-head">
         <LogoMark size={36} />
         <div>
-          <strong>Nexus Healthcare E-Clinic</strong>
+          <strong>Sehatra E-Clinic</strong>
           <span>{kiosk?.name} · {kiosk?.district}, {kiosk?.state} {kiosk?.pincode}</span>
         </div>
         <span className="k-slip-date">{fmt(consult?.completedAt || consult?.createdAt)}</span>

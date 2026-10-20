@@ -12,7 +12,7 @@ import { LateNotice, VisitChangeActions } from './VisitChange';
 const PLACE = {
   video: { icon: Video, label: (c) => `${c.mode === 'audio' ? 'Audio' : c.mode === 'chat' ? 'Chat' : 'Video'} consult` },
   clinic: { icon: Building2, label: (c) => c.location?.name || 'Doctor’s clinic' },
-  eclinic: { icon: MonitorSmartphone, label: (c) => c.location?.name || 'Nexus E-Clinic' },
+  eclinic: { icon: MonitorSmartphone, label: (c) => c.location?.name || 'Sehatra E-Clinic' },
 };
 const placeOf = (c) => PLACE[c.visitType] || (c.mode === 'in_person' ? PLACE.clinic : PLACE.video);
 
@@ -36,8 +36,8 @@ function addToCalendar(c) {
   const f = (d) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
   // Calendar text values: no line breaks (they would start new calendar properties) and RFC 5545 escaping.
   const t = (v) => String(v || '').replace(/[\r\n]+/g, ' ').replace(/([\\;,])/g, '\\$1');
-  const where = t(c.mode === 'in_person' ? (c.location?.name || '') : 'Nexus Healthcare app (video)');
-  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Nexus Healthcare//EN', 'BEGIN:VEVENT', `UID:${c.id}@nexushealthcare`, `DTSTAMP:${f(new Date())}`, `DTSTART:${f(start)}`, `DTEND:${f(end)}`,
+  const where = t(c.mode === 'in_person' ? (c.location?.name || '') : 'Sehatra app (video)');
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Sehatra//EN', 'BEGIN:VEVENT', `UID:${c.id}@nexushealthcare`, `DTSTAMP:${f(new Date())}`, `DTSTART:${f(start)}`, `DTEND:${f(end)}`,
     `SUMMARY:${c.followUp ? 'Follow-up' : 'Appointment'} with ${t(c.doctorName)}`, `LOCATION:${where}`, `DESCRIPTION:${t(c.triage?.symptoms)}`,
     'BEGIN:VALARM', 'TRIGGER:-PT2H', 'ACTION:DISPLAY', 'DESCRIPTION:Doctor visit in 2 hours', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
   const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));

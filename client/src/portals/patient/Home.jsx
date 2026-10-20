@@ -208,11 +208,11 @@ function PassportCard({ patient: p }) {
     <section className="card pt-passport" aria-label="Health passport">
       <div className="row between top">
         <div>
-          <div className="pt-passport-eyebrow">Nexus Healthcare Health Passport</div>
+          <div className="pt-passport-eyebrow">Sehatra Health Passport</div>
           <div className="pt-passport-name" translate="no">{p.name}</div>
           <div className="pt-passport-id mono" dir="ltr" translate="no">{p.id}</div>
         </div>
-        <div className="pt-passport-qr"><PassportQR value={passportUrl(p.id)} size={88} label="Health Passport QR — scan to open on Nexus Healthcare" /></div>
+        <div className="pt-passport-qr"><PassportQR value={passportUrl(p.id)} size={88} label="Health Passport QR — scan to open on Sehatra" /></div>
       </div>
       <dl className="pt-passport-grid">
         <div><dt>Blood group</dt><dd><Droplet size={14} className="inline-ic" /> {p.bloodGroup || '—'}</dd></div>

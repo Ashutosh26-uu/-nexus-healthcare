@@ -37,7 +37,7 @@ export default function LabReportPrint() {
         <header className="rxp-head">
           <div className="rxp-brand">
             <LogoMark size={40} />
-            <div><strong>Nexus Healthcare</strong><span>Laboratory report</span></div>
+            <div><strong>Sehatra</strong><span>Laboratory report</span></div>
           </div>
           <div className="rxp-doc">
             <strong translate="no">{o.lab?.name}</strong>

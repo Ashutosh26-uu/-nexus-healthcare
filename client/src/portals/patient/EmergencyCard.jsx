@@ -27,7 +27,7 @@ export default function EmergencyCard() {
         <section className="pt-ecard print-area" aria-label="Emergency health card">
           <header className="pt-ecard-head">
             <div>
-              <div className="pt-ecard-eyebrow">Nexus Healthcare · Emergency health card</div>
+              <div className="pt-ecard-eyebrow">Sehatra · Emergency health card</div>
               <div className="pt-ecard-name" translate="no">{p.name}</div>
               <div className="pt-ecard-sub">{p.age != null ? `${p.age} yrs` : ''}{p.gender ? ` · ${p.gender}` : ''}{p.district || p.state ? ` · ${[p.district, p.state].filter(Boolean).join(', ')}` : ''}</div>
               {p.aadhaarVerification?.verified && <div style={{ marginTop: 6 }}><AadhaarBadge v={p.aadhaarVerification} /></div>}
@@ -102,7 +102,7 @@ function Capsule() {
         <div>
           <h3 className="mb-0"><Lock size={18} style={{ verticalAlign: '-3px' }} /> Emergency Capsule <PreviewBadge /></h3>
           <p className="small muted mb-0 mt-1">Your critical details are sealed with strong encryption inside this code, opened with a time-limited key. Every time it&apos;s opened, you&apos;re told.</p>
-          <p className="tiny muted mb-0 mt-1">Doctors and hospital desks open it with “Scan a patient QR” in Nexus Healthcare; you’re told each time.</p>
+          <p className="tiny muted mb-0 mt-1">Doctors and hospital desks open it with “Scan a patient QR” in Sehatra; you’re told each time.</p>
         </div>
       </div>
       <div className="pt-capsule-body">

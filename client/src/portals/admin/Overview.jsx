@@ -49,7 +49,7 @@ export default function Overview() {
         const recent = (audit.data || []).slice(0, 6);
         return (
           <>
-            <PageHeader eyebrow="Platform" title="Running Nexus Healthcare" subtitle="Who is on the network, how the system is holding up, and what needs a human decision today." />
+            <PageHeader eyebrow="Platform" title="Running Sehatra" subtitle="Who is on the network, how the system is holding up, and what needs a human decision today." />
 
             <div className="grid four mb-2 ad-counts">
               <Stat label="Accounts" icon={Users} value={fmtNum(c.users)} sub="all roles" />

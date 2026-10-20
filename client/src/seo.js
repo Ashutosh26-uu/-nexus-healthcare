@@ -3,8 +3,8 @@ import { useEffect } from 'react';
 // Per-page <title>, meta description, Open Graph tags, canonical link and JSON-LD for the public pages.
 // In production the server already fills these into the HTML shell (for crawlers and WhatsApp previews);
 // this keeps them right as the visitor moves between pages in the app. Tags are updated in place, never duplicated.
-const DEFAULT_TITLE = 'Nexus Healthcare — Care that reaches every village';
-const DEFAULT_DESC = 'Nexus Healthcare — one health network for every Indian. See a verified doctor, keep your records in one Health Passport, and get medicines, wherever you live.';
+const DEFAULT_TITLE = 'Sehatra — Online doctor consultation, lab tests & medicines near you';
+const DEFAULT_DESC = "Sehatra (sehat + yatra) brings care to every village and city: consult verified doctors by video or in clinic, book lab tests, compare medicine prices and keep your family's records in one Health Passport.";
 
 function upsert(selector, create, attrs) {
   let el = document.head.querySelector(selector);
@@ -26,7 +26,7 @@ export function useSeo({ title, description, path, jsonLd } = {}) {
     document.title = title;
     meta('description', description || DEFAULT_DESC);
     meta('og:type', 'website', 'property');
-    meta('og:site_name', 'Nexus Healthcare', 'property');
+    meta('og:site_name', 'Sehatra', 'property');
     meta('og:title', title, 'property');
     meta('og:description', description || DEFAULT_DESC, 'property');
     meta('og:url', url, 'property');

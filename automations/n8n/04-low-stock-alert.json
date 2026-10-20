@@ -1,5 +1,5 @@
 {
-  "name": "Nexus · Low stock & expiry alert (email)",
+  "name": "Sehatra · Low stock & expiry alert (email)",
   "nodes": [
     {
       "parameters": {
@@ -39,7 +39,7 @@
             {
               "id": "4fbff6b1-0d4d-4164-93b9-b4f36799e3f5",
               "name": "fromEmail",
-              "value": "Nexus Automations <no-reply@yourdomain.com>",
+              "value": "Sehatra Automations <no-reply@yourdomain.com>",
               "type": "string"
             }
           ]
@@ -55,7 +55,7 @@
         220,
         300
       ],
-      "notes": "Edit these once: your Nexus URL, who gets alerts, and the sender address."
+      "notes": "Edit these once: your Sehatra URL, who gets alerts, and the sender address."
     },
     {
       "parameters": {
@@ -77,7 +77,7 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "nexusAutomationKey",
-          "name": "Nexus automation key"
+          "name": "Sehatra automation key"
         }
       }
     },

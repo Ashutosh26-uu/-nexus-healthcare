@@ -77,7 +77,7 @@ function MedicineSearch({ autoFocus }) {
 function MedicineList() {
   const { data, error } = usePublicJson('/public/medicines');
   useSeo({
-    title: 'Medicine price checker — cheaper generics & Jan Aushadhi | Nexus Healthcare',
+    title: 'Medicine price checker — cheaper generics & Jan Aushadhi | Sehatra',
     description: 'Search any common medicine to see its salt, indicative price and cheaper same-salt generic or Jan Aushadhi options, and how many verified chemists near you have it in stock. Free, no sign-in.',
     path: '/medicines',
   });
@@ -193,7 +193,7 @@ function MedicineDetail({ slug }) {
             {data.stock.scope === 'near' ? (
               <p className="mb-0"><strong>{data.stock.pharmacies}</strong> verified chemist{data.stock.pharmacies === 1 ? '' : 's'} within {data.stock.radiusKm} km {data.stock.pharmacies === 1 ? 'has' : 'have'} this salt in stock right now.</p>
             ) : (
-              <p className="mb-0"><strong>{data.stock.pharmacies}</strong> verified chemist{data.stock.pharmacies === 1 ? '' : 's'} on Nexus {data.stock.pharmacies === 1 ? 'has' : 'have'} this salt in stock right now. Share your location to see the ones near you.</p>
+              <p className="mb-0"><strong>{data.stock.pharmacies}</strong> verified chemist{data.stock.pharmacies === 1 ? '' : 's'} on Sehatra {data.stock.pharmacies === 1 ? 'has' : 'have'} this salt in stock right now. Share your location to see the ones near you.</p>
             )}
             {data.stock.stores.length > 0 && (
               <div className="stack" style={{ gap: 8 }}>

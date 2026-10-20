@@ -233,7 +233,7 @@ function OnboardingHome({ doctor }) {
     <div className="stack lg">
       <PageHeader eyebrow={new Date().toLocaleDateString(getLocale(), { weekday: 'long', day: 'numeric', month: 'long' })}
         title={`${greeting()}, Dr. ${shortName(doctor.name)}`}
-        subtitle="Welcome to Nexus Healthcare. You're a few minutes away from seeing patients at our E-Clinics." />
+        subtitle="Welcome to Sehatra. You're a few minutes away from seeing patients at our E-Clinics." />
       {doctor.verificationNote && <div className="callout rose"><AlertTriangle /><div><strong>Your profile needs a change:</strong> {doctor.verificationNote}</div></div>}
       <Card className={cx('dr-ob-hero', submitted && 'review')}>
         <div className="dr-ob-hero-ic">{submitted ? <Hourglass /> : <UserRound />}</div>

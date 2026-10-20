@@ -194,7 +194,7 @@ export default function KioskApp() {
             <LogoMark size={34} />
             <div>
               <strong>{kiosk?.name || 'E-Clinic'}</strong>
-              <span>Nexus Healthcare E-Clinic · {kiosk?.district || ''}</span>
+              <span>Sehatra E-Clinic · {kiosk?.district || ''}</span>
             </div>
           </div>
           <span className={cx('k-status', offline ? 'off' : 'on')}>

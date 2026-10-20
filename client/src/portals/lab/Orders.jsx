@@ -34,7 +34,7 @@ export default function Orders({ home, orders, reload, onReport }) {
 
   return (
     <>
-      <PageHeader title="Orders inbox" subtitle="Test orders from Nexus Healthcare doctors. Each one carries the patient's Health Passport ID and LOINC test codes, so nothing needs re-typing.">
+      <PageHeader title="Orders inbox" subtitle="Test orders from Sehatra doctors. Each one carries the patient's Health Passport ID and LOINC test codes, so nothing needs re-typing.">
         <div className="input-wrap lab-search">
           <Search />
           <input className="input" placeholder="Search patient, ID or test" value={q} onChange={(e) => setQ(e.target.value)} />

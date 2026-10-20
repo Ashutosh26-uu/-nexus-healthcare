@@ -3,7 +3,7 @@ import { Card, Empty, Donut, Loading } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { useLive } from '../../live';
 
-// Every figure is counted by the server from the doctor's own Nexus records. A measure without enough data
+// Every figure is counted by the server from the doctor's own Sehatra records. A measure without enough data
 // comes back as null (with a note) and is shown as "—", never as a number.
 
 const BAND = { excellent: 'var(--green-2)', good: 'var(--sky)', fair: 'var(--sun)' };
@@ -21,7 +21,7 @@ export default function Score() {
     <div className="stack lg">
       <PageHeader eyebrow="Outcome-based score" title="Your quality score"
         subtitle="A private score built from what happened to your patients afterwards — not stars from a popup." />
-      <div className="callout"><Info /><span>{hasScore && d.note ? d.note : 'Everything here is counted from your own Nexus records.'} Nothing here affects how patients are routed to you.</span></div>
+      <div className="callout"><Info /><span>{hasScore && d.note ? d.note : 'Everything here is counted from your own Sehatra records.'} Nothing here affects how patients are routed to you.</span></div>
 
       <div className="grid side">
         <Card className="center">

@@ -90,26 +90,26 @@ const maskEmail = (e) => e.replace(/^(.)(.*)(.@.*)$/, (_, a, b, c) => a + '•'.
 
 /* ---------- message text ---------- */
 const MESSAGES = {
-  en: (c, m) => `${c} is your Nexus Healthcare verification code. It expires in ${m} minutes. Never share it with anyone.`,
-  hi: (c, m) => `${c} आपका Nexus Healthcare सत्यापन कोड है। यह ${m} मिनट में समाप्त होगा। इसे किसी से साझा न करें।`,
-  bn: (c, m) => `${c} আপনার Nexus Healthcare যাচাইকরণ কোড। এটি ${m} মিনিটে শেষ হবে। কাউকে জানাবেন না।`,
-  ta: (c, m) => `${c} உங்கள் Nexus Healthcare சரிபார்ப்புக் குறியீடு. ${m} நிமிடங்களில் காலாவதியாகும். யாருடனும் பகிர வேண்டாம்.`,
-  te: (c, m) => `${c} మీ Nexus Healthcare ధృవీకరణ కోడ్. ఇది ${m} నిమిషాల్లో ముగుస్తుంది. ఎవరితోనూ పంచుకోకండి.`,
-  mr: (c, m) => `${c} हा तुमचा Nexus Healthcare पडताळणी कोड आहे. तो ${m} मिनिटांत संपेल. कोणालाही सांगू नका.`,
-  ur: (c, m) => `${c} آپ کا Nexus Healthcare تصدیقی کوڈ ہے۔ یہ ${m} منٹ میں ختم ہو جائے گا۔ کسی کو نہ بتائیں۔`,
-  es: (c, m) => `${c} es tu código de verificación de Nexus Healthcare. Caduca en ${m} minutos. No lo compartas.`,
-  fr: (c, m) => `${c} est votre code de vérification Nexus Healthcare. Il expire dans ${m} minutes. Ne le partagez jamais.`,
-  ar: (c, m) => `${c} هو رمز التحقق الخاص بك من Nexus Healthcare. تنتهي صلاحيته خلال ${m} دقائق. لا تشاركه مع أحد.`,
-  pt: (c, m) => `${c} é o seu código de verificação Nexus Healthcare. Expira em ${m} minutos. Não o partilhe.`,
+  en: (c, m) => `${c} is your Sehatra verification code. It expires in ${m} minutes. Never share it with anyone.`,
+  hi: (c, m) => `${c} आपका Sehatra सत्यापन कोड है। यह ${m} मिनट में समाप्त होगा। इसे किसी से साझा न करें।`,
+  bn: (c, m) => `${c} আপনার Sehatra যাচাইকরণ কোড। এটি ${m} মিনিটে শেষ হবে। কাউকে জানাবেন না।`,
+  ta: (c, m) => `${c} உங்கள் Sehatra சரிபார்ப்புக் குறியீடு. ${m} நிமிடங்களில் காலாவதியாகும். யாருடனும் பகிர வேண்டாம்.`,
+  te: (c, m) => `${c} మీ Sehatra ధృవీకరణ కోడ్. ఇది ${m} నిమిషాల్లో ముగుస్తుంది. ఎవరితోనూ పంచుకోకండి.`,
+  mr: (c, m) => `${c} हा तुमचा Sehatra पडताळणी कोड आहे. तो ${m} मिनिटांत संपेल. कोणालाही सांगू नका.`,
+  ur: (c, m) => `${c} آپ کا Sehatra تصدیقی کوڈ ہے۔ یہ ${m} منٹ میں ختم ہو جائے گا۔ کسی کو نہ بتائیں۔`,
+  es: (c, m) => `${c} es tu código de verificación de Sehatra. Caduca en ${m} minutos. No lo compartas.`,
+  fr: (c, m) => `${c} est votre code de vérification Sehatra. Il expire dans ${m} minutes. Ne le partagez jamais.`,
+  ar: (c, m) => `${c} هو رمز التحقق الخاص بك من Sehatra. تنتهي صلاحيته خلال ${m} دقائق. لا تشاركه مع أحد.`,
+  pt: (c, m) => `${c} é o seu código de verificação Sehatra. Expira em ${m} minutos. Não o partilhe.`,
 };
 const messageFor = (code, lang, purpose = 'login') => (purpose === 'consent'
-  ? `${code} is your Nexus Healthcare approval code. Share it only with the doctor in front of you to let them see your records and write a prescription. It cannot be used to sign in. Valid ${Math.round(TTL / 60000)} min.`
+  ? `${code} is your Sehatra approval code. Share it only with the doctor in front of you to let them see your records and write a prescription. It cannot be used to sign in. Valid ${Math.round(TTL / 60000)} min.`
   : purpose === 'kiosk'
-    ? `${code} is your Nexus Healthcare kiosk check-in code. Tell it to the kiosk operator only if you are at the kiosk right now — it opens your Health Passport there. Valid ${Math.round(TTL / 60000)} min. Not you? Ignore this email; nothing is shared without the code.`
+    ? `${code} is your Sehatra kiosk check-in code. Tell it to the kiosk operator only if you are at the kiosk right now — it opens your Health Passport there. Valid ${Math.round(TTL / 60000)} min. Not you? Ignore this email; nothing is shared without the code.`
   : purpose === 'reset'
-    ? `${code} is your Nexus Healthcare code to set a new password. It expires in ${Math.round(TTL / 60000)} minutes. If you didn't ask to change your password, ignore this email — your password stays the same.`
+    ? `${code} is your Sehatra code to set a new password. It expires in ${Math.round(TTL / 60000)} minutes. If you didn't ask to change your password, ignore this email — your password stays the same.`
     : (MESSAGES[String(lang || 'en').split('-')[0]] || MESSAGES.en)(code, Math.round(TTL / 60000)));
-const SUBJECTS = { kiosk: (c) => `${c} — check in at the kiosk (Nexus Healthcare)`, consent: (c) => `${c} — approve your doctor (Nexus Healthcare)`, reset: (c) => `${c} — set a new password (Nexus Healthcare)`, login: (c) => `${c} — your Nexus Healthcare code` };
+const SUBJECTS = { kiosk: (c) => `${c} — check in at the kiosk (Sehatra)`, consent: (c) => `${c} — approve your doctor (Sehatra)`, reset: (c) => `${c} — set a new password (Sehatra)`, login: (c) => `${c} — your Sehatra code` };
 // Codes are stored per purpose, so a code sent for one thing (e.g. a patient approving a doctor, or
 // changing a password) can never be redeemed for another (e.g. signing in as that patient).
 const PURPOSES = new Set(['login', 'consent', 'reset', 'kiosk']);
@@ -144,7 +144,7 @@ async function getEtherealTransport(nodemailer) {
 }
 
 const smtpTransport = (nodemailer) => nodemailer.createTransport({ host: env('SMTP_HOST'), port: Number(env('SMTP_PORT') || 587), secure: env('SMTP_SECURE') === 'true', auth: env('SMTP_USER') ? { user: env('SMTP_USER'), pass: env('SMTP_PASS') } : undefined });
-const MAIL_FROM = () => env('SMTP_FROM') || 'Nexus Healthcare <no-reply@nexushealthcare.in>';
+const MAIL_FROM = () => env('SMTP_FROM') || 'Sehatra <no-reply@nexushealthcare.in>';
 
 async function sendViaProvider(provider, { target, channel, code, lang, purpose }) {
   if (channel === 'email') {
@@ -155,7 +155,7 @@ async function sendViaProvider(provider, { target, channel, code, lang, purpose 
     const text = messageFor(code, lang, purpose);
     const info = await transport.sendMail({
       from: MAIL_FROM(), to: target, subject: (SUBJECTS[purpose] || SUBJECTS.login)(code), text,
-      html: `<div style="font-family:Arial,sans-serif;max-width:420px;margin:auto;padding:24px;border:1px solid #e6dfd3;border-radius:14px"><h2 style="color:#0f5c4d;margin:0 0 8px">Nexus Healthcare</h2><p>${text.replace(code, '')}</p><p style="font-size:32px;letter-spacing:8px;font-weight:bold;color:#1d2b2a;margin:16px 0">${code}</p><p style="color:#6f7c78;font-size:12px">If you didn't ask for this, you can ignore this email.</p></div>`,
+      html: `<div style="font-family:Arial,sans-serif;max-width:420px;margin:auto;padding:24px;border:1px solid #e6dfd3;border-radius:14px"><h2 style="color:#0f5c4d;margin:0 0 8px">Sehatra</h2><p>${text.replace(code, '')}</p><p style="font-size:32px;letter-spacing:8px;font-weight:bold;color:#1d2b2a;margin:16px 0">${code}</p><p style="color:#6f7c78;font-size:12px">If you didn't ask for this, you can ignore this email.</p></div>`,
     });
     return { ref: info.messageId, previewUrl: realSmtp ? null : nodemailer.getTestMessageUrl(info) };
   }

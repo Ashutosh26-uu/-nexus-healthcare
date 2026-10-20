@@ -48,7 +48,7 @@ export default function RxPrint() {
           <div className="rxp-brand">
             <LogoMark size={40} />
             <div>
-              <strong>Nexus Healthcare</strong>
+              <strong>Sehatra</strong>
               <span>National Health Network · e-Prescription</span>
             </div>
           </div>
@@ -112,7 +112,7 @@ export default function RxPrint() {
             <span>{fmtDateTime(rx.createdAt)}</span>
           </div>
         </footer>
-        <p className="rxp-note">This is a digitally signed e-prescription issued through Nexus Healthcare (Telemedicine Practice Guidelines, 2020). Valid without a physical signature. Not valid for Schedule X drugs.</p>
+        <p className="rxp-note">This is a digitally signed e-prescription issued through Sehatra (Telemedicine Practice Guidelines, 2020). Valid without a physical signature. Not valid for Schedule X drugs.</p>
       </article>
     </div>
   );

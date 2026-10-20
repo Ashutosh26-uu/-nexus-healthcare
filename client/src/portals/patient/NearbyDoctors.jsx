@@ -14,7 +14,7 @@ const PRACTICE = {
   own_clinic: { icon: HomeIcon, label: 'Own clinic' },
   clinic: { icon: Building2, label: 'Clinic' },
   hospital: { icon: Building2, label: 'Hospital' },
-  virtual: { icon: Video, label: 'Nexus virtual clinic' },
+  virtual: { icon: Video, label: 'Sehatra virtual clinic' },
   independent: { icon: Stethoscope, label: 'Independent' },
 };
 
@@ -250,7 +250,7 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
 
       {data?.eClinics?.length > 0 && (
         <div className="pt-near-clinics">
-          <span className="tiny muted strong row" style={{ gap: 6 }}><MonitorSmartphone size={13} /> Nexus E-Clinics <span className="soon-badge">Coming soon</span></span>
+          <span className="tiny muted strong row" style={{ gap: 6 }}><MonitorSmartphone size={13} /> Sehatra E-Clinics <span className="soon-badge">Coming soon</span></span>
           {data.eClinics.map((c) => (
             <span key={c.id} className="pt-near-clinic off">
               <Building2 size={13} /> <span translate="no">{c.name.replace('E-Clinic · ', '')}</span>

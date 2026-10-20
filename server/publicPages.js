@@ -31,8 +31,8 @@ const rupees = (n) => `₹${Number(n).toLocaleString('en-IN', { maximumFractionD
 // City / state only (never a street address) for JSON-LD.
 const placeLd = (district, state) => (district ? { areaServed: { '@type': 'City', name: district, ...(state ? { containedInPlace: { '@type': 'State', name: state } } : {}) } } : {});
 const DISCLAIMER ='Prices are indicative, not live MRPs. Ask your doctor or pharmacist before switching medicines, and never switch if your doctor wrote "no substitution".';
-// Lab test prices are the Nexus reference list (labs can't enter their own yet); report times are typical turnaround.
-const LAB_DISCLAIMER = 'Test prices are indicative (the Nexus reference price list, not each lab\'s own rate card) and report times are typical. Package prices are set by each lab.';
+// Lab test prices are the Sehatra reference list (labs can't enter their own yet); report times are typical turnaround.
+const LAB_DISCLAIMER = 'Test prices are indicative (the Sehatra reference price list, not each lab\'s own rate card) and report times are typical. Package prices are set by each lab.';
 
 module.exports = function registerPublicPages(app, deps) {
   const {
@@ -99,7 +99,7 @@ module.exports = function registerPublicPages(app, deps) {
     const best = s.noSwap ? null : options.filter((o) => o.saving > 0).sort((a, b) => b.saving - a.saving)[0] || null;
     const label = [s.salt, s.strength].filter(Boolean).join(' ');
     const seo = {
-      title: `${e.name} price${best ? ' — cheaper generic & Jan Aushadhi options' : ''} | Nexus Healthcare`,
+      title: `${e.name} price${best ? ' — cheaper generic & Jan Aushadhi options' : ''} | Sehatra`,
       description: `${e.name}${label ? ` (${label})` : ''}: indicative price ${price !== null ? `${rupees(price)} per ${s.unit || p?.unit || 'unit'}` : 'not listed'}.${best ? ` Same salt & strength from ${rupees(best.price)} — save ${best.savingPct}%.` : ''} See verified chemists that have it in stock near you.`,
     };
     return {
@@ -197,7 +197,7 @@ module.exports = function registerPublicPages(app, deps) {
     const prices = labs.map((l) => l.price);
     const from = prices.length ? Math.min(...prices) : null;
     const seo = {
-      title: `${t.name} test price${labs.length ? ` from ${rupees(from)}` : ''} — compare labs | Nexus Healthcare`,
+      title: `${t.name} test price${labs.length ? ` from ${rupees(from)}` : ''} — compare labs | Sehatra`,
       description: `${t.name}: compare indicative prices at ${labs.length} verified lab${labs.length === 1 ? '' : 's'}${from !== null ? ` from ${rupees(from)}` : ''}. Sample: ${t.sample}. Preparation: ${t.prep}. NABL, home collection and report time shown.`,
     };
     return {
@@ -240,8 +240,8 @@ module.exports = function registerPublicPages(app, deps) {
     });
     const where = [lab.district, lab.state].filter(Boolean).join(', ');
     const seo = {
-      title: `${lab.name}${lab.district ? `, ${lab.district}` : ''} — test prices & reviews | Nexus Healthcare`,
-      description: `${lab.name}${where ? ` in ${where}` : ''}: ${tests.length} tests with prices${card.nabl ? ', NABL accredited' : ''}${card.homeCollection ? ', home sample collection' : ''}. ${card.rating ? `Rated ${card.rating}/5 by ${card.reviewCount} patients.` : 'New on Nexus.'} Book online with a ${Math.round(LAB_ADVANCE_SHARE * 100)}% advance.`,
+      title: `${lab.name}${lab.district ? `, ${lab.district}` : ''} — test prices & reviews | Sehatra`,
+      description: `${lab.name}${where ? ` in ${where}` : ''}: ${tests.length} tests with prices${card.nabl ? ', NABL accredited' : ''}${card.homeCollection ? ', home sample collection' : ''}. ${card.rating ? `Rated ${card.rating}/5 by ${card.reviewCount} patients.` : 'New on Sehatra.'} Book online with a ${Math.round(LAB_ADVANCE_SHARE * 100)}% advance.`,
     };
     return {
       lab: card, tests, packages: packagesOf([lab], origin), advanceShare: LAB_ADVANCE_SHARE, homeFee: LAB_HOME_FEE, indicative: true, disclaimer: LAB_DISCLAIMER, seo,
@@ -287,7 +287,7 @@ module.exports = function registerPublicPages(app, deps) {
     return {
       slug: entitySlug(doc), name: p.name, specialty: p.specialty || null, qualification: p.qualification || null, experience: p.experience || null,
       languages: Array.isArray(p.languages) ? p.languages : [], district: p.district || null, state: p.state || null,
-      practice, place: practice === 'virtual' ? { name: 'Nexus virtual clinic', kind: 'Video consults' } : fac ? { name: fac.name, kind: fac.subtype === 'clinic' ? 'Clinic' : 'Hospital', district: fac.district || null } : null,
+      practice, place: practice === 'virtual' ? { name: 'Sehatra virtual clinic', kind: 'Video consults' } : fac ? { name: fac.name, kind: fac.subtype === 'clinic' ? 'Clinic' : 'Hospital', district: fac.district || null } : null,
       modes: { video: !!opts.video, clinic: !!opts.clinic },
       fees: { video: opts.fees.video, clinic: opts.clinic ? (p.fee || 0) : null, bookingFee: opts.fees.bookingFee },
       rating: stats.reviewCount ? stats.rating : null, reviewCount: stats.reviewCount, satisfaction: stats.reviewCount ? stats.satisfaction : null,
@@ -303,7 +303,7 @@ module.exports = function registerPublicPages(app, deps) {
       .map((r) => ({ name: reviewName(r.name), stars: Number(r.stars), text: clean(r.text, 400) || null, date: String(r.at || '').slice(0, 10) || null }));
     const where = [card.place?.name, card.district].filter(Boolean).join(', ');
     const seo = {
-      title: `${card.name} — ${card.specialty || 'Doctor'}${card.district ? ` in ${card.district}` : ''} | Book online · Nexus Healthcare`,
+      title: `${card.name} — ${card.specialty || 'Doctor'}${card.district ? ` in ${card.district}` : ''} | Book online · Sehatra`,
       description: `${card.name}, ${[card.qualification, card.specialty].filter(Boolean).join(' · ')}${card.experience ? `, ${card.experience} years' experience` : ''}${where ? ` at ${where}` : ''}. ${card.rating ? `Rated ${card.rating}/5 by ${card.reviewCount} patients. ` : ''}Video consult ${rupees(card.fees.video)}.${card.languages.length ? ` Speaks ${card.languages.join(', ')}.` : ''}`,
     };
     return {
@@ -406,14 +406,23 @@ module.exports = function registerPublicPages(app, deps) {
     return shell.html;
   };
   const STATIC_META = {
-    '/medicines': { title: 'Medicine price checker — cheaper generics & Jan Aushadhi | Nexus Healthcare', description: 'Search any common medicine to see its salt, indicative price and cheaper same-salt generic or Jan Aushadhi options, and how many verified chemists near you have it in stock. Free, no sign-in.' },
-    '/lab-tests': { title: 'Lab test prices — compare verified labs near you | Nexus Healthcare', description: 'Compare prices, report times, NABL accreditation and home collection for blood tests, X-ray, ultrasound and ECG at verified labs. Book online with a 20% advance.' },
-    '/find/doctors': { title: 'Find a verified doctor — book video or clinic consults | Nexus Healthcare', description: 'Verified doctors by specialty and city with real patient ratings, languages, fees and live availability. Book a video or clinic consult online.' },
-    '/find/labs': { title: 'Verified labs & diagnostic centres near you | Nexus Healthcare', description: 'Verified labs with test prices, NABL accreditation, home sample collection and real patient ratings. Book a test online.' },
+    // Home: the brand page. Title leads with the name (brand searches) and then what people actually type.
+    '/': { title: 'Sehatra — Online doctor consultation, lab tests & medicines near you', description: 'Sehatra (sehat + yatra) brings care to every village and city: consult verified doctors by video or in clinic, book lab tests, compare medicine prices and keep your family\'s records in one Health Passport.' },
+    '/medicines': { title: 'Medicine price checker — cheaper generics & Jan Aushadhi | Sehatra', description: 'Search any common medicine to see its salt, indicative price and cheaper same-salt generic or Jan Aushadhi options, and how many verified chemists near you have it in stock. Free, no sign-in.' },
+    '/lab-tests': { title: 'Lab test prices — compare verified labs near you | Sehatra', description: 'Compare prices, report times, NABL accreditation and home collection for blood tests, X-ray, ultrasound and ECG at verified labs. Book online with a 20% advance.' },
+    '/find/doctors': { title: 'Find a verified doctor — book video or clinic consults | Sehatra', description: 'Verified doctors by specialty and city with real patient ratings, languages, fees and live availability. Book a video or clinic consult online.' },
+    '/find/labs': { title: 'Verified labs & diagnostic centres near you | Sehatra', description: 'Verified labs with test prices, NABL accreditation, home sample collection and real patient ratings. Book a test online.' },
   };
   function metaFor(req) {
     const base = baseUrl(req); const d = db();
     const p = req.path.replace(/\/+$/, '') || '/';
+    // Organization + WebSite for the home page: lets search engines show the Sehatra name and logo for brand searches.
+    if (p === '/') {
+      return { ...STATIC_META['/'], canonical: `${base}/`, jsonLd: { '@context': 'https://schema.org', '@graph': [
+        { '@type': 'MedicalOrganization', '@id': `${base}/#org`, name: 'Sehatra', alternateName: ['Sehatra Health', 'Sehatra Healthcare'], url: `${base}/`, logo: `${base}/icons/icon-512.png`, description: STATIC_META['/'].description, medicalSpecialty: 'PrimaryCare', areaServed: 'IN' },
+        { '@type': 'WebSite', '@id': `${base}/#site`, name: 'Sehatra', url: `${base}/`, publisher: { '@id': `${base}/#org` }, inLanguage: 'en-IN' },
+      ] } };
+    }
     if (STATIC_META[p]) return { ...STATIC_META[p], canonical: base + p + (p === '/find/doctors' && req.query.specialty ? `?specialty=${encodeURIComponent(clean(req.query.specialty, 60))}` : '') };
     let m;
     if ((m = p.match(/^\/medicines\/([^/]+)$/))) { const e = medIndex().bySlug.get(slugParam(m[1])); if (e) { const v = medicineView(e, null, base); return { ...v.seo, jsonLd: v.jsonLd, canonical: `${base}/medicines/${e.slug}` }; } }
@@ -425,7 +434,7 @@ module.exports = function registerPublicPages(app, deps) {
   const inject = (html, meta) => {
     const tags = [
       `<link rel="canonical" href="${esc(meta.canonical)}" />`,
-      `<meta property="og:type" content="website" />`, `<meta property="og:site_name" content="Nexus Healthcare" />`,
+      `<meta property="og:type" content="website" />`, // og:site_name is already in the shell
       `<meta property="og:title" content="${esc(meta.title)}" />`, `<meta property="og:description" content="${esc(meta.description)}" />`,
       `<meta property="og:url" content="${esc(meta.canonical)}" />`, `<meta name="twitter:card" content="summary" />`,
       meta.jsonLd ? `<script type="application/ld+json" data-seo="1">${JSON.stringify(meta.jsonLd).replace(/</g, '\\u003c')}</script>` : '',
@@ -434,7 +443,7 @@ module.exports = function registerPublicPages(app, deps) {
       .replace(/<meta name="description"[^>]*>/, () => `<meta name="description" content="${esc(meta.description)}" />`)
       .replace('</head>', () => `${tags}</head>`);
   };
-  app.get(['/medicines', '/medicines/:slug', '/lab-tests', '/lab-tests/:code', '/find/doctors', '/find/doctors/:slug', '/find/labs', '/find/labs/:slug'], pageLimiter, (req, res) => {
+  app.get(['/', '/medicines', '/medicines/:slug', '/lab-tests', '/lab-tests/:code', '/find/doctors', '/find/doctors/:slug', '/find/labs', '/find/labs/:slug'], pageLimiter, (req, res) => {
     let html;
     try { html = readShell(); } catch { return res.status(500).send('Not built'); }
     const meta = metaFor(req);

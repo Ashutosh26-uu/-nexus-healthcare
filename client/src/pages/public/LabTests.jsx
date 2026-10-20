@@ -40,7 +40,7 @@ function TestList() {
   const go = useContinue();
   const { data, error } = usePublicJson('/public/lab-tests');
   useSeo({
-    title: 'Lab test prices — compare verified labs near you | Nexus Healthcare',
+    title: 'Lab test prices — compare verified labs near you | Sehatra',
     description: 'Compare prices, report times, NABL accreditation and home collection for blood tests, X-ray, ultrasound and ECG at verified labs. Book online with a 20% advance.',
     path: '/lab-tests',
   });
@@ -99,7 +99,7 @@ function TestDetail({ code }) {
         <section className="pb-hero">
           <nav className="pb-crumbs" aria-label="Breadcrumb"><Link to="/lab-tests">Lab test prices</Link><span>/</span><span>{t.name}</span></nav>
           <h1>{t.name} test price</h1>
-          <p>{data.priceRange ? <>From <strong>{money(data.priceRange.min)}</strong>{data.priceRange.max !== data.priceRange.min && <> to <strong>{money(data.priceRange.max)}</strong></>} at {data.labs.length} verified lab{data.labs.length === 1 ? '' : 's'}.</> : 'No verified lab offers this test on Nexus yet.'}</p>
+          <p>{data.priceRange ? <>From <strong>{money(data.priceRange.min)}</strong>{data.priceRange.max !== data.priceRange.min && <> to <strong>{money(data.priceRange.max)}</strong></>} at {data.labs.length} verified lab{data.labs.length === 1 ? '' : 's'}.</> : 'No verified lab offers this test on Sehatra yet.'}</p>
         </section>
         <div className="pb-card">
           <dl className="pb-kv">

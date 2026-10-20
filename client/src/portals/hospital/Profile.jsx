@@ -12,7 +12,7 @@ export default function Profile({ home }) {
   const [text, setText] = useState('');
   const f = home.facility;
 
-  // There's no in-app request queue yet, so this opens an email to the Nexus Healthcare team instead of pretending it was sent.
+  // There's no in-app request queue yet, so this opens an email to the Sehatra team instead of pretending it was sent.
   const send = (e) => {
     e.preventDefault();
     const subject = `Profile change request · ${f.name}`;
@@ -27,7 +27,7 @@ Facility: ${f.name} (${f.id})`)}`;
   return (
     <>
       <PageHeader title="Facility profile" subtitle="This is how your hospital appears to doctors, patients and the command centre.">
-        {support.email ? <Button variant="secondary" icon={PencilLine} onClick={() => setOpen(true)}>Request a change</Button> : <span className="small muted">To change these details, contact the Nexus Healthcare team.</span>}
+        {support.email ? <Button variant="secondary" icon={PencilLine} onClick={() => setOpen(true)}>Request a change</Button> : <span className="small muted">To change these details, contact the Sehatra team.</span>}
       </PageHeader>
 
       <div className="grid side">

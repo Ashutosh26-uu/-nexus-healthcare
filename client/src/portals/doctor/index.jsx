@@ -33,7 +33,7 @@ function ConsultById() {
   return <Consult key={id} />;
 }
 
-// E-Clinic partners check themselves in/out when they arrive at / leave an Nexus Healthcare E-Clinic.
+// E-Clinic partners check themselves in/out when they arrive at / leave an Sehatra E-Clinic.
 // Hospital and partner-clinic doctors get no switch — their status follows their weekly hours.
 function PresenceControl({ home }) {
   const [run, busy] = useAction();
@@ -155,7 +155,7 @@ function CompleteProfilePrompt({ doctor }) {
   const hi = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   return (
     <Modal open onClose={() => setDismissed(true)} title={`${hi}, ${(user?.name || doctor.name).replace(/^Dr\.?\s*/i, 'Dr. ').split(' ').slice(0, 2).join(' ')} 👋`}
-      subtitle="Complete your account to start seeing patients on Nexus Healthcare — about 3 minutes."
+      subtitle="Complete your account to start seeing patients on Sehatra — about 3 minutes."
       footer={<><Button variant="ghost" onClick={() => setDismissed(true)}>Later</Button><Button onClick={() => { setDismissed(true); navigate('/doctor/profile'); }}>Continue onboarding</Button></>}>
       <div className="pt-cp-modal">
         <div className="pt-cp-modal-row"><span><UserRound size={16} /></span><div><strong>Already filled in</strong><div className="small muted">Your name, email and mobile number from sign-up.</div></div></div>

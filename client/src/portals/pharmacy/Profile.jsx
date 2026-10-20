@@ -71,7 +71,7 @@ export default function Profile({ home, reload }) {
             <div className="stack">
               {p.storePhotoFileId && <ProtectedImg fileId={p.storePhotoFileId} alt="Store" className="ph-store-photo" />}
               <div className="row"><MapPin size={17} className="muted" /> <span>{[p.name, p.address, p.district, p.state].filter(Boolean).join(', ')}{p.pincode ? ` – ${p.pincode}` : ''}</span></div>
-              <div className="row"><span className="muted small">Home delivery:</span> <span className="small">{p.delivery ? 'Own delivery service' : 'Via Nexus riders'}</span></div>
+              <div className="row"><span className="muted small">Home delivery:</span> <span className="small">{p.delivery ? 'Own delivery service' : 'Via Sehatra riders'}</span></div>
               <div className="row"><Clock size={17} className="muted" /> <span>Open {p.hours || 'hours not set'}, all days</span></div>
               {p.phone && <div className="row"><Phone size={17} className="muted" /> <span translate="no" dir="ltr">{p.phone}</span></div>}
               <GstinField pharmacy={p} reload={reload} />

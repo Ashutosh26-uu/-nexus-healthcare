@@ -48,7 +48,7 @@ export default function PatientSummary({ consultId }) {
                 <div className="dr-psum-grid">
                   <div>
                     <span className="tiny muted row" style={{ gap: 4 }}><History size={13} />Last visits</span>
-                    {s.visits.length === 0 ? <p className="tiny muted mb-0">First visit on Nexus.</p> : (
+                    {s.visits.length === 0 ? <p className="tiny muted mb-0">First visit on Sehatra.</p> : (
                       <ul className="dr-psum-list">
                         {s.visits.map((v) => <li key={v.id}><span className="tiny muted nowrap">{fmtDate(v.date)}</span> <span className="small">{v.diagnosis || '—'}</span> <span className="tiny muted" translate="no">· {v.withYou ? 'you' : v.doctorName}</span></li>)}
                       </ul>

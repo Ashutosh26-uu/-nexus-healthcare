@@ -16,7 +16,7 @@ function Availability({ a }) {
 function VerifiedBadges({ v }) {
   return (
     <div className="pb-tags">
-      <span className="badge green"><BadgeCheck /> Verified by Nexus</span>
+      <span className="badge green"><BadgeCheck /> Verified by Sehatra</span>
       {v.registry && <span className="badge sky"><ShieldCheck /> Registration checked on the medical register</span>}
       {v.aadhaar && <span className="badge plum"><Fingerprint /> Aadhaar verified</span>}
     </div>
@@ -63,7 +63,7 @@ function DoctorList() {
   const set = (k, v) => { const p = new URLSearchParams(params); if (v) p.set(k, v); else p.delete(k); setParams(p, { replace: true }); };
   const where = district ? ` in ${district}` : '';
   useSeo({
-    title: `${specialty ? `${specialty} doctors` : 'Find a verified doctor'}${where} — book online | Nexus Healthcare`,
+    title: `${specialty ? `${specialty} doctors` : 'Find a verified doctor'}${where} — book online | Sehatra`,
     description: `Verified ${specialty ? `${specialty.toLowerCase()} ` : ''}doctors${where} with real patient ratings, languages, fees and live availability. Book a video or clinic consult online.`,
     path: `/find/doctors${qs({ specialty })}`,
   });
@@ -99,7 +99,7 @@ function DoctorList() {
           <div className="pb-grid two">{data.doctors.map((d) => <DoctorCard key={d.slug} d={d} />)}</div>
         </>
       )}
-      <ShareBar title={`${specialty ? `${specialty} doctors` : 'Verified doctors'} on Nexus Healthcare`} path={`/find/doctors${qs({ specialty })}`} />
+      <ShareBar title={`${specialty ? `${specialty} doctors` : 'Verified doctors'} on Sehatra`} path={`/find/doctors${qs({ specialty })}`} />
     </div>
   );
 }
@@ -198,7 +198,7 @@ function DoctorProfile({ slug }) {
           <p>{d.availability.available ? <>Available now. </> : d.availability.next ? <>Next slot: {d.availability.next}. </> : null}Pick video or clinic, a time, and pay securely.</p>
           <button type="button" className="btn clay" onClick={book}><Clock /> Book a consult <ArrowRight /></button>
         </div>
-        <ShareBar title={`${d.name} — ${d.specialty}`} path={`/find/doctors/${d.slug}`} text={`${d.name}, ${d.specialty}${d.district ? `, ${d.district}` : ''} — book on Nexus Healthcare:`} />
+        <ShareBar title={`${d.name} — ${d.specialty}`} path={`/find/doctors/${d.slug}`} text={`${d.name}, ${d.specialty}${d.district ? `, ${d.district}` : ''} — book on Sehatra:`} />
       </aside>
     </div>
   );

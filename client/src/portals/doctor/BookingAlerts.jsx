@@ -65,7 +65,7 @@ export function NewBookingPopup({ home }) {
             <ul className="dr-nb-reports">
               {c.previousVisits.map((v, i) => <li key={i}><History size={14} /> {fmtDate(v.date)} · {v.withYou ? <strong>with you</strong> : <span translate="no">{v.doctorName}</span>}{v.diagnosis ? ` — ${v.diagnosis}` : ''}</li>)}
             </ul>
-          ) : <p className="small muted mb-0">First visit on Nexus — no previous consultations.</p>}
+          ) : <p className="small muted mb-0">First visit on Sehatra — no previous consultations.</p>}
         </div>
         {c.pastPrescriptions?.length > 0 && (
           <div>

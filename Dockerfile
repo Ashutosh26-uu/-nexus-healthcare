@@ -1,4 +1,4 @@
-# Nexus Healthcare — one container: Express API + the built React app (installable PWA).
+# Sehatra — one container: Express API + the built React app (installable PWA).
 # Build:  docker build -t nexus-healthcare .
 # Run:    docker run -p 8080:8080 --env-file .env.production -v nexus-data:/app/server/data nexus-healthcare
 

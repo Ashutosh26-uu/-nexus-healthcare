@@ -73,7 +73,7 @@ export default function ChangeDoctor() {
                   </button>
                 ))}
                 <button type="button" className={cx('pt-bk-type', !from && 'on')} onClick={() => setFrom('')}>
-                  <Repeat /><span><strong>I don&apos;t have a doctor on Nexus</strong><span className="tiny muted block">Just share my records with a new doctor</span></span>
+                  <Repeat /><span><strong>I don&apos;t have a doctor on Sehatra</strong><span className="tiny muted block">Just share my records with a new doctor</span></span>
                 </button>
               </div>
               <div className="row mt-2" style={{ justifyContent: 'flex-end' }}><Button icon={ArrowRight} onClick={() => setStep(1)}>Find a new doctor</Button></div>

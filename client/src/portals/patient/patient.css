@@ -730,7 +730,7 @@ button.pt-wtb-head { cursor: pointer; }
 .pt-low-item:first-child { border-top: 0; padding-top: 0; }
 @media (max-width: 480px) { .pt-om-sub { padding-left: 12px; } .pt-low-item .btn { width: 100%; } }
 
-/* Nexus credit toggle on the payment step + Invite & earn page */
+/* Sehatra credit toggle on the payment step + Invite & earn page */
 .pt-pay-credit { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1.5px dashed var(--clay, #d97757); background: var(--card); }
 .pt-pay-credit > svg { flex: none; color: var(--clay, #d97757); }
 .pt-inv-hero { display: grid; gap: 12px; padding: 18px; border-radius: 18px; background: var(--green-soft); }

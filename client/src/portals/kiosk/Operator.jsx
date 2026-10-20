@@ -90,7 +90,7 @@ export default function Operator() {
 
       <div className="k-op-grid">
         <section className="k-op-card">
-          <div className="k-op-card-h"><h3>Today's patients</h3><span className="k-fine">{queue.length} through Nexus Healthcare</span></div>
+          <div className="k-op-card-h"><h3>Today's patients</h3><span className="k-fine">{queue.length} through Sehatra</span></div>
           {queue.length === 0 ? (
             <div className="k-op-empty"><Inbox /><span>No teleconsults yet today.</span></div>
           ) : (
@@ -120,7 +120,7 @@ export default function Operator() {
               <span className={cx('k-op-net-icon', offline ? 'off' : 'on')}>{offline ? <WifiOff /> : <Wifi />}</span>
               <div className="grow">
                 <strong>{offline ? 'Offline mode' : 'Online'}</strong>
-                <span>{offline ? 'Shown as offline to the network' : 'Connected to Nexus Healthcare'}</span>
+                <span>{offline ? 'Shown as offline to the network' : 'Connected to Sehatra'}</span>
               </div>
               <button type="button" className={cx('k-switch', offline && 'on')} role="switch" aria-checked={offline} onClick={toggleOffline} disabled={busy === 'status'}>
                 <span />

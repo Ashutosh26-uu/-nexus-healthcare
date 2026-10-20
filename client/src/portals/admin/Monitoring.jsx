@@ -31,7 +31,7 @@ export default function Monitoring() {
                 </div>
               </Card>
               <Card title="Metrics and incidents">
-                <p className="mb-0 small">For request rates, error rates and latency, open <strong>Zoho Catalyst → AppSail → your app → Logs &amp; Metrics</strong>. Database load is in the <strong>Neon console → Monitoring</strong>. Nexus doesn&apos;t track incidents itself yet.</p>
+                <p className="mb-0 small">For request rates, error rates and latency, open <strong>Zoho Catalyst → AppSail → your app → Logs &amp; Metrics</strong>. Database load is in the <strong>Neon console → Monitoring</strong>. Sehatra doesn&apos;t track incidents itself yet.</p>
               </Card>
             </div>
           </>

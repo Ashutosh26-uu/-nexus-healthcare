@@ -1,4 +1,4 @@
-/* Nexus Healthcare design system — warm, calm, human. */
+/* Sehatra design system — warm, calm, human. */
 :root {
   --ink: #1d2b2a;
   --ink-2: #44524f;
@@ -491,3 +491,9 @@ table { max-width: 100%; }
 .bl-quick .field { flex: 1 1 260px; margin: 0; }
 .ph-incoming { border-color: var(--green); background: var(--green-soft); }
 .ph-incoming-row { padding: 8px 10px; background: #fff; border-radius: 12px; }
+
+/* Brand lockup (mark + "Sehatra.") — global, so pages that never load portal.css still get it. */
+.logo { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; }
+.logo-text { display: flex; flex-direction: column; line-height: 1.1; }
+.logo-name { font-family: var(--serif); font-weight: 700; font-size: 1.22rem; letter-spacing: -0.02em; white-space: nowrap; }
+.logo-sub { font-size: 0.72rem; color: var(--ink-3); font-weight: 600; letter-spacing: 0.02em; }

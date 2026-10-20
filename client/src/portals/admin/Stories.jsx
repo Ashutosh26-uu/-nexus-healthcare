@@ -46,7 +46,7 @@ export default function Stories() {
   const [tab, setTab] = useState('pending');
   return (
     <>
-      <PageHeader eyebrow="Content" title="Stories" subtitle="Testimonials from people who use Nexus. Read each one — only approved stories appear on the public page.">
+      <PageHeader eyebrow="Content" title="Stories" subtitle="Testimonials from people who use Sehatra. Read each one — only approved stories appear on the public page.">
         <Link to="/testimonials" target="_blank" className="btn ghost"><ExternalLink size={16} /> View the page</Link>
       </PageHeader>
       <LiveGate live={live}>

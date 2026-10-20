@@ -129,7 +129,7 @@ export function AddStockModal({ open, onClose, onAdded, defaultSafety = 20, titl
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const tooSoon = form.expiry && expiryInfo(form.expiry).days < 90;
   // A GS1 pack code (DataMatrix / GS1-128) carries the product number (GTIN), batch and expiry. The NAME comes from
-  // Nexus's barcode book — learned the first time any verified store names that barcode — so after the first time,
+  // Sehatra's barcode book — learned the first time any verified store names that barcode — so after the first time,
   // a scan fills everything except the quantity.
   const onScan = async (raw) => {
     setScanning(false);
@@ -140,7 +140,7 @@ export function AddStockModal({ open, onClose, onAdded, defaultSafety = 20, titl
     if (gtin) { try { name = (await api.get(`/catalog/gtin/${encodeURIComponent(gtin)}`)).drug; } catch { /* offline or unknown: type it once */ } }
     setForm((cur) => ({ ...cur, gtin: gtin || cur.gtin, drug: name || cur.drug, batch: f.batch || cur.batch, expiry: f.expiry || cur.expiry }));
     const got = [name && name, f.batch && `batch ${f.batch}`, f.expiry && `expiry ${f.expiry}`].filter(Boolean).join(', ');
-    setScanNote(name ? `Filled from the pack: ${got}. Just enter the quantity.` : `Filled from the pack: ${got || 'barcode read'}. Type the medicine name once — next time this barcode fills it in by itself, for every store on Nexus.`);
+    setScanNote(name ? `Filled from the pack: ${got}. Just enter the quantity.` : `Filled from the pack: ${got || 'barcode read'}. Type the medicine name once — next time this barcode fills it in by itself, for every store on Sehatra.`);
   };
   const submit = async (e) => {
     e.preventDefault();
@@ -259,7 +259,7 @@ export function IncomingPurchases({ data, onDone }) {
   return (
     <div className="card mb-2 ph-incoming">
       <h3 className="row" style={{ gap: 8 }}><Truck size={18} /> From your distributors</h3>
-      <p className="small muted">Invoices billed to you on Nexus — every medicine, batch and expiry is already on them. One tap puts them on your shelf.</p>
+      <p className="small muted">Invoices billed to you on Sehatra — every medicine, batch and expiry is already on them. One tap puts them on your shelf.</p>
       <div className="stack" style={{ gap: 8 }}>
         {data.pending.map((b) => (
           <div key={b.id} className="row between wrap ph-incoming-row" style={{ gap: 8 }}>

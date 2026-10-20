@@ -87,7 +87,7 @@ export default function Login() {
         <div className="auth-top"><Logo /><div className="row"><LanguagePicker /><Link to="/" className="small muted row" style={{ gap: 6 }}><ArrowLeft size={15} /> Home</Link></div></div>
         <div className="auth-card fade-in">
           <h1 className="auth-title">Welcome back</h1>
-          <p className="muted">Sign in to your Nexus Healthcare account.</p>
+          <p className="muted">Sign in to your Sehatra account.</p>
 
           <div className="pills auth-pills" role="tablist">
             <button type="button" role="tab" aria-selected={mode === 'patient'} className={cx('pill', mode === 'patient' && 'active')} onClick={() => { setMode('patient'); setError(''); setMfaTicket(null); }}><Mail size={15} /> Email code</button>
@@ -125,7 +125,7 @@ export default function Login() {
           )}
 
           {/* One calm "new here?" block instead of three crowded lines. */}
-          <div className="auth-divider" role="separator"><span>New to Nexus Healthcare?</span></div>
+          <div className="auth-divider" role="separator"><span>New to Sehatra?</span></div>
           <Link to="/signup" state={location.state?.from ? { from: location.state.from } : undefined} className="btn secondary lg block auth-alt"><UserPlus size={17} /> Create your free Health Passport</Link>
           <Link to="/join" className="auth-join"><Stethoscope size={16} /><span>Doctor, clinic, lab or pharmacy? <strong>Join the network</strong></span><ChevronRight size={16} /></Link>
         </div>
@@ -135,7 +135,7 @@ export default function Login() {
       {config?.demo !== true ? (
         <aside className="auth-side">
           <div className="auth-side-inner">
-            <span className="eyebrow" style={{ color: '#f3b89f' }}>Nexus Healthcare</span>
+            <span className="eyebrow" style={{ color: '#f3b89f' }}>Sehatra</span>
             <h2>One secure sign-in for every part of the network.</h2>
             <p>Patients sign in with a one-time code sent to their email. Doctors, hospitals, labs, pharmacies and E-Clinic staff use their email and password — every access is logged and you control who sees your records.</p>
           </div>

@@ -117,7 +117,7 @@ export default function Profile() {
   return (
     <div className="stack lg">
       <PageHeader eyebrow="Doctor onboarding" title={locked ? 'Your profile' : 'Complete your profile'}
-        subtitle={locked ? 'Verified by the Nexus Healthcare clinical team. Contact us to change credentials.' : 'A few details so patients can trust you and our team can verify your registration. Takes about 3 minutes.'} />
+        subtitle={locked ? 'Verified by the Sehatra clinical team. Contact us to change credentials.' : 'A few details so patients can trust you and our team can verify your registration. Takes about 3 minutes.'} />
 
       {locked && <div className="callout green"><ShieldCheck /><div><strong>Verified doctor.</strong> {doctor.verificationNote || 'Your registration has been checked.'}</div></div>}
       {submitted && <div className="callout"><Hourglass /><div><strong>Submitted — under review.</strong> We usually verify within 48 hours. You&apos;ll get a notification the moment you&apos;re approved.</div></div>}

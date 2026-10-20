@@ -19,7 +19,7 @@ const loadRazorpay = () => {
   return rzpLoading;
 };
 
-// What Nexus credit can pay for (the server decides the amount; this only decides whether to offer it).
+// What Sehatra credit can pay for (the server decides the amount; this only decides whether to offer it).
 const CREDIT_PURPOSES = new Set(['consult', 'lab_advance', 'med_order_advance']);
 
 const isMobile = () => /android|iphone|ipad|ipod/i.test(navigator.userAgent);
@@ -89,7 +89,7 @@ export default function PaymentStep({ payment: initial, onPaid, onError, breakdo
       await loadRazorpay();
       const rzp = new window.Razorpay({
         key: payment.keyId, order_id: payment.orderId, amount: Math.round(payment.amount * 100), currency: 'INR',
-        name: 'Nexus Healthcare', description: payment.label,
+        name: 'Sehatra', description: payment.label,
         prefill: { name: user?.name, email: user?.email, contact: user?.phone },
         theme: { color: '#0f5c4d' },
         handler: (resp) => confirm(resp),
@@ -105,17 +105,17 @@ export default function PaymentStep({ payment: initial, onPaid, onError, breakdo
         <span className="tiny muted">{payment.label}</span>
         <strong>{fmtMoney(payment.amount)}</strong>
         {breakdown && <span className="tiny muted">Medicines {fmtMoney(breakdown.medicines)} + delivery {fmtMoney(breakdown.deliveryFee)}</span>}
-        {payment.creditApplied > 0 && <span className="tiny muted">{fmtMoney(gross)} − {fmtMoney(payment.creditApplied)} Nexus credit</span>}
+        {payment.creditApplied > 0 && <span className="tiny muted">{fmtMoney(gross)} − {fmtMoney(payment.creditApplied)} Sehatra credit</span>}
       </div>
 
       {creditable && offer > 0 && (
         <div className="pt-pay-credit">
           <Gift size={18} />
           <span className="grow">
-            <strong className="small block">Use {fmtMoney(offer)} Nexus credit</strong>
+            <strong className="small block">Use {fmtMoney(offer)} Sehatra credit</strong>
             <span className="tiny muted">{payment.creditApplied > 0 ? (payment.amount > 0 ? `Pay just ${fmtMoney(payment.amount)} now` : 'Covers the whole amount') : offer >= gross ? 'Covers the whole amount — confirms right away' : `You have ${fmtMoney(credit)} from inviting friends`}</span>
           </span>
-          {busy ? <span className="spinner sm" /> : <Switch checked={payment.creditApplied > 0} onChange={applyCredit} label="Use Nexus credit" />}
+          {busy ? <span className="spinner sm" /> : <Switch checked={payment.creditApplied > 0} onChange={applyCredit} label="Use Sehatra credit" />}
         </div>
       )}
 

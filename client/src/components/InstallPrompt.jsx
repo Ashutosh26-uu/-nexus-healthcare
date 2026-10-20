@@ -13,8 +13,8 @@ const isIosSafari = () => isIos() && !/crios|fxios|edgios/i.test(navigator.userA
 const isMobile = () => isIos() || /android|mobile/i.test(navigator.userAgent);
 const snoozed = () => { try { return Date.now() < Number(localStorage.getItem(SNOOZE_KEY) || 0); } catch { return false; } };
 
-// "Get the Nexus app" — shown on the website after the visitor has made their cookie choice (so the two
-// never stack). Nexus is an installable app (PWA): one-tap install on Android/Chrome/Edge, Add-to-Home-
+// "Get the Sehatra app" — shown on the website after the visitor has made their cookie choice (so the two
+// never stack). Sehatra is an installable app (PWA): one-tap install on Android/Chrome/Edge, Add-to-Home-
 // Screen steps on iPhone, and a QR code on computers to open it on a phone. "Not now" snoozes for a week.
 export default function InstallPrompt() {
   const consentCtx = useConsent();
@@ -54,12 +54,12 @@ export default function InstallPrompt() {
 
   return createPortal(
     <div className="app-pop-wrap" role="presentation" onClick={(e) => e.target === e.currentTarget && close()}>
-      <div className="app-pop" role="dialog" aria-modal="true" aria-label="Get the Nexus Healthcare app">
+      <div className="app-pop" role="dialog" aria-modal="true" aria-label="Get the Sehatra app">
         <button type="button" className="app-pop-x" onClick={close} aria-label="Not now"><X size={18} /></button>
         <div className="app-pop-head">
           <LogoMark size={52} />
           <div>
-            <strong className="app-pop-title">Get the Nexus Healthcare app</strong>
+            <strong className="app-pop-title">Get the Sehatra app</strong>
             <span className="small muted">Free · works on any phone</span>
           </div>
         </div>
@@ -75,7 +75,7 @@ export default function InstallPrompt() {
           <ol className="app-pop-steps small">
             <li><span className="app-pop-n">1</span> Tap <Share size={15} className="inline-ic" /> <strong>Share</strong> at the bottom of Safari</li>
             <li><span className="app-pop-n">2</span> Choose <SquarePlus size={15} className="inline-ic" /> <strong>Add to Home Screen</strong></li>
-            <li><span className="app-pop-n">3</span> Tap <strong>Add</strong> — Nexus appears with your apps</li>
+            <li><span className="app-pop-n">3</span> Tap <strong>Add</strong> — Sehatra appears with your apps</li>
           </ol>
         ) : mobile ? (
           <ol className="app-pop-steps small">
@@ -84,8 +84,8 @@ export default function InstallPrompt() {
           </ol>
         ) : (
           <div className="app-pop-qr">
-            <Suspense fallback={<div className="app-pop-qr-ph" />}><QR value={url} size={132} label="Scan to open Nexus Healthcare on your phone" /></Suspense>
-            <div className="small"><Smartphone size={15} className="inline-ic" /> <strong>Scan with your phone camera</strong> to open Nexus, then add it to your home screen.<span className="tiny muted" style={{ display: 'block', marginTop: 4 }}>On this computer: use the install icon in the address bar.</span></div>
+            <Suspense fallback={<div className="app-pop-qr-ph" />}><QR value={url} size={132} label="Scan to open Sehatra on your phone" /></Suspense>
+            <div className="small"><Smartphone size={15} className="inline-ic" /> <strong>Scan with your phone camera</strong> to open Sehatra, then add it to your home screen.<span className="tiny muted" style={{ display: 'block', marginTop: 4 }}>On this computer: use the install icon in the address bar.</span></div>
           </div>
         )}
         <button type="button" className="btn ghost block app-pop-later" onClick={close}>Not now</button>

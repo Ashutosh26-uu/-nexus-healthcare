@@ -33,7 +33,7 @@ function VideoStage({ consult, doctorName, live, onStart, starting }) {
   const connected = inCall && state === 'connected';
   const remoteVideo = inCall && !audioOnly && remoteStream?.getVideoTracks().length > 0 && state !== 'ended';
   const selfVideo = inCall && !audioOnly && localStream?.getVideoTracks().length > 0 && !cameraOff;
-  const from = consult.kioskName ? `connected from ${consult.kioskName.replace('E-Clinic · ', 'E-Clinic ')}` : consult.mode === 'chat' ? 'chat consult from the Nexus Healthcare app' : 'joining from the Nexus Healthcare app';
+  const from = consult.kioskName ? `connected from ${consult.kioskName.replace('E-Clinic · ', 'E-Clinic ')}` : consult.mode === 'chat' ? 'chat consult from the Sehatra app' : 'joining from the Sehatra app';
   const fullscreen = () => { const el = stage.current; if (!el) return; if (document.fullscreenElement) document.exitFullscreen?.(); else el.requestFullscreen?.(); };
   return (
     <div ref={stage} className={cx('dr-stage', !live && 'idle', ended && 'ended', remoteVideo && 'has-remote')}>
@@ -88,14 +88,14 @@ function VideoStage({ consult, doctorName, live, onStart, starting }) {
   );
 }
 
-// In-person visit at the doctor's hospital/clinic or a Nexus E-Clinic — no call, just the visit status.
+// In-person visit at the doctor's hospital/clinic or a Sehatra E-Clinic — no call, just the visit status.
 function InPersonStage({ consult, live, onStart, starting }) {
   const where = consult.location || {};
   return (
     <div className="dr-inperson">
       <div className="dr-inperson-ic"><Building2 /></div>
       <div className="grow">
-        <span className="eyebrow">{where.kind === 'eclinic' ? 'Nexus E-Clinic visit' : 'In-person visit'}</span>
+        <span className="eyebrow">{where.kind === 'eclinic' ? 'Sehatra E-Clinic visit' : 'In-person visit'}</span>
         <h3 className="mb-0" translate="no">{consult.patientName}</h3>
         <p className="small muted mb-0">{where.name}{consult.scheduledAt ? ` · booked for ${fmtDateTime(consult.scheduledAt)}` : ''}</p>
         <p className="small mb-0">{consult.checkedInAt ? `Checked in ${timeAgo(consult.checkedInAt)} with their live QR pass.` : 'Not checked in yet — scan their QR from “Check in patient” on your queue.'}</p>

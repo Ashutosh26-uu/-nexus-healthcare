@@ -203,7 +203,7 @@ function DoctorSignup() {
       <div className="stack">
         <AccountFields form={form} set={set} namePlaceholder="e.g. Dr. Priya Sharma" />
         <CountrySelect value={form.country} onChange={(v) => set('country', v)} />
-        <label className="check small"><input type="checkbox" checked={form.ownClinic} onChange={(e) => set('ownClinic', e.target.checked)} /> I run my own clinic and want to add it to Nexus</label>
+        <label className="check small"><input type="checkbox" checked={form.ownClinic} onChange={(e) => set('ownClinic', e.target.checked)} /> I run my own clinic and want to add it to Sehatra</label>
         {form.ownClinic && <Field label="Clinic name" hint="You'll add its address and list every doctor who practises there from your portal."><input className="input" value={form.clinicName} onChange={(e) => set('clinicName', e.target.value)} placeholder="e.g. Sharma Child Care Clinic" /></Field>}
       </div>
       {error && <div className="form-error mt-2">{error}</div>}
@@ -239,7 +239,7 @@ function PharmacySignup() {
   return (
     <form className="auth-card fade-in" onSubmit={submit}>
       <span className="eyebrow">For medical stores &amp; pharmacists</span>
-      <h1 className="auth-title">Put your medical store on Nexus</h1>
+      <h1 className="auth-title">Put your medical store on Sehatra</h1>
       <p className="muted">Patients within 50 km send you medicine orders. Start with the basics — add your location, store photo and licence inside the portal.</p>
       <div className="stack">
         <Field label="Medical store name"><input className="input" value={form.storeName} onChange={(e) => set('storeName', e.target.value)} placeholder="e.g. Shree Ram Medicos" autoFocus /></Field>
@@ -308,7 +308,7 @@ function Success({ result }) {
       <div className="auth-card wide fade-in center">
         <div className="success-burst"><Check /></div>
         <h1 className="auth-title">Application received{isDoc ? `, ${result.name.replace(/^Dr\.?\s*/i, 'Dr. ').split(' ').slice(0, 2).join(' ')}` : ''}!</h1>
-        <p className="muted">{isDoc ? 'Thank you for wanting to serve patients at our E-Clinics.' : `Thank you for listing ${result.name} on Nexus Healthcare.`} We usually finish verification within 48 hours.</p>
+        <p className="muted">{isDoc ? 'Thank you for wanting to serve patients at our E-Clinics.' : `Thank you for listing ${result.name} on Sehatra.`} We usually finish verification within 48 hours.</p>
         <div className="j-ref">
           <span className="tiny muted">Your application reference</span>
           <div className="row" style={{ gap: 8, justifyContent: 'center' }}>
@@ -342,7 +342,7 @@ function Side({ track }) {
             <li><Check size={16} /> Your own medicine list — prescribe in a few taps</li>
             <li><Check size={16} /> Prescription lands in the patient&apos;s app as a PDF, instantly</li>
             <li><Check size={16} /> Own a clinic? List every doctor who works there</li>
-            <li><MonitorSmartphone size={16} /> Nexus E-Clinics — coming soon</li>
+            <li><MonitorSmartphone size={16} /> Sehatra E-Clinics — coming soon</li>
           </ul>
         </div>
       </aside>
@@ -357,7 +357,7 @@ function Side({ track }) {
           <ul className="side-points">
             <li><Check size={16} /> Pop-up the moment a patient orders a medicine you stock</li>
             <li><Check size={16} /> Pickup orders, or home delivery with 35% paid in advance</li>
-            <li><Truck size={16} /> Deliver yourself, or a Nexus rider collects from your counter</li>
+            <li><Truck size={16} /> Deliver yourself, or a Sehatra rider collects from your counter</li>
             <li><ShieldCheck size={16} /> Free to join — verified badge once we check your licence</li>
           </ul>
         </div>
@@ -369,7 +369,7 @@ function Side({ track }) {
       <div className="auth-side-inner">
         <Building2 size={34} color="#f3b89f" />
         <h2 style={{ marginTop: 18 }}>Your facility, visible to an entire district.</h2>
-        <p>Stay independent and keep your own brand. Nexus Healthcare connects you to patients, doctors and E-Clinics across the network.</p>
+        <p>Stay independent and keep your own brand. Sehatra connects you to patients, doctors and E-Clinics across the network.</p>
         <ul className="side-points">
           <li><BedDouble size={16} /> Live beds → referrals arrive with ETA and a summary</li>
           <li><FileCheck2 size={16} /> E-prescriptions and lab orders straight to your counter</li>
@@ -417,7 +417,7 @@ export default function Join() {
       <div className="j-wrap">
         {top}
         <div className="center j-hero">
-          <span className="eyebrow">Join the Nexus Healthcare network</span>
+          <span className="eyebrow">Join the Sehatra network</span>
           <h1 className="auth-title">Grow with us — on your terms</h1>
           <p className="muted">Whether you run a hospital or clinic, or you&apos;re a doctor with a few free hours a week, there&apos;s a place for you.</p>
         </div>
@@ -442,7 +442,7 @@ export default function Join() {
             <ul>
               <li><CalendarClock size={15} /> You choose the days and hours</li>
               <li><Building2 size={15} /> Own a clinic? Add it and list its doctors</li>
-              <li><MonitorSmartphone size={15} /> Nexus E-Clinics <span className="soon-badge">Coming soon</span></li>
+              <li><MonitorSmartphone size={15} /> Sehatra E-Clinics <span className="soon-badge">Coming soon</span></li>
             </ul>
             <span className="j-track-cta">Create my doctor account <ArrowRight size={16} /></span>
           </button>
@@ -453,7 +453,7 @@ export default function Join() {
             <p className="muted small">Get medicine orders from patients within 50 km — pickup or home delivery. Sign up with your name, email, mobile and store name.</p>
             <ul>
               <li><Check size={15} /> Demand pop-ups for medicines you stock</li>
-              <li><Truck size={15} /> Deliver yourself or use a Nexus rider</li>
+              <li><Truck size={15} /> Deliver yourself or use a Sehatra rider</li>
             </ul>
             <span className="j-track-cta">Create my store account <ArrowRight size={16} /></span>
           </button>

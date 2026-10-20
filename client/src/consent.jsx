@@ -130,7 +130,7 @@ function CookieBanner({ onCustomize }) {
     <div className="nx-cookie" role="dialog" aria-label="Cookie preferences" aria-live="polite">
       <div className="nx-cookie-text">
         <strong className="row" style={{ gap: 8 }}><Cookie size={18} /> Your privacy, your choice</strong>
-        <p className="small mb-0">Nexus sets no tracking cookies. Your browser keeps a few essentials for us — your sign-in and language. With your OK we&apos;ll also use your <strong>live location</strong> to show doctors, hospitals and chemists near you. No analytics, no advertising — ever. <Link to="/cookies">Cookie policy</Link> · <Link to="/privacy">Privacy policy</Link></p>
+        <p className="small mb-0">Sehatra sets no tracking cookies. Your browser keeps a few essentials for us — your sign-in and language. With your OK we&apos;ll also use your <strong>live location</strong> to show doctors, hospitals and chemists near you. No analytics, no advertising — ever. <Link to="/cookies">Cookie policy</Link> · <Link to="/privacy">Privacy policy</Link></p>
       </div>
       <div className="nx-cookie-actions">
         <Button variant="ghost" size="sm" onClick={onCustomize}>Customize</Button>
@@ -143,7 +143,7 @@ function CookieBanner({ onCustomize }) {
 
 function CookieSettings({ open, onClose }) {
   const { consent, setConsent } = useConsent();
-  // Only switches that change something: Nexus runs no analytics, so there is no "usage statistics" toggle to offer.
+  // Only switches that change something: Sehatra runs no analytics, so there is no "usage statistics" toggle to offer.
   const [draft, setDraft] = useState({ analytics: false, location: false });
   useEffect(() => { if (open) setDraft({ analytics: false, location: !!consent?.location }); }, [open, consent]);
   if (!open) return null;
@@ -153,7 +153,7 @@ function CookieSettings({ open, onClose }) {
       <div className="nx-pref-list">
         <div className="nx-pref"><div><strong>Essential</strong><p className="small muted mb-0">Keeps you signed in, remembers your language and country, and keeps the app secure. Stored in your browser, not as cookies. Always on.</p></div><span className="badge green">Always on</span></div>
         <div className="nx-pref"><div><strong>Live location</strong><p className="small muted mb-0">Finds doctors, hospitals and chemists near you, updated as you move. Rounded to about 100 m and never shared with advertisers. You can type your city instead.</p></div><Switch checked={draft.location} onChange={(v) => setDraft((d) => ({ ...d, location: v }))} label="Live location" /></div>
-        <div className="nx-pref"><div><strong>Analytics &amp; advertising</strong><p className="small muted mb-0">None. Nexus runs no usage tracking and shows no ads, so there is nothing to switch on or off.</p></div><span className="badge">Not used</span></div>
+        <div className="nx-pref"><div><strong>Analytics &amp; advertising</strong><p className="small muted mb-0">None. Sehatra runs no usage tracking and shows no ads, so there is nothing to switch on or off.</p></div><span className="badge">Not used</span></div>
       </div>
       <p className="tiny muted mb-0" style={{ marginTop: 12 }}>Full details: <Link to="/cookies" onClick={onClose}>Cookie policy</Link> · <Link to="/privacy" onClick={onClose}>Privacy policy</Link></p>
     </Modal>

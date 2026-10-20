@@ -4,7 +4,7 @@ import { api } from '../../api';
 import { Button, useAction, cx } from '../../components/ui';
 
 // Ambient scribe: listen to the consultation (with the patient's consent), keep an editable transcript, then
-// draft a SOAP note, codes and medicines the doctor reviews and drops into the prescription. Nexus stores
+// draft a SOAP note, codes and medicines the doctor reviews and drops into the prescription. Sehatra stores
 // neither audio nor transcript; the server returns a draft and keeps only an audit line that one was made.
 const Recognition = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
 const LANGS = [
@@ -132,7 +132,7 @@ export default function AmbientScribe({ consultId, onUse }) {
             placeholder={consent ? 'The conversation appears here as it’s heard. You can correct it, or type and paste.' : 'Tick the consent box to start listening — or type the key points here.'} />
           {interim && <p className="tiny muted mb-0" aria-live="polite">… {interim}</p>}
           <div className="row between wrap mt-1" style={{ gap: 8 }}>
-            <span className="tiny muted"><ShieldCheck size={12} style={{ verticalAlign: '-2px' }} /> Nexus never stores the audio or the transcript. Speech-to-text runs in your browser (in Chrome, Google’s speech service).</span>
+            <span className="tiny muted"><ShieldCheck size={12} style={{ verticalAlign: '-2px' }} /> Sehatra never stores the audio or the transcript. Speech-to-text runs in your browser (in Chrome, Google’s speech service).</span>
             <div className="row" style={{ gap: 8 }}>
               {transcript && <Button size="sm" variant="ghost" icon={Trash2} onClick={discard}>Clear</Button>}
               <Button size="sm" icon={FileText} loading={busy === 'draft'} disabled={transcript.trim().length < MIN_CHARS} onClick={makeDraft}>Draft note</Button>

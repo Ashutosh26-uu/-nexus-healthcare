@@ -19,7 +19,7 @@ export default function Federated() {
       <div className="callout"><Lock /><span>Federated training isn&apos;t switched on yet — no models are being trained and no hospital is sending updates. Accuracy figures and training rounds will appear here once it is live.</span></div>
 
       <Card title="Hospitals on the network">
-        {nodes.length === 0 ? <Empty icon={Network} title="No hospitals yet">Hospitals appear here once they join Nexus.</Empty> : (
+        {nodes.length === 0 ? <Empty icon={Network} title="No hospitals yet">Hospitals appear here once they join Sehatra.</Empty> : (
           <div className="table-wrap" style={{ border: 0 }}>
             <table className="table">
               <thead><tr><th>Hospital</th><th>District</th><th>Training</th></tr></thead>

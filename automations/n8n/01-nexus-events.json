@@ -1,5 +1,5 @@
 {
-  "name": "Nexus · Events router",
+  "name": "Sehatra · Events router",
   "nodes": [
     {
       "parameters": {
@@ -10,7 +10,7 @@
         "options": {}
       },
       "id": "a7ff552d-80d5-4b29-9718-9252b5f68c2b",
-      "name": "Nexus event",
+      "name": "Sehatra event",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
@@ -20,7 +20,7 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "nexusWebhookToken",
-          "name": "Nexus webhook token"
+          "name": "Sehatra webhook token"
         }
       },
       "webhookId": "9a0c738f-66bb-4fe2-be00-6c6e0e89979c",
@@ -45,7 +45,7 @@
             {
               "id": "682ec9e3-59ca-4815-ae68-9d2b4bf48773",
               "name": "fromEmail",
-              "value": "Nexus Automations <no-reply@yourdomain.com>",
+              "value": "Sehatra Automations <no-reply@yourdomain.com>",
               "type": "string"
             },
             {
@@ -67,7 +67,7 @@
         220,
         300
       ],
-      "notes": "Edit these once: your Nexus URL, who gets alerts, and the sender address."
+      "notes": "Edit these once: your Sehatra URL, who gets alerts, and the sender address."
     },
     {
       "parameters": {
@@ -84,7 +84,7 @@
                 "conditions": [
                   {
                     "id": "882b9946-4c06-4d7b-95b8-648e3a5026ac",
-                    "leftValue": "={{ $('Nexus event').item.json.body.event }}",
+                    "leftValue": "={{ $('Sehatra event').item.json.body.event }}",
                     "rightValue": "lab.report_ready",
                     "operator": {
                       "type": "string",
@@ -93,7 +93,7 @@
                   },
                   {
                     "id": "c0a44514-6e2b-47b6-bca4-002dd799ea2f",
-                    "leftValue": "={{ $('Nexus event').item.json.body.data.critical }}",
+                    "leftValue": "={{ $('Sehatra event').item.json.body.data.critical }}",
                     "rightValue": "",
                     "operator": {
                       "type": "boolean",
@@ -118,7 +118,7 @@
                 "conditions": [
                   {
                     "id": "dbdb3a7b-1008-4b6f-983b-283e65737b30",
-                    "leftValue": "={{ $('Nexus event').item.json.body.event }}",
+                    "leftValue": "={{ $('Sehatra event').item.json.body.event }}",
                     "rightValue": "onboarding.submitted",
                     "operator": {
                       "type": "string",
@@ -142,7 +142,7 @@
                 "conditions": [
                   {
                     "id": "329726b2-21e3-41b8-b519-29fca594d41d",
-                    "leftValue": "={{ $('Nexus event').item.json.body.event }}",
+                    "leftValue": "={{ $('Sehatra event').item.json.body.event }}",
                     "rightValue": "payment.refund_due",
                     "operator": {
                       "type": "string",
@@ -166,7 +166,7 @@
                 "conditions": [
                   {
                     "id": "a1c41e44-e712-4a60-989f-d7b88068c668",
-                    "leftValue": "={{ $('Nexus event').item.json.body.data.contact?.mobile }}",
+                    "leftValue": "={{ $('Sehatra event').item.json.body.data.contact?.mobile }}",
                     "rightValue": "",
                     "operator": {
                       "type": "string",
@@ -200,9 +200,9 @@
       "parameters": {
         "fromEmail": "={{ $('Config').first().json.fromEmail }}",
         "toEmail": "={{ $('Config').first().json.alertEmail }}",
-        "subject": "=🚨 Critical lab result — {{ $('Nexus event').item.json.body.data.labName }}",
+        "subject": "=🚨 Critical lab result — {{ $('Sehatra event').item.json.body.data.labName }}",
         "emailFormat": "text",
-        "text": "=A critical value was reported.\n\nLab order: {{ $('Nexus event').item.json.body.data.labOrderId }}\nPatient: {{ $('Nexus event').item.json.body.data.patientId }}\nLab: {{ $('Nexus event').item.json.body.data.labName }}\nDoctor: {{ $('Nexus event').item.json.body.data.doctorName }}\n\nThe doctor and patient were notified in the app. Please make sure someone follows up today.",
+        "text": "=A critical value was reported.\n\nLab order: {{ $('Sehatra event').item.json.body.data.labOrderId }}\nPatient: {{ $('Sehatra event').item.json.body.data.patientId }}\nLab: {{ $('Sehatra event').item.json.body.data.labName }}\nDoctor: {{ $('Sehatra event').item.json.body.data.doctorName }}\n\nThe doctor and patient were notified in the app. Please make sure someone follows up today.",
         "options": {}
       },
       "id": "af049924-2f09-4bce-8a6e-5e7e649a113b",
@@ -225,9 +225,9 @@
       "parameters": {
         "fromEmail": "={{ $('Config').first().json.fromEmail }}",
         "toEmail": "={{ $('Config').first().json.alertEmail }}",
-        "subject": "=New {{ $('Nexus event').item.json.body.data.kind }} waiting for verification — {{ $('Nexus event').item.json.body.data.name }}",
+        "subject": "=New {{ $('Sehatra event').item.json.body.data.kind }} waiting for verification — {{ $('Sehatra event').item.json.body.data.name }}",
         "emailFormat": "text",
-        "text": "={{ $('Nexus event').item.json.body.data.name }} ({{ $('Nexus event').item.json.body.data.kind }}) — stage: {{ $('Nexus event').item.json.body.data.stage }}.\n\nReview it in Nexus → Super Admin → Onboarding:\n{{ $('Config').first().json.baseUrl }}/admin/onboarding",
+        "text": "={{ $('Sehatra event').item.json.body.data.name }} ({{ $('Sehatra event').item.json.body.data.kind }}) — stage: {{ $('Sehatra event').item.json.body.data.stage }}.\n\nReview it in Sehatra → Super Admin → Onboarding:\n{{ $('Config').first().json.baseUrl }}/admin/onboarding",
         "options": {}
       },
       "id": "ba9dffed-f386-49a2-b08a-2ec420c0e591",
@@ -250,9 +250,9 @@
       "parameters": {
         "fromEmail": "={{ $('Config').first().json.fromEmail }}",
         "toEmail": "={{ $('Config').first().json.alertEmail }}",
-        "subject": "=Refund due — ₹{{ $('Nexus event').item.json.body.data.amount }}",
+        "subject": "=Refund due — ₹{{ $('Sehatra event').item.json.body.data.amount }}",
         "emailFormat": "text",
-        "text": "=Money was captured for something no longer payable.\n\nPayment: {{ $('Nexus event').item.json.body.data.paymentId }} ({{ $('Nexus event').item.json.body.data.purpose }})\nGateway payment: {{ $('Nexus event').item.json.body.data.gatewayPaymentId }}\nAmount: ₹{{ $('Nexus event').item.json.body.data.amount }}\nReason: {{ $('Nexus event').item.json.body.data.reason }}\n\nRefund it from the Razorpay dashboard.",
+        "text": "=Money was captured for something no longer payable.\n\nPayment: {{ $('Sehatra event').item.json.body.data.paymentId }} ({{ $('Sehatra event').item.json.body.data.purpose }})\nGateway payment: {{ $('Sehatra event').item.json.body.data.gatewayPaymentId }}\nAmount: ₹{{ $('Sehatra event').item.json.body.data.amount }}\nReason: {{ $('Sehatra event').item.json.body.data.reason }}\n\nRefund it from the Razorpay dashboard.",
         "options": {}
       },
       "id": "8e157e98-459d-4729-862d-eb3e37a75eca",
@@ -273,7 +273,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const when = (iso) => iso ? new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : 'now';\nconst toE164 = (m) => { const d = String(m || '').replace(/\\D/g, ''); return d.length === 10 ? '+91' + d : d ? '+' + d : null; };\n// One WhatsApp line per event. Demo data is never messaged (its phone numbers may belong to real people).\nconst out = [];\nfor (const item of $input.all()) {\n  const e = item.json.body || {};\n  const d = e.data || {};\n  const c = d.contact || {};\n  if (e.mode !== 'live' || !c.mobile) continue;\n  const hi = c.firstName ? `Hi ${c.firstName}, ` : 'Hi, ';\n  const text = {\n    'booking.confirmed': `${hi}your appointment with ${d.doctorName} is confirmed — ${d.mode === 'in_person' ? `at ${d.location}` : `${d.mode} consult`}, ${when(d.scheduledAt)}.`,\n    'followup.scheduled': `${hi}${d.doctorName} has booked a follow-up for you on ${when(d.scheduledAt)}${d.location ? ` at ${d.location}` : ' (video)'}.`,\n    'lab.booked': `${hi}your test at ${d.labName} is booked${d.slot ? ` for ${when(d.slot)}` : ''}. ₹${d.advancePaid} paid — ₹${d.balance} at the lab.${d.homeCollection ? ' A technician will come to your home.' : ''}`,\n    'lab.sample_collected': `${hi}your sample was collected at ${d.labName}. Your report should be ready by ${when(d.reportDueAt)}.`,\n    'lab.report_ready': d.critical ? `${hi}one of your results needs attention. Your doctor has been told and will contact you. Please open the Nexus app.` : `${hi}your lab report from ${d.labName} is ready in the Nexus app — online and as a PDF, with what to do next.`,\n    'medicine_order.updated': d.status === 'accepted' ? `${hi}${d.pharmacyName} accepted your medicine order ${d.orderNo}.` : d.status === 'declined' ? `${hi}order ${d.orderNo} couldn't be accepted. Please try another chemist in the app.` : null,\n    'medicine_order.delivered': `${hi}your medicines (${d.orderNo}) were delivered. Get well soon!`,\n  }[e.event];\n  if (!text) continue;\n  out.push({ json: { to: toE164(c.mobile), message: `${text} — Nexus Healthcare`, event: e.event, eventId: e.id } });\n}\nreturn out;"
+        "jsCode": "const when = (iso) => iso ? new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : 'now';\nconst toE164 = (m) => { const d = String(m || '').replace(/\\D/g, ''); return d.length === 10 ? '+91' + d : d ? '+' + d : null; };\n// One WhatsApp line per event. Demo data is never messaged (its phone numbers may belong to real people).\nconst out = [];\nfor (const item of $input.all()) {\n  const e = item.json.body || {};\n  const d = e.data || {};\n  const c = d.contact || {};\n  if (e.mode !== 'live' || !c.mobile) continue;\n  const hi = c.firstName ? `Hi ${c.firstName}, ` : 'Hi, ';\n  const text = {\n    'booking.confirmed': `${hi}your appointment with ${d.doctorName} is confirmed — ${d.mode === 'in_person' ? `at ${d.location}` : `${d.mode} consult`}, ${when(d.scheduledAt)}.`,\n    'followup.scheduled': `${hi}${d.doctorName} has booked a follow-up for you on ${when(d.scheduledAt)}${d.location ? ` at ${d.location}` : ' (video)'}.`,\n    'lab.booked': `${hi}your test at ${d.labName} is booked${d.slot ? ` for ${when(d.slot)}` : ''}. ₹${d.advancePaid} paid — ₹${d.balance} at the lab.${d.homeCollection ? ' A technician will come to your home.' : ''}`,\n    'lab.sample_collected': `${hi}your sample was collected at ${d.labName}. Your report should be ready by ${when(d.reportDueAt)}.`,\n    'lab.report_ready': d.critical ? `${hi}one of your results needs attention. Your doctor has been told and will contact you. Please open the Sehatra app.` : `${hi}your lab report from ${d.labName} is ready in the Sehatra app — online and as a PDF, with what to do next.`,\n    'medicine_order.updated': d.status === 'accepted' ? `${hi}${d.pharmacyName} accepted your medicine order ${d.orderNo}.` : d.status === 'declined' ? `${hi}order ${d.orderNo} couldn't be accepted. Please try another chemist in the app.` : null,\n    'medicine_order.delivered': `${hi}your medicines (${d.orderNo}) were delivered. Get well soon!`,\n  }[e.event];\n  if (!text) continue;\n  out.push({ json: { to: toE164(c.mobile), message: `${text} — Sehatra`, event: e.event, eventId: e.id } });\n}\nreturn out;"
       },
       "id": "65fc6de0-24b3-436f-80ce-162b3c023376",
       "name": "Write WhatsApp message",
@@ -323,7 +323,7 @@
     }
   ],
   "connections": {
-    "Nexus event": {
+    "Sehatra event": {
       "main": [
         [
           {
@@ -405,7 +405,7 @@
   "pinData": {},
   "meta": {
     "templateCredsSetupCompleted": false,
-    "description": "Receives signed events from Nexus. Critical results, verifications and refunds email the ops team; patient updates go out on WhatsApp (live data only)."
+    "description": "Receives signed events from Sehatra. Critical results, verifications and refunds email the ops team; patient updates go out on WhatsApp (live data only)."
   },
   "tags": []
 }

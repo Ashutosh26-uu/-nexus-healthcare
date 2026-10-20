@@ -1,4 +1,4 @@
-// What the QR codes Nexus prints and shows contain, and how any scanner in the app reads them back.
+// What the QR codes Sehatra prints and shows contain, and how any scanner in the app reads them back.
 // Codes are web links where they can be: then any phone camera opens them, no app needed.
 const origin = () => (typeof window !== 'undefined' ? window.location.origin : '');
 
@@ -13,7 +13,7 @@ export const visitUrl = (payload) => {
 
 const PATIENT_ID = /^OC-\d{4}-\d{4}$/i;
 
-// Any scanned text → { type, … }. Accepts links from any Nexus host (cards printed before a move still work)
+// Any scanned text → { type, … }. Accepts links from any Sehatra host (cards printed before a move still work)
 // and the older bare formats.
 export function parseScan(raw) {
   const text = String(raw || '').trim();

@@ -51,7 +51,7 @@ export default function StatementPrint() {
           <div className="rxp-brand">
             <LogoMark size={40} />
             <div>
-              <strong>Nexus Healthcare</strong>
+              <strong>Sehatra</strong>
               <span>Monthly earnings statement</span>
             </div>
           </div>

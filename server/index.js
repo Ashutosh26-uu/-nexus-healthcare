@@ -148,7 +148,7 @@ function auth(req, res, next) {
     const needsFacility = ['pharmacist', 'kiosk_operator', 'lab_tech', 'hospital_admin', 'distributor'].includes(user.role);
     if (!req.path.startsWith('/api/auth/') && !req.path.startsWith('/api/events') && !req.path.startsWith('/api/notifications') && !req.path.startsWith('/api/i18n')
       && ((user.role === 'doctor' && !doctorFor(user)) || (needsFacility && !db().facilities.some((f) => f.id === user.facilityId)))) {
-      return res.status(409).json({ error: 'Your account isn\'t linked to a doctor profile or facility yet. Please contact the Nexus Healthcare team.' });
+      return res.status(409).json({ error: 'Your account isn\'t linked to a doctor profile or facility yet. Please contact the Sehatra team.' });
     }
     // Exact prefix match on path segments, and only uploads (not downloads) of files.
     if (user.role === 'doctor' && !doctorFor(user)?.verified) {
@@ -325,7 +325,7 @@ function withAvail(doc) {
   return {
     ...doc, online: availability.available, availability, timings: timingsOf(doc),
     eClinicPartner: isEClinicDoctor(doc),
-    affiliation: isEClinicDoctor(doc) ? 'Nexus Healthcare E-Clinics' : aff?.verified ? aff.name : null,
+    affiliation: isEClinicDoctor(doc) ? 'Sehatra E-Clinics' : aff?.verified ? aff.name : null,
   };
 }
 // What anyone signed in may see about a doctor — an explicit allowlist, never the whole record
@@ -480,7 +480,7 @@ const DATA_MODE = require('./seed').dataMode();
 app.get('/api/public/config', (_req, res) => {
   const o = otp.publicConfig();
   res.json({
-    appName: 'Nexus Healthcare', demo: DATA_MODE === 'demo', smsLive: o.live, emailLive: o.emailLive, upi: Boolean(process.env.UPI_VPA), version: require('../package.json').version,
+    appName: 'Sehatra', demo: DATA_MODE === 'demo', smsLive: o.live, emailLive: o.emailLive, upi: Boolean(process.env.UPI_VPA), version: require('../package.json').version,
     // The real support line / inbox, only when the operator configured them — null means "don't show a number".
     support: { phone: clean(process.env.SUPPORT_PHONE, 30) || null, email: clean(process.env.SUPPORT_EMAIL, 120) || null, hours: clean(process.env.SUPPORT_HOURS, 60) || null },
   });
@@ -504,14 +504,14 @@ app.get('/api/public/stats', publicLimiter, (_req, res) => {
 });
 
 // ---------- Stories (the Testimonials page) ----------
-// Only real Nexus users can post, every story is approved by the team before it shows, and the badge on it
+// Only real Sehatra users can post, every story is approved by the team before it shows, and the badge on it
 // ("Verified patient", "Verified doctor"…) comes from the poster's actual account — never typed in. Nothing is
 // seeded: until someone shares a story and it's approved, the page says "coming soon".
 const STORY_ROLE = { patient: 'Patient', caregiver: 'Family caregiver', doctor: 'Doctor', pharmacist: 'Chemist', lab_tech: 'Lab', hospital_admin: 'Hospital', kiosk_operator: 'E-Clinic health worker', distributor: 'Medicine distributor', delivery: 'Delivery partner' };
 const storyLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 5, key: (r) => r.user?.id || r.ip, message: 'Too many stories at once — please try again later.' });
 const initialsName = (name) => String(name || '').replace(/^dr\.?\s+/i, '').split(/\s+/).filter(Boolean).map((w) => `${w[0].toUpperCase()}.`).join(' ');
-const storyName = (s) => (s.show === 'full' ? s.name : initialsName(s.name)) || 'A Nexus user';
-const publicStory = (s) => ({ id: s.id, name: storyName(s), role: STORY_ROLE[s.role] || 'Nexus user', place: s.place || null, text: s.text, rating: s.rating || null, at: s.approvedAt || s.createdAt, verified: true });
+const storyName = (s) => (s.show === 'full' ? s.name : initialsName(s.name)) || 'A Sehatra user';
+const publicStory = (s) => ({ id: s.id, name: storyName(s), role: STORY_ROLE[s.role] || 'Sehatra user', place: s.place || null, text: s.text, rating: s.rating || null, at: s.approvedAt || s.createdAt, verified: true });
 
 app.get('/api/public/stories', publicLimiter, (_req, res) => {
   res.set('Cache-Control', 'no-store');
@@ -522,12 +522,12 @@ app.get('/api/public/stories', publicLimiter, (_req, res) => {
 // The signed-in user's own story (to show "under review" instead of the form again).
 app.get('/api/stories/mine', auth, (req, res) => {
   const mine = db().stories.filter((s) => s.userId === req.user.id && s.status !== 'withdrawn').sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-  res.json({ story: mine ? { id: mine.id, status: mine.status, text: mine.text, show: mine.show, place: mine.place, rating: mine.rating, preview: publicStory(mine), reviewNote: mine.reviewNote || null } : null, role: STORY_ROLE[req.user.role] || 'Nexus user' });
+  res.json({ story: mine ? { id: mine.id, status: mine.status, text: mine.text, show: mine.show, place: mine.place, rating: mine.rating, preview: publicStory(mine), reviewNote: mine.reviewNote || null } : null, role: STORY_ROLE[req.user.role] || 'Sehatra user' });
 });
 
 app.post('/api/stories', auth, storyLimiter, (req, res) => {
   const d = db();
-  if (req.user.role === 'super_admin' || req.user.role === 'official') return res.status(403).json({ error: 'Stories are for people who use Nexus for care or run a practice on it.' });
+  if (req.user.role === 'super_admin' || req.user.role === 'official') return res.status(403).json({ error: 'Stories are for people who use Sehatra for care or run a practice on it.' });
   const b = req.body || {};
   const text = clean(b.text, 600).replace(/\s+/g, ' ');
   if (text.length < 30) return res.status(400).json({ error: 'Tell a little more — at least a couple of sentences (30 characters).' });
@@ -570,7 +570,7 @@ app.post('/api/admin/stories/:id/:action', auth, role('super_admin'), (req, res)
   if (!to) return res.status(400).json({ error: 'Unknown action.' });
   const note = clean(req.body?.note, 200) || null;
   Object.assign(s, { status: to, reviewedAt: nowIso(), reviewedBy: req.user.id, reviewNote: note, ...(to === 'approved' ? { approvedAt: s.approvedAt || nowIso() } : {}) });
-  if (to === 'approved') notify(s.userId, 'Your story is live 🎉', 'Thank you — it now appears on the Nexus Healthcare Testimonials page.');
+  if (to === 'approved') notify(s.userId, 'Your story is live 🎉', 'Thank you — it now appears on the Sehatra Testimonials page.');
   if (to === 'rejected') notify(s.userId, 'About your story', note || 'We couldn\'t publish it as written. You can share a new one any time.');
   audit(req.user, `story_${req.params.action}`, null, 'story', s.id);
   touch(s.userId);
@@ -878,7 +878,7 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
     };
     d.patients.push(patient);
   }
-  notify(user.id, 'Welcome to Nexus Healthcare 💚', `Your Health Passport ${patient.id} is ready. Add a family member or check your symptoms any time.`);
+  notify(user.id, 'Welcome to Sehatra 💚', `Your Health Passport ${patient.id} is ready. Add a family member or check your symptoms any time.`);
   audit(user, 'created_passport', patient.id, 'passport', phone ? 'Mobile verified by OTP' : 'Email verified by OTP');
   automation.emit('patient.registered', { patientId: patient.id, via: 'app', district: patient.district || null }, { contact: autoContact(patient) });
   store.save();
@@ -922,7 +922,7 @@ app.post('/api/auth/register/quick', registerLimiter, async (req, res) => {
     vaccinations: [], profileComplete: false, createdAt: nowIso(),
   };
   d.patients.push(patient);
-  notify(user.id, 'Welcome to Nexus Healthcare 💚', `Your Health Passport ${patient.id} is ready. Complete your profile so doctors near you can help faster.`);
+  notify(user.id, 'Welcome to Sehatra 💚', `Your Health Passport ${patient.id} is ready. Complete your profile so doctors near you can help faster.`);
   audit(user, 'created_passport', patient.id, 'passport', verified.phone ? 'Quick sign-up · mobile verified by OTP' : 'Quick sign-up · email verified by OTP');
   if (referral.referrer) audit(user, 'referral_joined', patient.id, 'credit', `invited by ${referral.referrer.id}`);
   automation.emit('patient.registered', { patientId: patient.id, via: 'app', district: patient.district || null }, { contact: autoContact(patient) });
@@ -1096,7 +1096,7 @@ app.post('/api/auth/password-reset/request', resetLimiter, async (req, res) => {
   if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Please enter a valid email address.' });
   const user = findUserByEmail(email);
   // Same answer whether or not the account exists (no account-existence oracle).
-  const reply = { ok: true, message: 'If this email has a Nexus Healthcare account, we\'ve sent a 6-digit code to it.', expiresIn: 300, resendIn: 30 };
+  const reply = { ok: true, message: 'If this email has a Sehatra account, we\'ve sent a 6-digit code to it.', expiresIn: 300, resendIn: 30 };
   if (!user || user.status === 'suspended') return res.json(reply);
   try {
     const sent = await otp.sendCode({ channel: 'email', email, lang: clean(req.body?.lang, 12) || 'en', ip: req.ip, purpose: 'reset' });
@@ -1149,7 +1149,7 @@ app.post('/api/auth/password-reset/confirm', resetVerifyLimiter, async (req, res
 
 // ---------- join the network (public partner applications) ----------
 // Two tracks: independent clinics/hospitals/labs/pharmacies list THEIR facility on the network,
-// and doctors apply to consult from Nexus Healthcare-owned E-Clinics as a side income. Every application
+// and doctors apply to consult from Sehatra-owned E-Clinics as a side income. Every application
 // lands in the admin verification queue; accounts stay `pending` (cannot sign in) until approved.
 const joinLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 8, message: 'Too many applications from this network. Please try again later.' });
 const SPECIALTIES = ['General Medicine', 'Family Medicine', 'Pediatrics', 'Obstetrics & Gynaecology', 'Cardiology', 'Dermatology', 'Orthopedics', 'ENT', 'Ophthalmology', 'Psychiatry', 'Neurology', 'Pulmonology', 'Endocrinology', 'Gastroenterology', 'Nephrology', 'Oncology', 'Dentistry', 'Physiotherapy', 'Ayurveda (AYUSH)', 'Homeopathy (AYUSH)'];
@@ -1265,7 +1265,7 @@ app.post('/api/public/join/doctor', joinLimiter, async (req, res) => {
     ...(listed ? { claimRequest: listed.id } : {}),
   };
   d.doctors.push(doc);
-  // Runs their own clinic and wants it on Nexus too: the clinic is created with the doctor as owner.
+  // Runs their own clinic and wants it on Sehatra too: the clinic is created with the doctor as owner.
   const clinicName = clean(b.clinicName, 120);
   if (clinicName.length >= 3 && !doc.ownsFacilityId) {
     const f = { id: store.id('fac'), type: 'hospital', subtype: 'clinic', name: clinicName, verified: false, country, district: '', state: '', ownerDoctorId: doc.id, partner: true, selfApplied: true, applicationRef: ref, appliedAt: nowIso(), departments: [], hours: '' };
@@ -1533,7 +1533,7 @@ const practiceOf = (doc, fac) => (isEClinicDoctor(doc) ? 'virtual' : fac ? (fac.
 const NEAR_RADIUS_KM = Number(process.env.NEAR_RADIUS_KM) || 20;
 
 // Doctors for these symptoms (or a department the patient picked) within 20 km of the patient — hospital
-// doctors, doctors running their own clinic, and Nexus virtual-clinic doctors. `scope=all` lifts the radius
+// doctors, doctors running their own clinic, and Sehatra virtual-clinic doctors. `scope=all` lifts the radius
 // and lists every centre in the patient's country (used to change doctor / get a second opinion).
 app.get('/api/doctors/recommend', auth, role('patient', 'caregiver', 'kiosk_operator'), (req, res) => {
   const d = db();
@@ -1572,7 +1572,7 @@ app.get('/api/doctors/recommend', auth, role('patient', 'caregiver', 'kiosk_oper
     const reasons = [exact ? `${doc.specialty} specialist` : gp ? 'General physician' : null, distanceKm !== null ? `${distanceKm} km away` : 'Video consult', a.available ? 'available now' : null, speaks ? `speaks ${p.language}` : null].filter(Boolean);
     const pub = publicDoctor(doc);
     return {
-      ...pub, ...stats, distanceKm, practice, at: practice === 'virtual' ? 'Nexus virtual clinic · video' : place === doc ? [doc.district, doc.state].filter(Boolean).join(', ') : place.name,
+      ...pub, ...stats, distanceKm, practice, at: practice === 'virtual' ? 'Sehatra virtual clinic · video' : place === doc ? [doc.district, doc.state].filter(Boolean).join(', ') : place.name,
       facility: fac ? { id: fac.id, name: fac.name, kind: fac.subtype === 'clinic' ? 'Clinic' : 'Hospital', district: fac.district } : null,
       matchScore: Math.round(score), match: exact ? 'specialist' : gp ? 'general' : 'other', reasons,
     };
@@ -1954,7 +1954,7 @@ app.get('/api/public/verify/:kind/:token', publicLimiter, (req, res) => {
   res.set('Cache-Control', 'no-store');
   const { kind } = req.params;
   const m = String(req.params.token || '').match(/^([A-Za-z0-9_-]{1,64})\.([A-Za-z0-9_-]{16})$/);
-  const bad = () => res.status(404).json({ valid: false, error: 'This code does not match any document on Nexus Healthcare. It may have been altered — ask the issuer.' });
+  const bad = () => res.status(404).json({ valid: false, error: 'This code does not match any document on Sehatra. It may have been altered — ask the issuer.' });
   if (!['rx', 'lab'].includes(kind) || !m) return bad();
   const [, id, sig] = m;
   const want = Buffer.from(verifySig(kind, id)); const got = Buffer.from(sig);
@@ -2081,7 +2081,7 @@ app.get('/api/prescriptions/:id/pharmacies', auth, role('patient', 'caregiver'),
 // or any other medicine by name. We show chemists within 50 km that have them, with prices. Pickup goes
 // straight to the chemist; home delivery is confirmed with a 35% advance on (medicines + delivery) and
 // the rest is paid on delivery. The chosen chemist gets a "new demand" pop-up and delivers itself, or a
-// Nexus rider collects from the counter. With no stock nearby, the patient can ask every chemist within
+// Sehatra rider collects from the counter. With no stock nearby, the patient can ask every chemist within
 // 50 km at once — the first to accept gets the order.
 const ADVANCE_SHARE = 0.35;
 const MED_ORDER_CLOSED = ['delivered', 'collected', 'declined', 'cancelled'];
@@ -2190,7 +2190,7 @@ app.post('/api/medicine-orders', auth, role('patient', 'caregiver'), async (req,
   if (b.pharmacyId === 'any') {
     // No single chemist has it — ask everyone within 50 km; the first to accept gets the order.
     candidates = nearbyPharmacies(d, origin, countryOf(p), orderRadius).map(({ f }) => f.id);
-    if (!candidates.length) return res.status(400).json({ error: `There's no chemist on Nexus within ${orderRadius} km of you yet. Try a bigger distance.` });
+    if (!candidates.length) return res.status(400).json({ error: `There's no chemist on Sehatra within ${orderRadius} km of you yet. Try a bigger distance.` });
     lines = items.map((it) => ({ ...it, unitPrice: catalog.priceOf(it.drug)?.mrp ?? null, lineTotal: catalog.priceOf(it.drug) ? catalog.round(catalog.priceOf(it.drug).mrp * it.qty) : null, estimated: true }));
     medicines = estimateItems(items);
   } else {
@@ -2276,14 +2276,14 @@ app.post('/api/medicine-orders/:id/respond', auth, role('pharmacist'), (req, res
     }
     o.status = 'declined'; o.declinedAt = nowIso(); o.declineReason = clean(req.body?.reason, 160) || 'Not available right now';
     if (o.advancePaid) o.refundDue = o.advancePaid;
-    credits.sweep(d, req.user); // the Nexus-credit part of the advance goes back as credit
+    credits.sweep(d, req.user); // the Sehatra-credit part of the advance goes back as credit
     patientOwnerUserIds(p).forEach((u) => notify(u, 'Order not accepted', `${o.pharmacyId ? f.name : 'Nearby chemists'} couldn't take order ${o.orderNo}: ${o.declineReason}.${o.advancePaid ? ` Your advance of ₹${o.advancePaid} will be refunded.` : ''} Try another chemist.`));
   } else {
     if (!o.pharmacyId) {
       // First to accept an open request: re-price at this chemist's rates; the other chemists' screens drop it.
       const q = quoteItems(d, o.items, f, geo.pointOf(p));
       const missing = q.lines.filter((l) => !l.inStock).map((l) => l.drug);
-      if (missing.length) return res.status(409).json({ error: `You don't have ${missing.join(', ')} in stock on Nexus. Update your stock, or decline so another chemist can take it.` });
+      if (missing.length) return res.status(409).json({ error: `You don't have ${missing.join(', ')} in stock on Sehatra. Update your stock, or decline so another chemist can take it.` });
       o.candidates.forEach((cid) => { if (cid !== fid) pharmacistsOf(d, cid).forEach((u) => touch(u.id)); });
       o.pharmacyId = fid;
       const lines = q.lines.filter((l) => l.inStock).map(({ drug, qty, unit, unitPrice, lineTotal, switchedFrom }) => ({ drug, qty, unit, unitPrice, lineTotal, ...(switchedFrom ? { switchedFrom } : {}) }));
@@ -2296,7 +2296,7 @@ app.post('/api/medicine-orders/:id/respond', auth, role('pharmacist'), (req, res
     }
     o.status = 'accepted'; o.acceptedAt = nowIso();
     if (o.fulfilment === 'delivery') o.deliveryBy = req.body?.deliveryBy === 'store' ? 'store' : 'nexus';
-    const how = o.fulfilment === 'pickup' ? `Pick it up at ${f.name}${f.address ? `, ${f.address}` : ''} — show code ${o.otp} at the counter.` : o.deliveryBy === 'store' ? `${f.name} will deliver it to you.` : `A Nexus rider will collect it from ${f.name} and bring it to you.`;
+    const how = o.fulfilment === 'pickup' ? `Pick it up at ${f.name}${f.address ? `, ${f.address}` : ''} — show code ${o.otp} at the counter.` : o.deliveryBy === 'store' ? `${f.name} will deliver it to you.` : `A Sehatra rider will collect it from ${f.name} and bring it to you.`;
     patientOwnerUserIds(p).forEach((u) => notify(u, 'Order accepted ✅', `${o.orderNo}: ${how}`));
   }
   audit(req.user, `medorder_${o.status}`, o.patientId, 'medicine', o.orderNo);
@@ -2563,7 +2563,7 @@ function labQuote(lab, tests, origin) {
     homeCollection: !!lab.homeCollection, reportVia: lab.reportVia || ['App'], distanceKm: geo.km(origin, geo.pointOf(lab)),
     lines, offersAll: offered.length === tests.length, missing: tests.filter((t) => !offered.includes(t)).map((t) => catalog.nameOfTest(t.code, t.name)),
     total: lines.reduce((s, l) => s + (l.price || 0), 0), reportInHours: lines.length ? Math.max(...lines.map((l) => l.tatHours)) : null,
-    // Test prices come from the Nexus reference price list (labs can't enter their own list yet) and report
+    // Test prices come from the Sehatra reference price list (labs can't enter their own list yet) and report
     // times are typical turnaround — both indicative, and labelled so on every screen that shows them.
     indicative: true,
   };
@@ -2591,7 +2591,7 @@ app.get('/api/patient/tests', auth, role('patient', 'caregiver'), (req, res) => 
   res.json({ orders, steps: LAB_STEPS });
 });
 
-// Lab trust signals: rating & reviews, and how many tests it has completed on Nexus (popularity).
+// Lab trust signals: rating & reviews, and how many tests it has completed on Sehatra (popularity).
 const LAB_ADVANCE_SHARE = 0.2; // paid online to confirm a lab booking (cuts fake bookings); the rest at the lab
 // The flat home sample-collection charge added to a lab booking (one figure for quotes, bookings and public pages).
 const LAB_HOME_FEE = Math.max(0, Number(process.env.LAB_HOME_FEE ?? 50) || 0);
@@ -2686,14 +2686,14 @@ app.post('/api/lab-orders/:id/book', auth, role('patient', 'caregiver'), async (
 });
 
 // ---------- bookings, payments, visit passes ----------
-// Patient picks a doctor → chooses video / at the doctor's own hospital or clinic / at a Nexus E-Clinic →
+// Patient picks a doctor → chooses video / at the doctor's own hospital or clinic / at a Sehatra E-Clinic →
 // pays → the consult unlocks, the doctor gets a pop-up, and in-person visits get a rotating QR pass.
 const PASS_WINDOW_S = 30;
 const passWindow = () => Math.floor(Date.now() / 1000 / PASS_WINDOW_S);
 const passCode = (c, w) => String(parseInt(crypto.createHmac('sha256', JWT_SECRET).update(`${c.id}:${c.visitSecret}:${w}`).digest('hex').slice(0, 8), 16) % 1000000).padStart(6, '0');
 const checkInLimiter = security.rateLimit({ windowMs: 60000, max: 20, key: (r) => r.headers.authorization || '', message: 'Too many check-in attempts. Wait a minute and try again.' });
 
-// Nexus E-Clinics (in person) are "coming soon": shown, not bookable, until ECLINICS_LIVE=true.
+// Sehatra E-Clinics (in person) are "coming soon": shown, not bookable, until ECLINICS_LIVE=true.
 const ECLINICS_LIVE = process.env.ECLINICS_LIVE === 'true';
 // A flat booking amount keeps fake / no-show bookings away. In-person visits pay the doctor's own
 // consultation fee at the clinic; video consults are paid in full online (never less than the booking fee).
@@ -2738,10 +2738,10 @@ app.post('/api/bookings', auth, role('patient', 'caregiver'), async (req, res) =
   const visitType = ['video', 'clinic', 'eclinic'].includes(b.visitType) ? b.visitType : 'video';
   let location = null;
   if (visitType === 'clinic') {
-    if (!opts.clinic) return res.status(400).json({ error: 'This doctor doesn\'t see patients at a clinic on Nexus. Choose a video consult.' });
+    if (!opts.clinic) return res.status(400).json({ error: 'This doctor doesn\'t see patients at a clinic on Sehatra. Choose a video consult.' });
     location = { kind: 'clinic', ...opts.clinic };
   } else if (visitType === 'eclinic') {
-    if (!ECLINICS_LIVE) return res.status(400).json({ error: 'Nexus E-Clinics are coming soon. Please book a video consult or visit the doctor\'s clinic.' });
+    if (!ECLINICS_LIVE) return res.status(400).json({ error: 'Sehatra E-Clinics are coming soon. Please book a video consult or visit the doctor\'s clinic.' });
     const ec = opts.eclinics.find((x) => x.facilityId === b.eClinicId);
     if (!ec) return res.status(400).json({ error: 'Choose one of this doctor\'s E-Clinics.' });
     location = { kind: 'eclinic', ...ec };
@@ -2864,12 +2864,12 @@ function finalizePayment(d, pay, user) {
   } else if (pay.purpose === 'lab_advance') {
     const o = d.labOrders.find((x) => x.id === pay.refId);
     if (!o || o.booking?.paymentId !== pay.id) return;
-    Object.assign(o.booking, { paidAt: nowIso(), advancePaid: pay.gross ?? pay.amount }); // gross: Nexus credit counts as paid
+    Object.assign(o.booking, { paidAt: nowIso(), advancePaid: pay.gross ?? pay.amount }); // gross: Sehatra credit counts as paid
     o.needsBooking = false;
     const p = d.patients.find((x) => x.id === o.patientId);
     const when = o.booking.slot ? ` · ${new Date(o.booking.slot).toLocaleString('en-IN', { timeZone: APP_TZ, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` : '';
     d.users.filter((u) => u.role === 'lab_tech' && u.facilityId === o.labId).forEach((u) => notify(u.id, 'New paid test booking', `${p?.name} · ${o.tests.map((t) => t.name).join(', ')} · ${o.booking.homeCollection ? 'home collection' : 'walk-in'}${when} · ₹${o.booking.advancePaid} advance paid, collect ₹${o.booking.balance}`));
-    patientOwnerUserIds(p).forEach((u) => notify(u, 'Test booked ✅', `${facilityName(o.labId)}${when}. ₹${o.booking.advancePaid} paid${pay.creditApplied ? ` (₹${pay.creditApplied} Nexus credit)` : ''} — pay ₹${o.booking.balance} at the lab. Report in about ${o.booking.reportInHours} hours after the sample.`));
+    patientOwnerUserIds(p).forEach((u) => notify(u, 'Test booked ✅', `${facilityName(o.labId)}${when}. ₹${o.booking.advancePaid} paid${pay.creditApplied ? ` (₹${pay.creditApplied} Sehatra credit)` : ''} — pay ₹${o.booking.balance} at the lab. Report in about ${o.booking.reportInHours} hours after the sample.`));
     audit(user, 'paid_lab_advance', o.patientId, 'lab', `${o.id} · ₹${pay.amount}`);
     automation.emit('lab.booked', { labOrderId: o.id, patientId: o.patientId, labId: o.labId, labName: facilityName(o.labId), testsCount: o.tests.length, homeCollection: !!o.booking.homeCollection, slot: o.booking.slot || null, advancePaid: o.booking.advancePaid, creditApplied: pay.creditApplied || 0, balance: o.booking.balance, reportInHours: o.booking.reportInHours }, { contact: autoContact(p) });
     credits.rewardReferral(d, pay);
@@ -2894,12 +2894,12 @@ function payableProblem(d, pay) {
   if (pay.purpose === 'care_plan') {
     const pl = d.carePlans.find((x) => x.id === pay.refId);
     if (!pl || pl.status === 'ended') return 'This care plan has ended.';
-    if (!doctorById(pl.doctorId)) return 'This doctor is no longer on Nexus.';
+    if (!doctorById(pl.doctorId)) return 'This doctor is no longer on Sehatra.';
   }
   if (pay.purpose === 'consult') {
     const c = d.consults.find((x) => x.id === pay.refId);
     if (!c || c.status !== 'awaiting_payment') return 'This booking was cancelled or has expired. Please book again.';
-    if (!d.doctors.some((x) => x.id === c.doctorId)) return 'This doctor is no longer taking bookings on Nexus. Please book another doctor.';
+    if (!d.doctors.some((x) => x.id === c.doctorId)) return 'This doctor is no longer taking bookings on Sehatra. Please book another doctor.';
     if (c.scheduledAt && Date.parse(c.scheduledAt) < Date.now() - 15 * 60000) return 'This appointment time has passed. Please book a new time.';
   } else if (pay.purpose === 'lab_advance') {
     const o = d.labOrders.find((x) => x.id === pay.refId);
@@ -2944,7 +2944,7 @@ app.post('/api/payments/:id/confirm', auth, (req, res) => {
     pay.status = 'refund_pending'; pay.paidAt = nowIso(); pay.refundReason = problem;
     audit(req.user, 'payment_refund_due', pay.patientId, 'payment', `${pay.id} · ₹${pay.amount} · ${problem}`);
     automation.emit('payment.refund_due', { paymentId: pay.id, purpose: pay.purpose, amount: pay.amount, method: pay.method, gatewayPaymentId: pay.gatewayPaymentId || null, reason: problem, patientId: pay.patientId || null });
-    credits.sweep(d, req.user); // any Nexus credit on it comes back as credit
+    credits.sweep(d, req.user); // any Sehatra credit on it comes back as credit
     store.save();
     return res.status(409).json({ error: `${problem} Your ₹${pay.amount} will be refunded automatically.` });
   }
@@ -3237,7 +3237,7 @@ function sweepCarePlans(now = Date.now()) {
     if (!['active', 'lapsed'].includes(pl.status)) continue;
     const p = patientById(pl.patientId);
     const doc = doctorById(pl.doctorId);
-    if (!p || !doc) { Object.assign(pl, { status: 'ended', endedAt: nowIso(), endReason: !p ? 'Patient record removed' : 'Doctor no longer on Nexus' }); changed = true; continue; }
+    if (!p || !doc) { Object.assign(pl, { status: 'ended', endedAt: nowIso(), endReason: !p ? 'Patient record removed' : 'Doctor no longer on Sehatra' }); changed = true; continue; }
     pl.flags = pl.flags || {};
     const owners = patientOwnerUserIds(p);
     // Paid month over: lapse after a 3-day grace, once.
@@ -3278,7 +3278,7 @@ function sweepCarePlans(now = Date.now()) {
   if (changed) { store.save(); broadcast('careplans', 'notifications'); }
 }
 
-// ---------- Nexus credit + Refer & earn (rules and ledger in credits.js) ----------
+// ---------- Sehatra credit + Refer & earn (rules and ledger in credits.js) ----------
 // Credit can cover up to 100% of a consult / lab advance / medicine advance. A part-covered payment leaves at
 // least ₹1 for the gateway; a fully covered one is confirmed right here through the same finalizePayment.
 credits.init({ audit, notify });
@@ -3313,12 +3313,12 @@ app.get('/api/credits', auth, role('patient', 'caregiver'), (req, res) => {
   res.json({ balance, history: credits.history(d, req.user.id), creditDays: credits.CREDIT_DAYS });
 });
 
-// The payment step's "Use ₹X Nexus credit" toggle. Body: { useCredit: true|false } — the amount is always ours.
+// The payment step's "Use ₹X Sehatra credit" toggle. Body: { useCredit: true|false } — the amount is always ours.
 app.post('/api/payments/:id/credit', auth, role('patient', 'caregiver'), async (req, res) => {
   const d = db();
   const pay = d.payments.find((x) => x.id === req.params.id);
   if (!pay || pay.userId !== req.user.id) return res.status(404).json({ error: 'Payment not found.' });
-  if (!credits.PURPOSES.has(pay.purpose)) return res.status(400).json({ error: 'Nexus credit can be used for consults, lab tests and medicine orders.' });
+  if (!credits.PURPOSES.has(pay.purpose)) return res.status(400).json({ error: 'Sehatra credit can be used for consults, lab tests and medicine orders.' });
   if (pay.status !== 'created') return res.status(409).json({ error: pay.status === 'paid' ? 'This is already paid.' : 'This payment was cancelled. Please book again.' });
   if (creditBusy.has(pay.id)) return res.status(409).json({ error: 'One moment — we\'re still updating this payment.' });
   const problem = payableProblem(d, pay);
@@ -3331,7 +3331,7 @@ app.post('/api/payments/:id/credit', auth, role('patient', 'caregiver'), async (
     if (use) {
       // Debit and payment update happen in this one synchronous block — two taps (or two tabs) can't both spend it.
       const want = credits.coverable(gross, credits.balance(d, req.user.id));
-      if (want <= 0) return res.status(400).json({ error: 'You don\'t have Nexus credit to use right now.' });
+      if (want <= 0) return res.status(400).json({ error: 'You don\'t have Sehatra credit to use right now.' });
       const applied = credits.spend(d, req.user, req.user.id, want, pay.id);
       Object.assign(pay, { gross, creditApplied: applied, creditReturned: null, amount: credits.r2(gross - applied) });
     } else {
@@ -3340,7 +3340,7 @@ app.post('/api/payments/:id/credit', auth, role('patient', 'caregiver'), async (
     }
     if (pay.amount <= 0) {
       Object.assign(pay, { amount: 0, status: 'paid', paidAt: nowIso(), method: 'credit', orderId: null });
-      audit(req.user, 'paid_with_credit', pay.patientId, 'payment', `${pay.id} · ₹${pay.creditApplied} Nexus credit`);
+      audit(req.user, 'paid_with_credit', pay.patientId, 'payment', `${pay.id} · ₹${pay.creditApplied} Sehatra credit`);
       finalizePayment(d, pay, req.user);
       store.save();
       broadcast('consults', 'queue', 'prescriptions', 'pharmacy', 'payments', 'lab', 'medorders');
@@ -3363,7 +3363,7 @@ app.post('/api/payments/:id/credit', auth, role('patient', 'caregiver'), async (
           Object.assign(pay, { creditApplied: applied, creditReturned: null, amount: credits.r2(gross - applied), orderId: applied === prevApplied ? oldOrder : null });
         }
         store.save();
-        return res.status(502).json({ error: use ? `${e.message} Your Nexus credit wasn't used.` : `${e.message} Your Nexus credit is still applied.` });
+        return res.status(502).json({ error: use ? `${e.message} Your Sehatra credit wasn't used.` : `${e.message} Your Sehatra credit is still applied.` });
       } finally { creditBusy.delete(pay.id); }
       credits.sweep(d, req.user); // voided while we waited → the credit goes straight back
     }
@@ -4090,7 +4090,7 @@ function sweepWellness(now = Date.now()) {
       const parts = [todayList.length ? `Due now: ${todayList.join(', ')}.` : '', soon.length ? `Coming up on ${shortDay(soon[0].dueOn)}: ${soon.map((x) => x.name).join(', ')}.` : ''].filter(Boolean);
       owners.forEach((u) => notify(u, todayList.length ? `Vaccine due for ${first}` : `Vaccine due soon for ${first}`, `${parts.join(' ')} Mark it as given in the app once done. ${catalog.UIP_NOTE}`, 'reminder'));
       // No vaccine names in email (emails carry no medical details) — just a nudge to open the app.
-      emailPatient(p, `Vaccination reminder for ${first}`, [`${first} has a vaccination ${todayList.length ? 'due now' : `coming up on ${shortDay(soon[0].dueOn)}`}.`, 'Open the app to see which one, and mark it as given once done.'], { why: 'You are receiving this because vaccination reminders are on in Nexus Healthcare.', hello: false });
+      emailPatient(p, `Vaccination reminder for ${first}`, [`${first} has a vaccination ${todayList.length ? 'due now' : `coming up on ${shortDay(soon[0].dueOn)}`}.`, 'Open the app to see which one, and mark it as given once done.'], { why: 'You are receiving this because vaccination reminders are on in Sehatra.', hello: false });
       out.vaccine += 1;
     }
     const r = p.vitalsReminder;
@@ -4182,7 +4182,7 @@ app.get('/api/doctor/home', auth, role('doctor'), (req, res) => {
       return {
       ...consultCard(c), forDoctor: c.doctorId !== doc.id ? d.doctors.find((x) => x.id === c.doctorId)?.name : null,
       patient: { bloodGroup: pt.bloodGroup && pt.bloodGroup !== 'Unknown' ? pt.bloodGroup : null, allergies: pt.allergies || [], conditions: pt.conditions || [], currentMeds: pt.currentMeds || [], district: pt.district, country: countryOf(pt) },
-      // Has this patient been seen before — by this doctor or anyone on Nexus?
+      // Has this patient been seen before — by this doctor or anyone on Sehatra?
       previousVisits: [...h.visits].sort((a, b) => (a.completedAt < b.completedAt ? 1 : -1)).slice(0, 5)
         .map((x) => ({ date: x.completedAt, doctorName: doctorById(x.doctorId)?.name, withYou: x.doctorId === doc.id, diagnosis: x.diagnosis || x.triage?.symptoms })),
       pastPrescriptions: h.rx.slice(-3).reverse().map((r) => ({ date: r.createdAt, doctorName: doctorById(r.doctorId)?.name, items: r.items.map((i) => i.drug) })),
@@ -4273,7 +4273,7 @@ const verhoeffOk = (num) => { let c = 0; [...num].reverse().forEach((ch, i) => {
 app.put('/api/doctor/profile', auth, role('doctor'), async (req, res) => {
   const d = db();
   const doc = doctorFor(req.user);
-  if (doc.verified) return res.status(409).json({ error: 'Your profile is verified. To change credentials, contact the Nexus Healthcare team.' });
+  if (doc.verified) return res.status(409).json({ error: 'Your profile is verified. To change credentials, contact the Sehatra team.' });
   const b = req.body || {};
   const age = parseInt(b.age, 10);
   if (!Number.isInteger(age) || age < 22 || age > 90) return res.status(400).json({ error: 'Please enter your age (22–90).' });
@@ -4480,7 +4480,7 @@ app.delete('/api/doctor/rx-templates/:id', auth, role('doctor'), (req, res) => {
 // Same earnings rule as completion/doctorWeek (kiosk → the doctor's fee, otherwise what the patient paid). The
 // 10% platform fee is the payout rule shown on the Earnings page; TDS is the doctor's CA's job, so not computed.
 const PLATFORM_FEE_RATE = 0.1;
-// Care plans: Nexus does the month-long work (reminders, tracking, alerts), so its share is larger.
+// Care plans: Sehatra does the month-long work (reminders, tracking, alerts), so its share is larger.
 const CARE_PLAN_FEE_RATE = 0.25;
 app.get('/api/doctor/statement', auth, role('doctor'), (req, res) => {
   const doc = doctorFor(req.user);
@@ -4514,7 +4514,7 @@ app.get('/api/doctor/statement', auth, role('doctor'), (req, res) => {
   const fac = doc.facilityId ? db().facilities.find((f) => f.id === doc.facilityId) : null;
   res.json({
     month, generatedAt: nowIso(),
-    doctor: { name: doc.name, regNo: doc.regNo, specialty: doc.specialty, qualification: doc.qualification, fee: doc.fee, affiliation: isEClinicDoctor(doc) ? 'Nexus Healthcare E-Clinics' : fac?.verified ? fac.name : null },
+    doctor: { name: doc.name, regNo: doc.regNo, specialty: doc.specialty, qualification: doc.qualification, fee: doc.fee, affiliation: isEClinicDoctor(doc) ? 'Sehatra E-Clinics' : fac?.verified ? fac.name : null },
     days: days.map((r) => ({ ...r, fees: catalog.round(r.fees), planFees: catalog.round(r.planFees) })),
     totals: { consults: days.reduce((s, r) => s + r.consults, 0), kiosk: days.reduce((s, r) => s + r.kiosk, 0), online: days.reduce((s, r) => s + r.online, 0), plans: days.reduce((s, r) => s + r.plans, 0), consultFees, planFees, gross, platformFeeRate: PLATFORM_FEE_RATE, carePlanFeeRate: CARE_PLAN_FEE_RATE, consultPlatformFee, planPlatformFee, platformFee, payout: catalog.round(gross - platformFee) },
   });
@@ -4533,10 +4533,10 @@ function listDoctorAt(d, f, b, by) {
   const phone = b.phone ? normalizePhone(clean(b.phone, 20)) : null;
   if (!email && !phone) return { error: 'Add the doctor\'s email or mobile so they can claim their profile.' };
   const regNo = clean(b.regNo, 30).toUpperCase();
-  if (regNo && d.doctors.some((x) => x.regNo && x.regNo.toUpperCase() === regNo)) return { error: 'A doctor with this registration number is already on Nexus.' };
+  if (regNo && d.doctors.some((x) => x.regNo && x.regNo.toUpperCase() === regNo)) return { error: 'A doctor with this registration number is already on Sehatra.' };
   const existing = d.users.find((u) => u.role === 'doctor' && ((email && u.email === email) || (phone && samePhone(u.phone, phone))));
-  // Already on Nexus with their own account: we never attach a doctor to a clinic without their consent.
-  if (existing) return { error: `${existing.name} already has a Nexus account. Ask them to add ${f.name} from their own portal.` };
+  // Already on Sehatra with their own account: we never attach a doctor to a clinic without their consent.
+  if (existing) return { error: `${existing.name} already has a Sehatra account. Ask them to add ${f.name} from their own portal.` };
   // The fee patients see is the one the clinic entered (or its OPD fee) — never a made-up default.
   const typedFee = parseInt(b.fee, 10);
   const fee = typedFee >= 0 && typedFee <= 5000 && String(b.fee ?? '').trim() !== '' ? typedFee : (f.opdFee ?? null);
@@ -4567,7 +4567,7 @@ app.get('/api/doctor/clinic', auth, role('doctor'), (req, res) => {
 app.post('/api/doctor/clinic', auth, role('doctor'), (req, res) => {
   const d = db();
   const doc = doctorFor(req.user);
-  if (doc.ownsFacilityId) return res.status(409).json({ error: 'You already have a clinic on Nexus.' });
+  if (doc.ownsFacilityId) return res.status(409).json({ error: 'You already have a clinic on Sehatra.' });
   const name = clean(req.body?.name, 120);
   if (name.length < 3) return res.status(400).json({ error: 'Please enter the clinic name.' });
   const f = { id: store.id('fac'), type: 'hospital', subtype: 'clinic', name, verified: false, country: countryOf(doc), district: doc.district || '', state: doc.state || '', ownerDoctorId: doc.id, partner: true, selfApplied: true, appliedAt: nowIso(), departments: [], hours: '' };
@@ -4580,7 +4580,7 @@ app.post('/api/doctor/clinic', auth, role('doctor'), (req, res) => {
 
 app.put('/api/doctor/clinic', auth, role('doctor'), (req, res) => {
   const f = ownedClinic(req.user);
-  if (!f) return res.status(404).json({ error: 'You don\'t have a clinic on Nexus yet.' });
+  if (!f) return res.status(404).json({ error: 'You don\'t have a clinic on Sehatra yet.' });
   const b = req.body || {};
   // After verification the clinic's name, registration and address are locked (contact support to change).
   if (!f.verified && b.name !== undefined && clean(b.name, 120).length >= 3) f.name = clean(b.name, 120);
@@ -4613,7 +4613,7 @@ app.delete('/api/doctor/clinic/doctors/:id', auth, role('doctor'), (req, res) =>
   const f = ownedClinic(req.user);
   const x = f && d.doctors.find((y) => y.id === req.params.id && y.facilityId === f.id && y.id !== doctorFor(req.user).id);
   if (!x) return res.status(404).json({ error: 'Doctor not found at your clinic.' });
-  if (x.userId) { x.facilityId = null; x.engagement = 'independent'; notify(x.userId, 'Clinic listing removed', `${f.name} removed you from its doctors on Nexus.`); } else d.doctors.splice(d.doctors.indexOf(x), 1);
+  if (x.userId) { x.facilityId = null; x.engagement = 'independent'; notify(x.userId, 'Clinic listing removed', `${f.name} removed you from its doctors on Sehatra.`); } else d.doctors.splice(d.doctors.indexOf(x), 1);
   store.save();
   broadcast('doctors');
   res.json({ ok: true, doctors: clinicDoctorsOf(d, f.id, doctorFor(req.user).id) });
@@ -4762,7 +4762,7 @@ app.post('/api/doctor/consent-request', auth, role('doctor'), (req, res) => {
 });
 
 // ---- in-clinic / walk-in prescriptions -------------------------------------------------------
-// Any verified doctor — Nexus E-Clinic partner, or a doctor at a registered hospital/clinic seeing a
+// Any verified doctor — Sehatra E-Clinic partner, or a doctor at a registered hospital/clinic seeing a
 // patient in person — can issue a digital prescription. The patient approves with a one-time code
 // sent to their own phone/email (proof they are present), then the prescription lands in their app
 // and can be shared with a chemist and a lab / diagnostic centre in one go.
@@ -4997,7 +4997,7 @@ app.post('/api/doctor/prescriptions', auth, role('doctor'), async (req, res) => 
     complaint: clean(b.complaint, 300) || null, dos: cleanList(b.dos, 12), donts: cleanList(b.donts, 12),
     status: pharmacy ? 'sent' : 'issued', pharmacyId: pharmacy?.id || null, fulfilment: pharmacy ? 'pickup' : undefined, sentAt: pharmacy ? nowIso() : undefined,
     createdAt: nowIso(), signature: `${doc.name} · ${doc.regNo}`, warnings: items.length ? engines.checkPrescription(p, items) : [],
-    source: isEClinicDoctor(doc) ? 'eclinic' : 'clinic', facilityId: fac?.id || null, facilityName: fac?.name || (isEClinicDoctor(doc) ? 'Nexus Healthcare E-Clinic' : null), paperFileId,
+    source: isEClinicDoctor(doc) ? 'eclinic' : 'clinic', facilityId: fac?.id || null, facilityName: fac?.name || (isEClinicDoctor(doc) ? 'Sehatra E-Clinic' : null), paperFileId,
   };
   const rxSaved = Boolean(items.length || paperFileId);
   if (rxSaved) d.prescriptions.push(rx);
@@ -5382,7 +5382,7 @@ app.get('/api/hospital/reception/lookup', auth, role('hospital_admin'), receptio
   res.json(found.map((p) => deskPatient(d, p)));
 });
 
-// Not on Nexus yet: a quick passport with just name, age, sex and mobile (no records, no consent to anyone).
+// Not on Sehatra yet: a quick passport with just name, age, sex and mobile (no records, no consent to anyone).
 app.post('/api/hospital/reception/patients', auth, role('hospital_admin'), (req, res) => {
   const d = db();
   const f = d.facilities.find((x) => x.id === req.user.facilityId);
@@ -5723,7 +5723,7 @@ app.post('/api/hospital/roster', auth, role('hospital_admin'), (req, res) => {
   res.json(r);
 });
 
-// Hospitals list their doctors on Nexus (bookable by patients once the hospital is verified).
+// Hospitals list their doctors on Sehatra (bookable by patients once the hospital is verified).
 app.get('/api/hospital/doctors', auth, role('hospital_admin'), (req, res) => {
   res.json({ doctors: clinicDoctorsOf(db(), req.user.facilityId), specialties: SPECIALTIES });
 });
@@ -6418,8 +6418,8 @@ app.put('/api/inventory/:id', auth, role('pharmacist', 'distributor'), (req, res
 });
 
 // ---------- No manual medicine entry: shared stock intake, barcode learning, bulk paste, one-tap purchase receipt ----------
-// Stock arrives three ways without typing: (1) a distributor on Nexus already billed it — the chemist taps "Add to
-// my stock"; (2) a pack is scanned — batch/expiry come from the GS1 code and the medicine NAME from Nexus's barcode
+// Stock arrives three ways without typing: (1) a distributor on Sehatra already billed it — the chemist taps "Add to
+// my stock"; (2) a pack is scanned — batch/expiry come from the GS1 code and the medicine NAME from Sehatra's barcode
 // book, learned the first time any verified store names that barcode; (3) rows pasted straight from Excel.
 const GTIN_RE = /^\d{8,14}$/;
 const normGtin = (g) => { const s = String(g || '').replace(/\D/g, ''); return GTIN_RE.test(s) ? s.padStart(14, '0') : null; };
@@ -6489,7 +6489,7 @@ app.post('/api/inventory/bulk', auth, role('pharmacist', 'distributor'), (req, r
   res.json({ added: added.length, errors });
 });
 
-// Medicines bought from a distributor on Nexus: their B2B invoice already has every line, batch and expiry.
+// Medicines bought from a distributor on Sehatra: their B2B invoice already has every line, batch and expiry.
 app.get('/api/pharmacy/purchases', auth, role('pharmacist'), (req, res) => {
   const fid = req.user.facilityId;
   const list = db().bills.filter((b) => b.type === 'warehouse' && b.customer?.facilityId === fid && b.status !== 'cancelled')
@@ -6598,7 +6598,7 @@ app.post('/api/gov/transfers', auth, role('official'), (req, res) => {
     if (!sc.inScope(to)) return res.status(403).json({ error: `You can only send stock into your own ${sc.level}.` });
   }
   const dest = neediestPharmacy(d, drug, to);
-  if (!dest) return res.status(404).json({ error: `There's no verified chemist on Nexus in ${to.district} to receive it yet.` });
+  if (!dest) return res.status(404).json({ error: `There's no verified chemist on Sehatra in ${to.district} to receive it yet.` });
   let src = null;
   if (from?.district) {
     src = d.facilities.filter((f) => f.verified && ['pharmacy', 'warehouse'].includes(f.type) && f.id !== dest.id && sc.inScope(f) && f.district === from.district && (!from.state || f.state === from.state))
@@ -6606,7 +6606,7 @@ app.post('/api/gov/transfers', auth, role('official'), (req, res) => {
     if (!src) return res.status(404).json({ error: `No verified chemist or warehouse in ${from.district} has ${qty} spare of ${drug} above its safety stock.` });
   } else {
     const hit = engines.findStock(d, drug, to, qty).find((x) => x.facilityId !== dest.id && x.facility?.verified && sc.inScope(x.facility));
-    if (!hit) return res.status(404).json({ error: `No verified source on Nexus has ${qty} spare of ${drug}. Try a smaller quantity.` });
+    if (!hit) return res.status(404).json({ error: `No verified source on Sehatra has ${qty} spare of ${drug}. Try a smaller quantity.` });
     src = hit.facility;
   }
   const realDrug = d.inventory.find((i) => i.facilityId === src.id && sameDrug(i.drug, drug))?.drug || drug;
@@ -6635,7 +6635,7 @@ app.post('/api/supply/offers', auth, role('distributor'), (req, res) => {
   const spare = spareOf(d, wh.id, a.drug);
   if (qty > spare) return res.status(400).json({ error: `You have ${spare} spare above safety stock — offer that many or fewer.` });
   const dest = neediestPharmacy(d, a.drug, a, wh.id);
-  if (!dest) return res.status(404).json({ error: `No verified chemist on Nexus in ${a.district} to receive it yet.` });
+  if (!dest) return res.status(404).json({ error: `No verified chemist on Sehatra in ${a.district} to receive it yet.` });
   const drug = d.inventory.find((i) => i.facilityId === wh.id && sameDrug(i.drug, a.drug))?.drug || a.drug;
   const t = { id: store.id('tr'), drug, qty, fromId: wh.id, toId: dest.id, status: 'accepted', reason: `Offered by ${wh.name} for the ${a.district} shortage`, alertId: a.id, createdAt: nowIso() };
   d.transfers.unshift(t);
@@ -6700,7 +6700,7 @@ app.post('/api/transfers/:id/:action', auth, role('pharmacist', 'distributor'), 
   else if (action === 'dispatch') {
     // Nothing ships that isn't on the shelf: without a stock line the receiver would gain units from nowhere.
     const inv = d.inventory.find((i) => i.facilityId === t.fromId && sameDrug(i.drug, t.drug));
-    if (!inv) return res.status(400).json({ error: `${t.drug} isn't on your shelf on Nexus. Add it to your stock first, or decline this request.` });
+    if (!inv) return res.status(400).json({ error: `${t.drug} isn't on your shelf on Sehatra. Add it to your stock first, or decline this request.` });
     if (inv.qty - t.qty < (inv.safetyStock || 0)) return res.status(400).json({ error: 'This would take you below safety stock. Reduce the quantity or decline.' });
     inv.qty -= t.qty; inv.updatedAt = nowIso();
     t.batch = inv.batch || null; t.expiry = inv.expiry || null; // what was actually sent, for the receiving shelf
@@ -6904,7 +6904,7 @@ app.post('/api/deliveries/:id/status', auth, role('delivery'), async (req, res) 
 });
 
 // ---------- Partner billing: pharmacy counter sales, warehouse B2B invoices, lab bills (maths in billing.js) ----------
-// Every bill is a real sale from the partner's own records: medicine lines come out of their Nexus stock (and go
+// Every bill is a real sale from the partner's own records: medicine lines come out of their Sehatra stock (and go
 // back if the bill is cancelled), lab lines from their test list / packages / a booked order's balance. Numbers
 // continue the facility's own financial-year series (a pharmacy shares it with its medicine-order invoices).
 const BILLING_TYPE = { pharmacist: 'pharmacy', distributor: 'warehouse', lab_tech: 'lab' };
@@ -6919,7 +6919,7 @@ const nextBillNo = (f) => {
   f.invoiceSeq = { ...(f.invoiceSeq || {}), [fy]: ((f.invoiceSeq || {})[fy] || 0) + 1 };
   return `${billing.PREFIX[f.type]}/${fy}/${String(f.invoiceSeq[fy]).padStart(5, '0')}`;
 };
-// Default selling price per unit: what Nexus already quotes patients for a pharmacy (MRP × the store's factor);
+// Default selling price per unit: what Sehatra already quotes patients for a pharmacy (MRP × the store's factor);
 // for a warehouse a suggested trade price (70% of MRP, before GST) the distributor edits to their own.
 const defaultPrice = (f, drug) => {
   const pr = catalog.priceOf(drug);
@@ -6991,7 +6991,7 @@ app.post('/api/billing/bills', auth, role('pharmacist', 'distributor', 'lab_tech
   if (!raw.length) return res.status(400).json({ error: 'Add at least one item.' });
   if (raw.length > BILL_LINES_MAX) return res.status(400).json({ error: `A bill can have up to ${BILL_LINES_MAX} lines.` });
 
-  // Customer: a Nexus chemist (warehouse) or anyone by name; walk-ins can stay nameless for cash/UPI/card.
+  // Customer: a Sehatra chemist (warehouse) or anyone by name; walk-ins can stay nameless for cash/UPI/card.
   const c = b.customer && typeof b.customer === 'object' ? b.customer : {};
   const linked = f.type === 'warehouse' && c.facilityId ? d.facilities.find((x) => x.id === c.facilityId && x.type === 'pharmacy') : null;
   const customer = linked
@@ -7032,7 +7032,7 @@ app.post('/api/billing/bills', auth, role('pharmacist', 'distributor', 'lab_tech
       continue;
     }
     const inv = d.inventory.find((i) => i.id === l.inventoryId && i.facilityId === f.id);
-    if (!inv) return res.status(400).json({ error: 'Each medicine must come from your stock on Nexus — add it to stock first.' });
+    if (!inv) return res.status(400).json({ error: 'Each medicine must come from your stock on Sehatra — add it to stock first.' });
     if (!Number.isInteger(qty) || qty < 1) return res.status(400).json({ error: `Enter a quantity for ${inv.drug}.` });
     const already = take.get(inv.id) || 0;
     if (!stockAlreadyTaken && already + qty > inv.qty) return res.status(409).json({ error: `Only ${inv.qty - already} of ${inv.drug} (batch ${inv.batch || '—'}) in stock.` });
@@ -7239,7 +7239,7 @@ app.post('/api/alerts/:id/:action', auth, role('official'), (req, res) => {
       did.push(`stock transfer requested from ${wh.name} to ${target.name}`);
     }
   }
-  const note = { confirm: a.type !== 'outbreak' ? 'Confirmed' : `Confirmed${did.length ? ` — ${did.join(', ')}` : ' — no doctors, chemists or warehouse on Nexus in this district to notify yet'}`, dismiss: 'Dismissed as false signal', resolve: 'Marked resolved', acknowledge: 'Acknowledged, under review' }[action];
+  const note = { confirm: a.type !== 'outbreak' ? 'Confirmed' : `Confirmed${did.length ? ` — ${did.join(', ')}` : ' — no doctors, chemists or warehouse on Sehatra in this district to notify yet'}`, dismiss: 'Dismissed as false signal', resolve: 'Marked resolved', acknowledge: 'Acknowledged, under review' }[action];
   a.actions = a.actions || [];
   a.actions.push({ at: nowIso(), by: req.user.name, action: clean(req.body?.note, 300) || note });
   store.save();
@@ -7401,7 +7401,7 @@ app.post('/api/admin/verify/:kind/:id', auth, role('super_admin'), (req, res) =>
     // Self-applied facilities come with an owner account that unlocks only once the facility is verified.
     d.users.filter((x) => x.facilityId === f.id && x.applicationRef && x.status !== 'suspended').forEach((x) => {
       x.status = approve ? 'active' : 'pending';
-      notify(x.id, approve ? `${f.name} is live on Nexus Healthcare 🎉` : 'Application update', approve ? 'Your facility is verified and visible to the network. Sign in to set it up.' : f.verificationNote);
+      notify(x.id, approve ? `${f.name} is live on Sehatra 🎉` : 'Application update', approve ? 'Your facility is verified and visible to the network. Sign in to set it up.' : f.verificationNote);
     });
   }
   audit(req.user, approve ? 'verified' : 'rejected', null, req.params.kind, req.params.id);
@@ -7499,7 +7499,7 @@ app.post('/api/admin/ai-config/rollback/:version', auth, role('super_admin'), (r
 
 app.get('/api/admin/kiosks', auth, role('super_admin'), (_req, res) => res.json(db().facilities.filter((f) => f.type === 'kiosk')));
 
-// Add a Nexus-owned E-Clinic (or any facility) directly — needed to stand up a fresh live network.
+// Add a Sehatra-owned E-Clinic (or any facility) directly — needed to stand up a fresh live network.
 app.post('/api/admin/facilities', auth, role('super_admin'), (req, res) => {
   const d = db();
   const b = req.body || {};
@@ -7600,7 +7600,7 @@ app.get('/api/patient/wallet', auth, role('patient', 'caregiver'), (req, res) =>
 app.post('/api/patient/wallet/donate', auth, role('patient', 'caregiver'), (req, res) => {
   const p = activePatient(req);
   const study = walletStudies().find((s) => s.id === req.body?.studyId);
-  if (!study) return res.status(404).json({ error: walletPreview() ? 'No research studies are open on Nexus yet.' : 'Study not found.' });
+  if (!study) return res.status(404).json({ error: walletPreview() ? 'No research studies are open on Sehatra yet.' : 'Study not found.' });
   const w = innovations.walletFor(db(), p);
   if (w.donations.includes(study.id)) return res.status(409).json({ error: 'You have already joined this study.' });
   w.donations.push(study.id);
@@ -7613,12 +7613,12 @@ app.post('/api/patient/wallet/donate', auth, role('patient', 'caregiver'), (req,
 app.post('/api/patient/wallet/redeem', auth, role('patient', 'caregiver'), (req, res) => {
   const p = activePatient(req);
   const reward = walletRewards().find((r) => r.id === req.body?.rewardId);
-  if (!reward) return res.status(404).json({ error: walletPreview() ? 'No rewards are available on Nexus yet.' : 'Reward not found.' });
+  if (!reward) return res.status(404).json({ error: walletPreview() ? 'No rewards are available on Sehatra yet.' : 'Reward not found.' });
   const w = innovations.walletFor(db(), p);
   if (w.credits < reward.cost) return res.status(400).json({ error: 'Not enough health credits yet.' });
   innovations.addLedger(w, 'redeem', -reward.cost, `Redeemed: ${reward.title}`);
   const code = `OC-RW-${Math.floor(1000 + Math.random() * 8999)}`;
-  notify(req.user.id, 'Reward unlocked 🎁', `${reward.title}. Show code ${code} at any Nexus Healthcare kiosk or pharmacy.`);
+  notify(req.user.id, 'Reward unlocked 🎁', `${reward.title}. Show code ${code} at any Sehatra kiosk or pharmacy.`);
   store.save();
   res.json({ credits: w.credits, ledger: [...w.ledger].reverse(), voucher: { title: reward.title, code } });
 });
@@ -7871,12 +7871,12 @@ const escHtml = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<
 // The real inboxes of everyone who manages this patient (the patient and/or a guardian); otp.sendMail drops placeholders again.
 const ownerEmails = (p) => [...new Set(patientOwnerUserIds(p).map((id) => db().users.find((u) => u.id === id)?.email).filter((e) => e && !DEMO_EMAIL.test(e)).map((e) => e.toLowerCase()))];
 // `why` replaces the booking footer; `hello: false` greets neutrally (a parent reading about their child's profile).
-function emailPatient(p, subject, lines, { why = 'You are receiving this because you have a booking on Nexus Healthcare.', hello: greet = true } = {}) {
+function emailPatient(p, subject, lines, { why = 'You are receiving this because you have a booking on Sehatra.', hello: greet = true } = {}) {
   if (!p || !reminderEmailsOn()) return;
   const url = APP_URL();
   const hello = greet ? `Hello ${String(p.name || '').split(' ')[0] || 'there'},` : 'Hello,';
-  const text = [hello, '', ...lines, '', `Open Nexus Healthcare: ${url}`, '', why].join('\n');
-  const html = `<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e6dfd3;border-radius:14px;color:#1d2b2a"><h2 style="color:#0f5c4d;margin:0 0 12px">Nexus Healthcare</h2><p>${escHtml(hello)}</p>${lines.filter(Boolean).map((l) => `<p>${escHtml(l)}</p>`).join('')}<p style="margin:20px 0"><a href="${escHtml(url)}" style="background:#0f5c4d;color:#fff;padding:10px 18px;border-radius:10px;text-decoration:none">Open the app</a></p><p style="color:#6f7c78;font-size:12px">${escHtml(why)}</p></div>`;
+  const text = [hello, '', ...lines, '', `Open Sehatra: ${url}`, '', why].join('\n');
+  const html = `<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e6dfd3;border-radius:14px;color:#1d2b2a"><h2 style="color:#0f5c4d;margin:0 0 12px">Sehatra</h2><p>${escHtml(hello)}</p>${lines.filter(Boolean).map((l) => `<p>${escHtml(l)}</p>`).join('')}<p style="margin:20px 0"><a href="${escHtml(url)}" style="background:#0f5c4d;color:#fff;padding:10px 18px;border-radius:10px;text-decoration:none">Open the app</a></p><p style="color:#6f7c78;font-size:12px">${escHtml(why)}</p></div>`;
   for (const to of ownerEmails(p)) otp.sendMail({ to, subject, text, html }).catch(() => {});
 }
 const consultWhere = (c) => (c.mode === 'in_person' ? `at ${c.location?.name || 'the clinic'}${c.location?.address ? `, ${c.location.address}` : ''}` : `${c.mode === 'audio' ? 'audio call' : c.mode === 'chat' ? 'chat' : 'video'} in the app`);
@@ -8036,7 +8036,7 @@ function scrubLiveArtifacts() {
   const c = d.aiConfig;
   if (c && Array.isArray(c.history)) {
     const before = c.history.length;
-    c.history = c.history.filter((h) => !(h.by === 'Nexus Ops Team' && !h.snapshot));
+    c.history = c.history.filter((h) => !(h.by === 'Sehatra Ops Team' && !h.snapshot));
     if (c.history.length !== before) {
       changed = true;
       if (!c.history.length) c.history.push({ version: c.version, at: nowIso(), by: 'System', note: 'Rule set in use — not yet reviewed by a medical advisor', snapshot: { triage: c.triage, routing: c.routing, outbreak: c.outbreak } });
@@ -8074,7 +8074,7 @@ function scrubLiveArtifacts() {
   await i18n.init({ broadcast });
   const server = app.listen(PORT, () => {
     const o = otp.publicConfig();
-    console.log(`Nexus Healthcare API on http://localhost:${PORT}`);
+    console.log(`Sehatra API on http://localhost:${PORT}`);
     console.log(`  database: ${store.adapter().kind} · OTP: ${o.provider}${o.devMode ? ' (dev mode — codes shown on screen)' : ''}${o.emailLive ? ' + email' : ''} · Claude chat: ${aiEnabled() ? 'on' : 'offline fallback'}`);
   });
   // Stop taking requests, let in-flight ones finish (SSE streams never do — cap the wait), flush the db, exit.

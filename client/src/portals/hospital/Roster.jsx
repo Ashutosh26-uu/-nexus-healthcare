@@ -42,7 +42,7 @@ export default function Roster({ home, setData, reload }) {
       {(home.doctors || []).length > 0 && (
         <div className="card mb-2">
           <div className="row between wrap mb-1">
-            <h4 className="mb-0 row" style={{ gap: 8 }}><Stethoscope size={17} />Our doctors on Nexus Healthcare</h4>
+            <h4 className="mb-0 row" style={{ gap: 8 }}><Stethoscope size={17} />Our doctors on Sehatra</h4>
             <span className="tiny muted">Availability follows each doctor&apos;s own hours — automatically</span>
           </div>
           <div className="hs-docs">
@@ -141,7 +141,7 @@ function AddStaff({ open, onClose, depts, onAdded }) {
   );
 }
 
-// Doctors this hospital lists on Nexus — patients within 20 km can find and book them.
+// Doctors this hospital lists on Sehatra — patients within 20 km can find and book them.
 function ListedDoctors() {
   // Live: a listed doctor who signs up, gets verified or is removed updates this list without a refresh.
   const { data, setData } = useLive('/hospital/doctors', ['doctors', 'hospital']);

@@ -148,7 +148,7 @@ export default function QueueDisplay() {
           ))}
         </main>
       )}
-      <footer className="qd-footer">Please wait for your token number · कृपया अपने टोकन नंबर की प्रतीक्षा करें · Nexus Healthcare</footer>
+      <footer className="qd-footer">Please wait for your token number · कृपया अपने टोकन नंबर की प्रतीक्षा करें · Sehatra</footer>
     </div>
   );
 }

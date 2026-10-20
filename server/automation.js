@@ -1,6 +1,6 @@
 // Automations (n8n or any webhook tool).
 //
-// Nexus → n8n: when something happens (booking paid, prescription issued, lab report ready…) we POST a
+// Sehatra → n8n: when something happens (booking paid, prescription issued, lab report ready…) we POST a
 // small JSON event to N8N_WEBHOOK_URL. Delivery never blocks the request that caused it: events go on an
 // in-memory queue, are sent in the background and retried with back-off if n8n is down.
 //
@@ -11,7 +11,7 @@
 //   X-Nexus-Timestamp  unix seconds
 //   X-Nexus-Signature  sha256=HMAC_SHA256(secret, `${timestamp}.${rawBody}`)
 //
-// n8n → Nexus: workflows call /api/automation/* with `Authorization: Bearer N8N_API_KEY`. That key only
+// n8n → Sehatra: workflows call /api/automation/* with `Authorization: Bearer N8N_API_KEY`. That key only
 // reaches those few routes (summaries, reminders, low stock, in-app notices) — never a user's account.
 const crypto = require('crypto');
 
@@ -21,7 +21,7 @@ const MAX_QUEUE = 2000;
 const CONCURRENCY = 4;
 const TIMEOUT_MS = 8000;
 
-// Every event Nexus can send, with a line for the admin screen and the docs.
+// Every event Sehatra can send, with a line for the admin screen and the docs.
 const EVENTS = {
   'patient.registered': 'A new patient created their Health Passport',
   'booking.confirmed': 'A doctor booking was paid and confirmed',
@@ -144,7 +144,7 @@ async function deliver(payload) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': 'NexusHealthcare-Webhooks/1.0',
+        'User-Agent': 'Sehatra-Webhooks/1.0',
         'X-Nexus-Event': payload.event,
         'X-Nexus-Delivery': payload.id,
         'X-Nexus-Timestamp': String(ts),
@@ -190,7 +190,7 @@ function settle(job, r) {
 // Admin "Send test event": delivered right away so the admin sees the result.
 async function sendTest(by) {
   if (!webhookOn()) return { ok: false, error: problems()[0] || 'Set N8N_WEBHOOK_URL and N8N_WEBHOOK_SECRET first.' };
-  const payload = { id: `evt_${crypto.randomBytes(9).toString('hex')}`, event: 'test.ping', occurredAt: new Date().toISOString(), source: 'nexus-healthcare', mode: dataMode, data: { message: 'Hello from Nexus Healthcare 👋', by } };
+  const payload = { id: `evt_${crypto.randomBytes(9).toString('hex')}`, event: 'test.ping', occurredAt: new Date().toISOString(), source: 'nexus-healthcare', mode: dataMode, data: { message: 'Hello from Sehatra 👋', by } };
   const r = await deliver(payload);
   if (r.ok) { stats.sent += 1; stats.lastSuccessAt = new Date().toISOString(); } else stats.lastError = { at: new Date().toISOString(), event: 'test.ping', message: r.error };
   record(payload, r.ok ? 'sent' : 'failed', r, 1);

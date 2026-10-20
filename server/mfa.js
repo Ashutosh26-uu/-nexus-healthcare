@@ -6,7 +6,7 @@ const crypto = require('crypto');
 
 const STEP = 30;
 const DIGITS = 6;
-const ISSUER = 'Nexus Healthcare';
+const ISSUER = 'Sehatra';
 const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
 function base32Encode(buf) {

@@ -39,7 +39,7 @@ export default function Opd({ home, setData, reload }) {
 
   return (
     <>
-      <PageHeader title="OPD & appointments" subtitle="These slots are what patients see in the Nexus Healthcare app when they book a hospital visit.">
+      <PageHeader title="OPD & appointments" subtitle="These slots are what patients see in the Sehatra app when they book a hospital visit.">
         <Button icon={CalendarPlus} onClick={() => setAdding(true)}>Open a slot</Button>
       </PageHeader>
 

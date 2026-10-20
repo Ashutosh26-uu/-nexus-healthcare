@@ -23,7 +23,7 @@ export default function Automations() {
 
   return (
     <div className="stack lg">
-      <PageHeader eyebrow="Automations" title="n8n workflows" subtitle="Nexus sends signed events to n8n when things happen; n8n workflows can read summaries and send reminders with a limited key.">
+      <PageHeader eyebrow="Automations" title="n8n workflows" subtitle="Sehatra sends signed events to n8n when things happen; n8n workflows can read summaries and send reminders with a limited key.">
         <Button variant="secondary" icon={RefreshCw} onClick={load}>Refresh</Button>
         <Button icon={Send} loading={busy === 'test'} disabled={!webhook.on} onClick={test}>Send test event</Button>
       </PageHeader>
@@ -42,7 +42,7 @@ export default function Automations() {
             <p className="small muted mb-0">Set <code>N8N_WEBHOOK_URL</code> and <code>N8N_WEBHOOK_SECRET</code> on the server (Catalyst → AppSail → Environment variables), then restart.</p>
           )}
         </Card>
-        <Card title="n8n → Nexus API" action={<span className={cx('badge', inApi.on ? 'green' : '')}>{inApi.on ? 'Key set' : 'Off'}</span>}>
+        <Card title="n8n → Sehatra API" action={<span className={cx('badge', inApi.on ? 'green' : '')}>{inApi.on ? 'Key set' : 'Off'}</span>}>
           <p className="small mb-0">
             <KeyRound size={14} style={{ verticalAlign: '-2px' }} /> {inApi.on ? 'Workflows can call /api/automation/* with the key.' : <>Set <code>N8N_API_KEY</code> (32+ characters) to let workflows read summaries and upcoming visits.</>}
             <span className="muted block mt-1"><ShieldCheck size={13} style={{ verticalAlign: '-2px' }} /> The key only reaches automation routes — never patient records or admin actions.</span>
@@ -57,7 +57,7 @@ export default function Automations() {
         <Stat label="Waiting" value={s.queue} sub={stats.lastSuccessAt ? `last sent ${timeAgo(stats.lastSuccessAt)}` : 'nothing sent yet'} />
       </div>
 
-      {stats.lastError && <div className="callout"><CircleAlert /><span>Last problem {timeAgo(stats.lastError.at)}: <strong>{stats.lastError.event}</strong> — {stats.lastError.message}. Nexus retries automatically for about 45 minutes.</span></div>}
+      {stats.lastError && <div className="callout"><CircleAlert /><span>Last problem {timeAgo(stats.lastError.at)}: <strong>{stats.lastError.event}</strong> — {stats.lastError.message}. Sehatra retries automatically for about 45 minutes.</span></div>}
 
       <div className="grid two">
         <Card title="Recent deliveries">

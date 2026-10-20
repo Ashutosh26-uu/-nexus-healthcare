@@ -35,7 +35,7 @@ export default function ForgotPassword() {
       </div>
       <aside className="auth-side">
         <div className="auth-side-inner">
-          <span className="eyebrow" style={{ color: '#f3b89f' }}>Nexus Healthcare</span>
+          <span className="eyebrow" style={{ color: '#f3b89f' }}>Sehatra</span>
           <h2>Locked out? It takes a minute.</h2>
           <p>Use the email address you signed up with. Codes expire in 5 minutes and work only once.</p>
         </div>

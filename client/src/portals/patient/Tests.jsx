@@ -268,7 +268,7 @@ export default function Tests() {
           )}
           {o.bookingState === 'paid' && o.status === 'ordered' && (
             /* Where and when only — the test names stay private. */
-            <div><ShareButton label="Tell family on WhatsApp" text={`My lab visit is booked on Nexus Healthcare${o.booking.homeCollection ? ' — home sample collection' : ` at ${o.labName}`}${o.booking.slot ? `, ${fmtDateTime(o.booking.slot)}` : ''}.`} /></div>
+            <div><ShareButton label="Tell family on WhatsApp" text={`My lab visit is booked on Sehatra${o.booking.homeCollection ? ' — home sample collection' : ` at ${o.labName}`}${o.booking.slot ? `, ${fmtDateTime(o.booking.slot)}` : ''}.`} /></div>
           )}
           {o.bookingState === 'awaiting_payment' && (
             <div className="callout"><CreditCard /><span>Your booking at <strong translate="no">{o.labName}</strong> isn&apos;t confirmed yet — pay the 20% advance ({fmtMoney(o.booking.advance)}) to confirm.</span></div>
@@ -462,7 +462,7 @@ function PackagePicker({ resume, preselect, onClose }) {
               </dl>
               <p className="tiny muted mb-0"><FileText size={12} style={{ verticalAlign: '-2px' }} /> Report in about {hrs(pick.reportInHours)} after the sample, checked and signed by the lab&apos;s pathologist.</p>
             </div>
-          ) : data.packages.length === 0 ? <Empty icon={Gift} title="No packages near you yet">Labs on Nexus add check-ups here. Ask your doctor which tests you need.</Empty> : (
+          ) : data.packages.length === 0 ? <Empty icon={Gift} title="No packages near you yet">Labs on Sehatra add check-ups here. Ask your doctor which tests you need.</Empty> : (
             <div className="pt-lab-list">
               {data.packages.map((k) => (
                 <button key={`${k.labId}-${k.id}`} type="button" className="pt-lab-opt" onClick={() => { setPick(k); setHome(!!k.lab.homeCollection); }}>

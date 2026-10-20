@@ -17,7 +17,7 @@ async function request(method, url, body) {
   try {
     res = await fetch(`/api${url}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
   } catch {
-    throw new Error('Can\'t reach Nexus Healthcare right now. Check your internet connection and try again.');
+    throw new Error('Can\'t reach Sehatra right now. Check your internet connection and try again.');
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -49,7 +49,7 @@ export const api = {
     try {
       res = await fetch('/api/files', { method: 'POST', headers, body });
     } catch {
-      throw new Error('Can\'t reach Nexus Healthcare right now. Check your internet connection and try again.');
+      throw new Error('Can\'t reach Sehatra right now. Check your internet connection and try again.');
     }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Upload failed. Please try again.');

@@ -113,12 +113,12 @@ const claudeProvider = {
       },
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
-      system: `You translate the user interface of Nexus Healthcare, a friendly healthcare app used by patients (including people with little schooling), doctors, pharmacists and health officials.
+      system: `You translate the user interface of Sehatra, a friendly healthcare app used by patients (including people with little schooling), doctors, pharmacists and health officials.
 
 Translate each string from English into ${info.name} (${info.native}).
 - Use simple, warm, everyday words people actually speak — not stiff, bookish or overly formal vocabulary. For Indian languages prefer the common spoken register.
 - Keep it about the same length; these are buttons, labels and short sentences.
-- Keep exactly as-is: placeholders like {0} and {1}, numbers, ₹ and other currency signs, units (mg, mmHg, °F, %), emoji, and these names: Nexus Healthcare, Saathi, ABHA, Aadhaar, UPI, OTP, QR, ICU, SpO₂, BP, LOINC, HMIS, LIS, DPDP.
+- Keep exactly as-is: placeholders like {0} and {1}, numbers, ₹ and other currency signs, units (mg, mmHg, °F, %), emoji, and these names: Sehatra, Saathi, ABHA, Aadhaar, UPI, OTP, QR, ICU, SpO₂, BP, LOINC, HMIS, LIS, DPDP.
 - Medical terms: use the word patients in that language would understand; if none exists, keep the English term.
 - If a string is only a code, name or ID, return it unchanged.
 Return the translations in the same order, one per input string.`,
@@ -179,7 +179,7 @@ const mymemoryProvider = {
         const i = next; next += 1;
         const q = texts[i];
         try {
-          const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(q)}&langpair=en|${encodeURIComponent(target)}${email}`, { headers: { 'User-Agent': 'NexusHealthcare/1.0' } });
+          const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(q)}&langpair=en|${encodeURIComponent(target)}${email}`, { headers: { 'User-Agent': 'Sehatra/1.0' } });
           const data = await res.json();
           const t = data?.responseData?.translatedText;
           // Out of quota shows up as status 429 or as a "MYMEMORY WARNING…" put where the translation should be.

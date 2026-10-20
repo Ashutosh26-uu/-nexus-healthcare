@@ -57,7 +57,7 @@ export default function Earnings() {
         <Card className="green">
           <div className="row" style={{ gap: 10 }}><Landmark size={20} /><h3 className="mb-0">Your share, last 7 days</h3></div>
           <div className="dr-payout">{fmtMoney(Math.round((weekEarn - week.planFees) * (1 - (data.feeRates?.consult ?? 0.1)) + week.planFees * (1 - (data.feeRates?.carePlan ?? 0.25))))}</div>
-          <p className="small mb-1" style={{ opacity: 0.85 }}>Fees from the last 7 days after the platform fee (10% on consults, 25% on care plans) — an estimate, not a payout statement. The Nexus Healthcare team settles payouts to your registered account; contact them with any questions.</p>
+          <p className="small mb-1" style={{ opacity: 0.85 }}>Fees from the last 7 days after the platform fee (10% on consults, 25% on care plans) — an estimate, not a payout statement. The Sehatra team settles payouts to your registered account; contact them with any questions.</p>
           <p className="tiny mb-0" style={{ opacity: 0.7 }}>Amounts shown are before TDS (section 194J), which is deducted at payout where applicable.</p>
         </Card>
       </div>

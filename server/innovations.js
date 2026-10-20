@@ -109,7 +109,7 @@ function twin(db, patient) {
     healthAge, overall, overallBand: overall >= 60 ? 'high' : overall >= 30 ? 'moderate' : 'low',
     inputs, risks, tips,
     dataPoints, measuredCount,
-    note: 'These are estimates to discuss with your doctor — not a diagnosis. They get sharper the longer you use Nexus Healthcare.',
+    note: 'These are estimates to discuss with your doctor — not a diagnosis. They get sharper the longer you use Sehatra.',
   };
 }
 
@@ -307,7 +307,7 @@ function band(value, flag, finding, advice, extra = {}) {
    14 ★  Claims-ready records — auto-structure a completed visit into an NHCX-style insurance
    claim, with duplicate/fraud checks. Makes hospitals get paid faster.
    ───────────────────────────────────────────────────────────── */
-// Amounts are only what Nexus actually recorded for this visit (paid online, paid at the desk, medicine orders
+// Amounts are only what Sehatra actually recorded for this visit (paid online, paid at the desk, medicine orders
 // and lab bookings tied to its prescription) — never an assumed fee or a per-item guess. Nothing is sent to
 // NHCX: this is a draft the hospital submits itself (`submitted: false`).
 function buildClaim(db, consult) {
@@ -328,7 +328,7 @@ function buildClaim(db, consult) {
   const total = money(items.reduce((s, i) => s + (i.amount || 0), 0));
   // Fraud / quality checks.
   const checks = [];
-  checks.push({ key: 'amount', label: 'Billed amount on record', pass: items.every((i) => i.amount !== null), note: items.some((i) => i.amount === null) ? 'No payment recorded on Nexus for the consultation — add the bill before submitting' : 'Every line comes from a recorded payment' });
+  checks.push({ key: 'amount', label: 'Billed amount on record', pass: items.every((i) => i.amount !== null), note: items.some((i) => i.amount === null) ? 'No payment recorded on Sehatra for the consultation — add the bill before submitting' : 'Every line comes from a recorded payment' });
   const dupe = db.consults.filter((c) => c.patientId === consult.patientId && c.doctorId === consult.doctorId && c.status === 'completed' && Math.abs(new Date(c.completedAt || c.createdAt) - new Date(consult.completedAt || consult.createdAt)) < 2 * 3600000 && c.id !== consult.id).length;
   checks.push({ key: 'duplicate', label: 'Duplicate-visit check', pass: dupe === 0, note: dupe ? `${dupe} near-identical visit(s) found` : 'No duplicate billing' });
   checks.push({ key: 'diagnosis', label: 'Diagnosis coded', pass: Boolean(consult.diagnosis), note: consult.diagnosis ? `ICD-ready: ${consult.diagnosis}` : 'Missing diagnosis' });
@@ -375,7 +375,7 @@ function familyGraph(db, guardianUserId, members) {
    ───────────────────────────────────────────────────────────── */
 // Every metric is counted from this doctor's own records; a metric with too little data is null (the screen
 // shows "not enough data yet"), and there is no score until at least MIN_SCORED visits can be judged.
-// Hospital readmissions aren't recorded on Nexus, so that metric is always null for now.
+// Hospital readmissions aren't recorded on Sehatra, so that metric is always null for now.
 const MIN_SCORED = 5;
 function doctorScore(db, doc) {
   const DAY = 86400000;
@@ -403,15 +403,15 @@ function doctorScore(db, doc) {
     score, band: score === null ? null : score >= 85 ? 'excellent' : score >= 70 ? 'good' : 'fair',
     metrics: [
       { key: 'recovery', label: 'Didn\'t need an unplanned visit within 14 days', value: recovery, unit: '%', good: recovery === null ? null : recovery >= 80, basedOn: judged.length },
-      { key: 'readmit', label: '30-day readmission', value: null, unit: '%', good: null, invert: true, basedOn: 0, note: 'Hospital admissions aren\'t recorded on Nexus yet.' },
+      { key: 'readmit', label: '30-day readmission', value: null, unit: '%', good: null, invert: true, basedOn: 0, note: 'Hospital admissions aren\'t recorded on Sehatra yet.' },
       { key: 'adherence', label: 'Prescriptions filled', value: adherence, unit: '%', good: adherence === null ? null : adherence >= 80, basedOn: rxs.length },
       { key: 'followup', label: 'Follow-ups completed', value: followUps, unit: '', good: true, basedOn: done.length },
     ],
     basedOn: done.length,
     minimum: MIN_SCORED,
     note: score === null
-      ? `Your score appears once at least ${MIN_SCORED} visits or prescriptions are old enough to judge. Everything here is counted from your own Nexus records.`
-      : 'A private score counted from your own Nexus records: unplanned return visits within 14 days and whether prescriptions were filled. Hospital readmissions aren\'t tracked yet.',
+      ? `Your score appears once at least ${MIN_SCORED} visits or prescriptions are old enough to judge. Everything here is counted from your own Sehatra records.`
+      : 'A private score counted from your own Sehatra records: unplanned return visits within 14 days and whether prescriptions were filled. Hospital readmissions aren\'t tracked yet.',
   };
 }
 
@@ -421,19 +421,19 @@ function doctorScore(db, doc) {
 function authenticityScan(db, code) {
   const clean = String(code || '').trim().toUpperCase();
   if (!clean) return { status: 'invalid', message: 'Please scan or type the code printed on the pack.' };
-  // Only Nexus's own records are checked: batches that verified chemists / warehouses have entered into stock,
+  // Only Sehatra's own records are checked: batches that verified chemists / warehouses have entered into stock,
   // and batches a chemist set aside as recalled. There is no national track-and-trace connection, so an
   // unknown code is "not in our records" — never declared genuine or fake.
   const verifiedFac = new Set((db.facilities || []).filter((f) => f.verified).map((f) => f.id));
   const recalled = (db.pharmacyReturns || []).find((r) => r.reason === 'recalled' && String(r.batch || '').toUpperCase() === clean);
-  if (recalled) return { status: 'recall', drug: recalled.drug, batch: recalled.batch, message: `A Nexus chemist has set this ${recalled.drug} batch (${recalled.batch}) aside as recalled. Don't use it — return it to your pharmacy and ask for a replacement.` };
+  if (recalled) return { status: 'recall', drug: recalled.drug, batch: recalled.batch, message: `A Sehatra chemist has set this ${recalled.drug} batch (${recalled.batch}) aside as recalled. Don't use it — return it to your pharmacy and ask for a replacement.` };
   const batch = db.inventory.find((i) => i.batch && verifiedFac.has(i.facilityId) && String(i.batch).toUpperCase() === clean);
   if (batch) {
     const expired = batch.expiry && new Date(batch.expiry) < new Date();
     return { status: expired ? 'expired' : 'genuine', drug: batch.drug, batch: batch.batch, expiry: batch.expiry || null,
-      message: expired ? `This ${batch.drug} (batch ${batch.batch}) expired on ${batch.expiry}. Do not use it.` : `${batch.drug}, batch ${batch.batch}, matches stock recorded by a verified Nexus chemist or warehouse${batch.expiry ? `. Expires ${batch.expiry}` : ''}. This checks Nexus records only, not the national track-and-trace system.` };
+      message: expired ? `This ${batch.drug} (batch ${batch.batch}) expired on ${batch.expiry}. Do not use it.` : `${batch.drug}, batch ${batch.batch}, matches stock recorded by a verified Sehatra chemist or warehouse${batch.expiry ? `. Expires ${batch.expiry}` : ''}. This checks Sehatra records only, not the national track-and-trace system.` };
   }
-  return { status: 'unknown', batch: clean, message: 'This code isn\'t in Nexus stock records. That doesn\'t mean the medicine is fake — Nexus can\'t check national track-and-trace yet. If the pack looks damaged or different from usual, ask your pharmacist.' };
+  return { status: 'unknown', batch: clean, message: 'This code isn\'t in Sehatra stock records. That doesn\'t mean the medicine is fake — Sehatra can\'t check national track-and-trace yet. If the pack looks damaged or different from usual, ask your pharmacist.' };
 }
 
 /* ─────────────────────────────────────────────────────────────

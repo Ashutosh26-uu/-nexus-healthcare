@@ -116,7 +116,7 @@ function RegisterForm({ initialPhone, onDone, onCancel, t, lang }) {
         <KButton type="button" variant="ghost" onClick={onCancel}>Cancel</KButton>
         <KButton type="submit" icon={UserPlus} loading={busy} className="xl">Create Health Passport</KButton>
       </div>
-      <p className="k-fine">By registering, the patient agrees to store their health record on Nexus Healthcare under the DPDP Act, 2023. Only doctors they consult — or emergency staff, with a logged reason — can see it.</p>
+      <p className="k-fine">By registering, the patient agrees to store their health record on Sehatra under the DPDP Act, 2023. Only doctors they consult — or emergency staff, with a logged reason — can see it.</p>
     </form>
   );
 }
