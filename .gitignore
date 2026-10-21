@@ -33,3 +33,6 @@ Thumbs.db
 
 # Catalyst CLI state for the redirect app (copied from catalyst-build at deploy time)
 catalyst-redirect/.catalystrc
+
+# The Android app lives in its own repository: github.com/Ashutosh26-uu/nexus-mobile-aap
+mobile/
