@@ -5,7 +5,7 @@ import { ToastProvider, Loading } from './components/ui';
 import { I18nProvider } from './i18n';
 import InstallPrompt from './components/InstallPrompt';
 import { ConsentProvider } from './consent';
-import Landing from './pages/Landing';
+import Landing, { About } from './pages/Landing';
 import NotFound from './pages/NotFound';
 
 const Login = lazy(() => import('./pages/Login'));
@@ -139,6 +139,7 @@ function AppRoutes() {
       <ScrollToTop />
       <Routes>
         <Route path="/" element={<Landing />} />
+        <Route path="/about" element={<About />} />
         <Route path="/display/:code" element={<Lazy><QueueDisplay /></Lazy>} />
         <Route path="/login" element={<Lazy><Login /></Lazy>} />
         <Route path="/signup" element={<Lazy><Signup /></Lazy>} />

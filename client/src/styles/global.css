@@ -504,3 +504,12 @@ table { max-width: 100%; }
 .e2e-bar svg { flex: none; }
 .e2e-bar .btn { flex: none; }
 .msg-lock { display: inline-flex; vertical-align: -1px; margin-inline-end: 3px; opacity: 0.7; }
+
+/* Phones: thumb-sized targets and 16px text in fields (smaller text makes iPhones zoom the page on focus). */
+@media (max-width: 760px) {
+  .input, .select, .textarea, .input.sm, .select.sm { font-size: 16px; }
+  .input.sm, .select.sm { height: 42px; }
+  .nx-dist-chip { min-height: 40px; padding: 0 14px; font-size: 0.88rem; }
+  .pt-scope button { min-height: 38px; padding: 6px 14px; font-size: 0.86rem; }
+  .link-btn { min-height: 32px; }
+}

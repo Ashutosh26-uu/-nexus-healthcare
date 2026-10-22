@@ -10,6 +10,7 @@ import { useLive } from '../../live';
 import { PatientContext, HOME_TOPICS, PageSkeleton, firstName, greeting, relationOf, usePatient } from './shared';
 import Home from './Home';
 import { SosButton } from './Sos';
+import WelcomeTips from './WelcomeTips';
 import { useI18n, codeForName } from '../../i18n';
 import './patient.css';
 
@@ -87,33 +88,42 @@ export default function PatientApp() {
   const activeRx = (home.data?.prescriptions || []).filter((r) => ['issued', 'dispensed', 'out_for_delivery'].includes(r.status)).length;
 
   const incomplete = home.data?.patient?.profileComplete === false || (home.data?.patient?.bookingMissing || []).length > 0;
+  // Grouped by what a patient is trying to do, in everyday words. The phone tab bar carries the four most used.
+  const upcomingCount = (home.data?.upcoming || []).length || null;
+  const medsBadge = (activeRx + (home.data?.medicineOrders || 0)) || null;
   const nav = [
     { to: '/patient', label: 'Home', icon: HomeIcon, end: true },
-    ...(incomplete ? [{ to: '/patient/complete-profile', label: 'Complete profile', icon: UserRoundPen, badge: '!' }] : []),
-    { to: '/patient/symptoms', label: 'Check symptoms', icon: HeartPulse },
-    { to: '/patient/consult', label: 'Talk to a doctor', icon: Video },
-    { to: '/patient/follow-ups', label: 'Follow-ups', icon: CalendarClock, badge: (home.data?.upcoming || []).length || null },
-    { to: '/patient/tracker', label: 'Health tracker', icon: Gauge },
-    { to: '/patient/vaccines', label: 'Vaccinations', icon: Syringe },
-    { to: '/patient/twin', label: 'Health Twin', icon: Activity },
-    { to: '/patient/records', label: 'My records', icon: FolderHeart },
-    { to: '/patient/medicines', label: 'Medicines', icon: Pill, badge: (activeRx + (home.data?.medicineOrders || 0)) || null },
-    { to: '/patient/change-doctor', label: 'Change doctor', icon: Repeat },
-    { to: '/patient/tests', label: 'Tests & reports', icon: FlaskConical },
-    { to: '/patient/consents', label: 'Who sees my data', icon: ShieldCheck, badge: pending || null },
-    { to: '/patient/wallet', label: 'Data Wallet', icon: Coins },
-    { to: '/patient/invite', label: 'Invite & earn', icon: Gift },
-    { to: '/patient/family', label: 'Family', icon: Users },
-    { to: '/patient/family-graph', label: 'Family health', icon: Dna },
-    { to: '/patient/scan', label: 'Check a medicine', icon: ScanLine },
-    { to: '/patient/sos', label: 'SOS', icon: Siren },
-    { to: '/patient/emergency', label: 'Emergency card', icon: IdCard },
-    { to: '/patient/settings', label: 'Settings', icon: SettingsIcon },
+    ...(incomplete ? [{ to: '/patient/complete-profile', label: 'Finish my profile', icon: UserRoundPen, badge: '!' }] : []),
+    { to: '/patient/symptoms', label: 'I feel unwell', icon: HeartPulse, group: 'Get care' },
+    { to: '/patient/consult', label: 'Talk to a doctor', icon: Video, group: 'Get care' },
+    { to: '/patient/follow-ups', label: 'My appointments', icon: CalendarClock, badge: upcomingCount, group: 'Get care' },
+    { to: '/patient/medicines', label: 'Medicines', icon: Pill, badge: medsBadge, group: 'Get care' },
+    { to: '/patient/tests', label: 'Lab tests', icon: FlaskConical, group: 'Get care' },
+    { to: '/patient/records', label: 'My reports & records', icon: FolderHeart, group: 'My health' },
+    { to: '/patient/tracker', label: 'BP, sugar & weight', icon: Gauge, group: 'My health' },
+    { to: '/patient/vaccines', label: 'Vaccinations', icon: Syringe, group: 'My health' },
+    { to: '/patient/twin', label: 'My health trends', icon: Activity, group: 'My health' },
+    { to: '/patient/family', label: 'Family members', icon: Users, group: 'Family' },
+    { to: '/patient/family-graph', label: 'Family health history', icon: Dna, group: 'Family' },
+    { to: '/patient/sos', label: 'SOS — emergency help', icon: Siren, group: 'Safety & privacy' },
+    { to: '/patient/emergency', label: 'Emergency card', icon: IdCard, group: 'Safety & privacy' },
+    { to: '/patient/consents', label: 'Who sees my data', icon: ShieldCheck, badge: pending || null, group: 'Safety & privacy' },
+    { to: '/patient/scan', label: 'Is my medicine genuine?', icon: ScanLine, group: 'More' },
+    { to: '/patient/change-doctor', label: 'Change my doctor', icon: Repeat, group: 'More' },
+    { to: '/patient/invite', label: 'Invite & earn', icon: Gift, group: 'More' },
+    { to: '/patient/wallet', label: 'Share data for research', icon: Coins, group: 'More' },
+    { to: '/patient/settings', label: 'Settings', icon: SettingsIcon, group: 'More' },
+  ];
+  const tabs = [
+    { to: '/patient', label: 'Home', icon: HomeIcon, end: true },
+    { to: '/patient/consult', label: 'Doctor', icon: Video, badge: upcomingCount },
+    { to: '/patient/medicines', label: 'Medicines', icon: Pill, badge: medsBadge },
+    { to: '/patient/records', label: 'Reports', icon: FolderHeart },
   ];
 
   return (
     <PatientContext.Provider value={ctx}>
-      <PortalLayout portal="Patient App" nav={nav} headerExtra={<ProfileSwitcher />}>
+      <PortalLayout portal="Patient App" nav={nav} tabs={tabs} headerExtra={<ProfileSwitcher />}>
         <div className="pt-root">
         <Suspense fallback={<PageSkeleton />}>
         <Routes>
@@ -146,6 +156,8 @@ export default function PatientApp() {
         </div>
         <CompleteProfilePrompt />
         <SosButton />
+        {/* After the "complete your profile" prompt, never on top of it. */}
+        {home.data?.patient && !incomplete && <WelcomeTips name={firstName((home.data.profiles || []).find((x) => x.self)?.name || home.data.patient.name)} />}
       </PortalLayout>
     </PatientContext.Provider>
   );

@@ -68,7 +68,7 @@ export default function FollowUps() {
 
   return (
     <div className="stack lg">
-      <PageHeader eyebrow="Follow-ups" title={isSelf ? 'Your next visits' : `${firstName(patient?.name)}’s next visits`}
+      <PageHeader eyebrow="My appointments" title={isSelf ? 'Your next visits' : `${firstName(patient?.name)}’s next visits`}
         subtitle="Every follow-up your doctor booked and every appointment you made — with the date, time and where to go." />
 
       {!next ? (

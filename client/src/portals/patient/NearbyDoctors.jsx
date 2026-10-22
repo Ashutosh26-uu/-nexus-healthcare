@@ -1,22 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useConsent, openLocationSettings } from '../../consent';
-import { LocateFixed, MapPin, Star, Languages, Video, Stethoscope, Ambulance, Phone, Building2, Loader2, CalendarClock, BedDouble, Clock, X, Smile, Users, Briefcase, Globe2, Radar, MonitorSmartphone, Home as HomeIcon } from 'lucide-react';
+import { LocateFixed, MapPin, Star, Video, Stethoscope, Ambulance, Phone, Building2, Loader2, CalendarClock, BedDouble, Clock, X, Globe2, Radar, MonitorSmartphone, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { api, subscribe } from '../../api';
 import { Avatar, Button, Empty, Field, fmtMoney, cx, useDebounced } from '../../components/ui';
 import { AvailBadge, availClass } from '../../components/Availability';
 import VoiceInput from '../../components/VoiceInput';
 import DistancePicker, { useRadius } from '../../components/DistancePicker';
-import { getLocale } from '../../i18n';
-import DoctorProfile, { TodayTimings } from './DoctorProfile';
+import DoctorProfile from './DoctorProfile';
 import BookingFlow from './BookingFlow';
 
-const PRACTICE = {
-  own_clinic: { icon: HomeIcon, label: 'Own clinic' },
-  clinic: { icon: Building2, label: 'Clinic' },
-  hospital: { icon: Building2, label: 'Hospital' },
-  virtual: { icon: Video, label: 'Sehatra virtual clinic' },
-  independent: { icon: Stethoscope, label: 'Independent' },
-};
 
 // The person's location from the app-wide consent manager: live (while the app is open, after they
 // agree) or a place they typed. Coordinates go only to our own server, rounded to ~100 m.
@@ -40,18 +32,6 @@ export function LocationButton({ device, size = 'sm' }) {
   );
 }
 
-// Trust signals on every doctor card: rating & reviews, satisfaction, patients seen, experience.
-export function DoctorStats({ d }) {
-  const n = (x) => Number(x || 0).toLocaleString(getLocale());
-  return (
-    <div className="pt-doc-stats tiny">
-      <span title="Rating from patients"><Star size={12} className="pt-sun" /> <strong>{d.rating && d.reviewCount ? Number(d.rating).toFixed(1) : 'New'}</strong>{d.reviewCount ? <span className="muted"> ({n(d.reviewCount)} reviews)</span> : null}</span>
-      {d.satisfaction != null && <span title="Patients who rated 4★ or 5★"><Smile size={12} /> <strong>{d.satisfaction}%</strong> satisfied</span>}
-      {d.patientsSeen > 0 && <span><Users size={12} /> <strong>{n(d.patientsSeen)}</strong> patients</span>}
-      {d.experience > 0 && <span><Briefcase size={12} /> <strong>{d.experience}</strong> yrs exp.</span>}
-    </div>
-  );
-}
 
 // The doctor finder. In `full` mode it has its own symptom box (type or speak) and department picker;
 // otherwise it follows the `symptoms` / `department` it's given. Default: doctors within the patient's chosen distance (20 km) of the
@@ -110,6 +90,8 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
 
   const [booking, setBooking] = useState(null);
   const pick = (doc) => (onPick ? onPick(doc) : setBooking(doc));
+  // Filters stay folded into one line until asked for: most people only need to say what's wrong.
+  const [showFilters, setShowFilters] = useState(false);
 
   if (!active) return null;
   const specialists = data?.doctors.filter((d) => d.match === 'specialist') || [];
@@ -122,27 +104,35 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
           <Field label="What's the problem?" hint="Type it, or tap the mic and say it in your language.">
             <textarea className="textarea" rows={2} value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="e.g. fever and cough for 3 days" />
           </Field>
-          <div className="row wrap between" style={{ gap: 10 }}>
-            <VoiceInput label="Speak instead" onText={(t) => setTyped((v) => [v.trim(), t].filter(Boolean).join(v.trim() ? ', ' : ''))} />
-            <select className="select pt-dept-select" value={dept} onChange={(e) => setDept(e.target.value)} aria-label="Department">
-              <option value="">Any department — match my symptoms</option>
-              {(data?.departments || []).map((d2) => <option key={d2}>{d2}</option>)}
-            </select>
-          </div>
+          <VoiceInput label="Speak instead" onText={(t) => setTyped((v) => [v.trim(), t].filter(Boolean).join(v.trim() ? ', ' : ''))} />
         </div>
       )}
 
-      <div className="row between wrap" style={{ gap: 10 }}>
-        <div>
-          <h3 className="mb-0 row" style={{ gap: 8 }}><Stethoscope size={19} />{title || (scope === 'all' ? `Doctors across ${countryName}` : `Doctors within ${radius} km of you`)}</h3>
-          {data && (
-            <p className="small muted mb-0">
-              {data.triage.byDepartment ? <>Department: <strong>{data.triage.specialty}</strong></> : q ? <>For “{q.length > 50 ? `${q.slice(0, 50)}…` : q}” we suggest <strong>{data.triage.specialty}</strong></> : 'All specialties'}
-              {scope === 'near' && (data.origin.district ? <> · within {data.radiusKm} km of <strong>{data.origin.district}</strong> ({data.origin.source === 'chosen' ? 'your chosen area' : data.origin.source === 'device' ? 'your device location' : 'your address'})</> : ' · share your location to find doctors near you')}
-            </p>
-          )}
+      <div className="pt-find-head">
+        <h3 className="mb-0 row" style={{ gap: 8 }}><Stethoscope size={19} />{title || (scope === 'all' ? `Doctors across ${countryName}` : `Doctors within ${radius} km`)}</h3>
+        {data && (
+          <p className="small muted mb-0">
+            {data.triage.byDepartment ? <>Department: <strong>{data.triage.specialty}</strong></> : q ? <>For “{q.length > 50 ? `${q.slice(0, 50)}…` : q}” we suggest <strong>{data.triage.specialty}</strong></> : 'All specialties'}
+            {scope === 'near' && (data.origin.district ? <> · near <strong>{data.origin.district}</strong></> : ' · share your location to see doctors near you')}
+          </p>
+        )}
+        <div className="row wrap" style={{ gap: 8 }}>
+          <button type="button" className={cx('pt-filter-toggle', showFilters && 'on')} onClick={() => setShowFilters((v) => !v)} aria-expanded={showFilters}>
+            <SlidersHorizontal size={15} /> Filters{dept ? ' · 1 department' : ''}{place ? ` · ${place.district}` : ''} <ChevronDown size={15} />
+          </button>
+          {scope === 'near' && !place && device.state !== 'ok' && <LocationButton device={device} />}
         </div>
-        <div className="row wrap" style={{ gap: 6 }}>
+      </div>
+
+      {showFilters && (
+        <div className="pt-filters fade-in">
+          <Field label="Department">
+            <select className="select" value={dept} onChange={(e) => setDept(e.target.value)}>
+              <option value="">Any — match my problem</option>
+              {(data?.departments || []).map((d2) => <option key={d2}>{d2}</option>)}
+            </select>
+          </Field>
+          <div className="pt-filter-row">
           <div className="pt-scope" role="radiogroup" aria-label="Search area">
             <button type="button" role="radio" aria-checked={scope === 'near'} className={cx(scope === 'near' && 'on')} onClick={() => setScope('near')}><Radar size={13} /> Near me</button>
             <button type="button" role="radio" aria-checked={scope === 'all'} className={cx(scope === 'all' && 'on')} onClick={() => setScope('all')}><Globe2 size={13} /> All of {countryName}</button>
@@ -154,9 +144,10 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
             <input className="input sm pt-place-input" list="oc-districts" autoFocus placeholder="Type a city or district" onChange={(e) => choosePlace(e.target.value)} onBlur={() => setTimeout(() => setPicking(false), 200)} />
           ) : <Button size="sm" variant="ghost" icon={MapPin} onClick={() => setPicking(true)}>Choose area</Button>)}
           <datalist id="oc-districts">{districts.map((x) => <option key={`${x.district}-${x.state}`} value={`${x.district}, ${x.state}`} />)}</datalist>
-          {scope === 'near' && !place && <LocationButton device={device} />}
+          {scope === 'near' && !place && device.state === 'ok' && <LocationButton device={device} />}
+          </div>
         </div>
-      </div>
+      )}
 
       {data?.triage.level === 'emergency' && (
         <div className="callout rose mt-2"><Ambulance /><div><strong>These symptoms can be serious.</strong> {data.triage.advice} <a href="tel:108" className="strong"><Phone size={13} style={{ verticalAlign: '-2px' }} /> Call 108</a></div></div>
@@ -176,8 +167,9 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
       {data && data.doctors.length > 0 && (
         <div className="pt-nearby-list">
           {data.doctors.map((d, i) => {
-            const P = PRACTICE[d.practice] || PRACTICE.independent;
+
             return (
+              // The three things that decide a booking — when, how much, how far — up front; the rest is in Profile.
               <article key={d.id} className={cx('pt-near-doc', availClass(d.availability), i === 0 && d.match === 'specialist' && 'best')}>
                 {i === 0 && d.match === 'specialist' && <span className="pt-near-best">Best match</span>}
                 <Avatar name={d.name} />
@@ -185,20 +177,18 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
                   <div className="row wrap" style={{ gap: 8 }}>
                     <strong translate="no">{d.name}</strong>
                     <AvailBadge a={d.availability} />
-                    <span className="badge tiny"><P.icon size={11} /> {P.label}</span>
                   </div>
-                  <div className="small muted">{d.specialty} · {d.qualification}</div>
-                  <DoctorStats d={d} />
-                  <div className="pt-near-meta tiny">
-                    <span><MapPin size={12} /> {d.distanceKm !== null ? `${d.distanceKm} km · ` : ''}<span translate="no">{d.at}</span></span>
-                    <span><Languages size={12} /> {d.languages.slice(0, 3).join(', ')}</span>
-                    <span>Fee {fmtMoney(d.fee)}</span>
+                  <div className="small muted">{d.specialty}</div>
+                  <div className="pt-doc-key">
+                    <span className="strong">{fmtMoney(d.fee)}</span>
+                    {d.distanceKm !== null && <span><MapPin size={13} /> {d.distanceKm} km</span>}
+                    {d.practice === 'virtual' && <span><Video size={13} /> Online</span>}
+                    <span><Star size={13} className="pt-sun" /> {d.rating && d.reviewCount ? Number(d.rating).toFixed(1) : 'New'}</span>
                   </div>
-                  <div className="pt-near-meta tiny"><TodayTimings doc={d} /></div>
+                  <button type="button" className="link-btn tiny" onClick={() => setProfile(d)}>Experience, reviews &amp; timings</button>
                 </div>
                 <div className="pt-near-actions">
-                  <Button size="sm" variant="ghost" onClick={() => setProfile(d)}>Profile</Button>
-                  <Button size="sm" variant={onPick ? 'clay' : d.online ? 'primary' : 'secondary'} icon={onPick ? undefined : d.online ? Video : CalendarClock} onClick={() => pick(d)}>
+                  <Button variant={onPick ? 'clay' : d.online ? 'primary' : 'secondary'} icon={onPick ? undefined : d.online ? Video : CalendarClock} onClick={() => pick(d)}>
                     {onPick ? pickLabel : d.online ? 'Book now' : 'Book a time'}
                   </Button>
                 </div>

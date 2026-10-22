@@ -53,7 +53,7 @@ export default function MedicineScan() {
 
   return (
     <div className="stack lg">
-      <PageHeader eyebrow="Medicine Authenticity" title="Is my medicine real?"
+      <PageHeader eyebrow="Medicine check" title="Is my medicine real?"
         subtitle={camera ? 'Scan the barcode on the pack with your camera, or type the batch number. We look it up among the stock that chemists on Sehatra have listed.' : 'Type the batch number printed on the pack. We look it up among the stock that chemists on Sehatra have listed.'} />
 
       <div className="callout"><Info /><span><PreviewBadge /> This only knows batches stocked by chemists on Sehatra. It can&apos;t tell you a pack is fake — if in doubt, ask your pharmacist.</span></div>

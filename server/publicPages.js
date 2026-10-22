@@ -378,7 +378,7 @@ module.exports = function registerPublicPages(app, deps) {
   // ---------------- sitemap & robots ----------------
   app.get('/sitemap.xml', pageLimiter, (req, res) => {
     const d = db(); const base = baseUrl(req);
-    const urls = ['/', '/medicines', '/lab-tests', '/find/doctors', '/find/labs', '/signup', '/join'];
+    const urls = ['/', '/about', '/medicines', '/lab-tests', '/find/doctors', '/find/labs', '/signup', '/join', '/testimonials'];
     for (const e of medIndex().list) urls.push(`/medicines/${e.slug}`);
     for (const code of Object.keys(catalog.TESTS)) urls.push(`/lab-tests/${testSlug(code)}`);
     const docs = verifiedDoctors(d);

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronRight, Repeat } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import NearbyDoctors from './NearbyDoctors';
 import BookingFlow from './BookingFlow';
 import { api } from '../../api';
@@ -34,9 +34,7 @@ export default function Consult() {
 
   return (
     <div className="stack lg">
-      <PageHeader eyebrow="Find a doctor" title="Talk to a doctor" subtitle="Tell us the problem — we show the best doctors, hospitals and clinics within 20 km, with reviews, experience, timings and fees.">
-        <Button variant="secondary" icon={Repeat} onClick={() => navigate('/patient/change-doctor')}>Change my doctor</Button>
-      </PageHeader>
+      <PageHeader eyebrow="Find a doctor" title="Talk to a doctor" subtitle="Tell us what's wrong — we'll show the right doctors near you." />
 
       {patient?.bookingMissing?.length > 0 && (
         <div className="pt-cp-banner fade-in">

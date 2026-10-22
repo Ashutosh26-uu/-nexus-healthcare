@@ -187,3 +187,32 @@
 .l-social a:hover { border-color: #0a66c2; background: #f3f8fd; }
 .l-footer { padding-bottom: 104px; }
 
+
+/* About page: its first heading is the page title */
+.l-about-top { padding-top: 120px; }
+.l-about-title { font-size: clamp(1.9rem, 4vw, 2.8rem); line-height: 1.15; margin: 8px 0 10px; }
+
+/* Real stories on the home page */
+.l-stories { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.l-story { margin: 0; background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.l-story blockquote { margin: 0; font-size: 0.98rem; line-height: 1.55; color: var(--ink); }
+.l-story figcaption { display: flex; flex-direction: column; gap: 2px; }
+
+/* Phones: a sticky "Get started" once the hero has scrolled away */
+.l-sticky-cta { display: none; }
+@media (max-width: 760px) {
+  .l-sticky-cta {
+    display: block; position: fixed; inset-inline: 0; bottom: 0; z-index: 60; padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    background: rgba(255, 253, 249, 0.96); border-top: 1px solid var(--line); box-shadow: 0 -8px 24px -16px rgba(20, 30, 28, 0.4);
+    transform: translateY(110%); transition: transform 0.25s var(--ease);
+  }
+  .l-sticky-cta.show { transform: none; }
+  .l-sticky-cta .btn { min-height: 50px; justify-content: center; }
+  body.l-has-cta .chat-fab { bottom: calc(82px + env(safe-area-inset-bottom)); }
+  body.l-has-cta .chat-nudge { bottom: calc(146px + env(safe-area-inset-bottom)); }
+  body.l-has-cta .l-footer { padding-bottom: 90px; }
+}
+/* Phones: the hero illustration is decoration — skip it so the free tools and answers come sooner. */
+@media (max-width: 760px) { .l-hero-art { display: none; } }
+/* "Read more" links under a section: keep the arrow on the same line as the text */
+.l-section p.center a { display: inline-flex; align-items: center; gap: 4px; flex-wrap: nowrap; }

@@ -87,3 +87,7 @@
 [dir='rtl'] .msg.assistant .msg-text { border-bottom-left-radius: 18px; border-bottom-right-radius: 5px; }
 [dir='rtl'] .msg.user .msg-text { border-bottom-right-radius: 18px; border-bottom-left-radius: 5px; }
 [dir='rtl'] .chat-panel { transform-origin: bottom left; }
+.chat-go { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; margin-top: 6px; }
+.chat-go .tiny { width: 100%; }
+.chat-go button { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--green-2); background: var(--green-soft); border-radius: 99px; padding: 7px 12px; min-height: 36px; font-size: 0.82rem; font-weight: 600; cursor: pointer; color: var(--green-ink); }
+.chat-go button:hover { background: #d6ebe3; }

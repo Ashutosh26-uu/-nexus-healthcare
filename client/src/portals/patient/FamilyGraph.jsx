@@ -13,7 +13,7 @@ export default function FamilyGraph() {
 
   return (
     <div className="stack lg">
-      <PageHeader eyebrow="Family Health Graph" title="Your family’s inherited health"
+      <PageHeader eyebrow="Family health history" title="Your family’s inherited health"
         subtitle="Some conditions run in families. With everyone’s consent, we connect the dots so relatives can get screened early — before problems start." />
 
       {/* graph */}

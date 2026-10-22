@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { openCookieSettings } from '../consent';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
   ArrowRight, ShieldCheck, Languages, MapPin, Stethoscope, Pill, Building2, FlaskConical, Landmark,
   HeartPulse, QrCode, Truck, Activity, ChevronDown, Lock, Eye, Users, Menu, X, Video, Clock, Check,
@@ -36,36 +36,29 @@ const FREE_TOOLS = [
   { icon: Stethoscope, title: 'Find a doctor', text: 'Verified doctors by specialty and city, with fees, languages, live availability and genuine patient reviews.', to: '/find/doctors', cta: 'Find a doctor' },
 ];
 
-export default function Landing() {
+// Header, footer and the phone "Get started" bar, shared by the home page and the About page.
+function Shell({ children, onHome }) {
   const { user } = useAuth();
-  const config = usePublicConfig();
   const support = useSupport();
-  const [stats, setStats] = useState(null); // null = loading, false = failed (row hidden)
-  const [faq, setFaq] = useState(0);
   const [menu, setMenu] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [deep, setDeep] = useState(false); // past the hero: show the sticky bar on phones
+  const home = user ? ROLE_HOME[user.role] : null;
+  const at = onHome ? '' : '/'; // same-page anchors on the home page, links back to it elsewhere
 
   useEffect(() => {
-    let alive = true;
-    // Real numbers only — an error page must not render as "0 doctors"; a failed refresh keeps the last real numbers.
-    const load = (first) => fetch('/api/public/stats', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : Promise.reject())).then((s) => alive && setStats(s)).catch(() => alive && first && setStats(false));
-    load(true);
-    // Live: the server pushes new counts the moment one changes. If the stream can't connect, poll every 30 s instead.
-    let es = null;
-    try {
-      es = new EventSource('/api/public/stats/stream');
-      es.onmessage = (e) => { try { if (alive) setStats(JSON.parse(e.data)); } catch { /* ignore a bad frame */ } };
-    } catch { es = null; }
-    const timer = setInterval(() => { if (document.visibilityState === 'visible' && es?.readyState !== 1) load(false); }, 30000);
     // Scrolling closes the phone menu: it's a fixed panel, so otherwise it would sit over the page while the page moved.
-    const onScroll = () => { setScrolled(window.scrollY > 12); setMenu(false); };
+    const onScroll = () => { setScrolled(window.scrollY > 12); setDeep(window.scrollY > 520); setMenu(false); };
     window.addEventListener('scroll', onScroll, { passive: true });
     // Sign-in and sign-up are the next click for most visitors — fetch their code while the page is idle.
     const warm = setTimeout(() => (window.requestIdleCallback || setTimeout)(() => { import('./Login').catch(() => {}); import('./Signup').catch(() => {}); }), 2000);
-    return () => { alive = false; es?.close(); clearInterval(timer); clearTimeout(warm); window.removeEventListener('scroll', onScroll); };
+    return () => { clearTimeout(warm); window.removeEventListener('scroll', onScroll); };
   }, []);
-
-  const home = user ? ROLE_HOME[user.role] : null;
+  // The sticky bar lifts the Saathi button above it.
+  useEffect(() => {
+    document.body.classList.toggle('l-has-cta', deep);
+    return () => document.body.classList.remove('l-has-cta');
+  }, [deep]);
 
   return (
     <div className="landing">
@@ -73,12 +66,11 @@ export default function Landing() {
         <div className="l-container l-nav-inner">
           <Logo />
           <nav className={cx('l-links', menu && 'open')} onClick={() => setMenu(false)}>
-            <a href="#tools">Free tools</a>
-            <a href="#how">How it works</a>
-            <a href="#kiosk">E-Clinics</a>
-            <a href="#partners">For partners</a>
+            <a href={`${at}#tools`}>Free tools</a>
+            <Link to="/about">How it works</Link>
+            <a href="/about#partners">For doctors &amp; clinics</a>
             <Link to="/testimonials">Testimonials</Link>
-            <a href="#faq">FAQ</a>
+            <a href={`${at}#faq`}>FAQ</a>
             <div className="l-links-cta" onClick={(e) => e.stopPropagation()}>
               <LanguagePicker />
               {home ? <Link className="btn" to={home}>Go to dashboard</Link> : (
@@ -93,6 +85,93 @@ export default function Landing() {
         </div>
       </header>
 
+      {children}
+
+      <footer className="l-footer">
+        <div className="l-container l-footer-grid">
+          <div>
+            <Logo />
+            <p className="muted small" style={{ marginTop: 12, maxWidth: 300 }}>An independent health-tech startup. Built in India, for every Indian.</p>
+            <div className="l-social">
+              <a href="https://www.linkedin.com/company/nexus-healthcare-official/" target="_blank" rel="noopener noreferrer" aria-label="Sehatra on LinkedIn" title="Follow us on LinkedIn">
+                {/* LinkedIn mark (brand icons aren't in our icon set) */}
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="currentColor"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.86 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13ZM7.12 20.45H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z" /></svg>
+                <span>LinkedIn</span>
+              </a>
+            </div>
+          </div>
+          <div>
+            <h4>Product</h4>
+            <Link to="/medicines">Medicine price checker</Link><Link to="/lab-tests">Lab test prices</Link><Link to="/find/doctors">Find a doctor</Link><Link to="/find/labs">Labs near you</Link>
+            <Link to="/about">How it works</Link><a href="/about#kiosk">E-Clinics</a><Link to="/testimonials">Testimonials</Link><Link to="/privacy">Privacy policy</Link><Link to="/cookies">Cookie policy</Link><button type="button" className="l-footer-link" onClick={openCookieSettings}>Cookie preferences</button>
+          </div>
+          <div>
+            <h4>Partners</h4>
+            <Link to="/join?track=doctor">Doctors — join Sehatra</Link><Link to="/join?track=facility">List your clinic or hospital</Link><Link to="/join?track=pharmacy">Medical stores</Link><Link to="/join?track=facility">Labs</Link><Link to="/login">Partner sign in</Link>
+          </div>
+          <div>
+            <h4>Help</h4>
+            {support.phone && <a href={telHref(support.phone)} translate="no">{support.phone}</a>}{support.email && <a href={`mailto:${support.email}`} translate="no">{support.email}</a>}{support.hours && <span className="muted small">{support.hours}</span>}<a href="tel:108">Emergency: 108</a>
+          </div>
+        </div>
+        <div className="l-container l-footer-bottom">
+          <span>© {new Date().getFullYear()} Sehatra · Made in India</span>
+          <span>Sehatra gives guidance, not diagnosis. In an emergency, call 108.</span>
+        </div>
+      </footer>
+
+      {/* Phones: once past the hero, the next step is always one tap away. */}
+      <div className={cx('l-sticky-cta', deep && 'show')} aria-hidden={!deep}>
+        <Link to={home || '/signup'} className="btn clay block" tabIndex={deep ? 0 : -1}>{home ? 'Open my dashboard' : 'Get started — it’s free'} <ArrowRight size={18} /></Link>
+      </div>
+    </div>
+  );
+}
+
+// Live counts in the hero — real numbers only; the row hides if they can't load.
+function useStats() {
+  const [stats, setStats] = useState(null); // null = loading, false = failed (row hidden)
+  useEffect(() => {
+    let alive = true;
+    // An error page must not render as "0 doctors"; a failed refresh keeps the last real numbers.
+    const load = (first) => fetch('/api/public/stats', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : Promise.reject())).then((s) => alive && setStats(s)).catch(() => alive && first && setStats(false));
+    load(true);
+    // Live: the server pushes new counts the moment one changes. If the stream can't connect, poll every 30 s instead.
+    let es = null;
+    try {
+      es = new EventSource('/api/public/stats/stream');
+      es.onmessage = (e) => { try { if (alive) setStats(JSON.parse(e.data)); } catch { /* ignore a bad frame */ } };
+    } catch { es = null; }
+    const timer = setInterval(() => { if (document.visibilityState === 'visible' && es?.readyState !== 1) load(false); }, 30000);
+    return () => { alive = false; es?.close(); clearInterval(timer); };
+  }, []);
+  return stats;
+}
+
+// Up to three real, approved stories from people who used Sehatra — the section hides when there are none.
+function useStories() {
+  const [stories, setStories] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/public/stories', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((r) => alive && r && setStories((r.stories || []).slice(0, 3))).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  return stories;
+}
+
+// The home page: what Sehatra is, what you can do right now, what people say, and answers — about four screens.
+export default function Landing() {
+  const { user } = useAuth();
+  const config = usePublicConfig();
+  const support = useSupport();
+  const stats = useStats();
+  const stories = useStories();
+  const [faq, setFaq] = useState(0);
+  const home = user ? ROLE_HOME[user.role] : null;
+  const isPatient = ['patient', 'caregiver'].includes(user?.role);
+
+  return (
+    <Shell onHome>
       {/* ---------- hero ---------- */}
       <section className="l-hero">
         <div className="l-container l-hero-grid">
@@ -105,12 +184,13 @@ export default function Landing() {
               </span>
             </h1>
             <p className="l-lead">
-              Sehatra connects every Indian — in a metro or a village — to the same verified doctors, one lifelong
-              health record, and the medicines they need. On your phone, or at an E-Clinic down the road.
+              Verified doctors, one health record for your family, and medicines near you — in your language, on your phone.
             </p>
             <div className="row wrap" style={{ gap: 12 }}>
-              <Link to={home || '/signup'} className="btn lg clay">{home ? 'Open my dashboard' : 'Check my symptoms'} <ArrowRight /></Link>
-              <a href="#kiosk" className="btn lg secondary"><MapPin /> Find an E-Clinic</a>
+              <Link to={isPatient ? '/patient/consult' : '/find/doctors'} className="btn lg clay"><Stethoscope /> Talk to a doctor</Link>
+              {home
+                ? <Link to={home} className="btn lg secondary">Open my dashboard <ArrowRight /></Link>
+                : <Link to="/signup" className="btn lg secondary">Create a free account <ArrowRight /></Link>}
             </div>
             <div className="l-trust">
               <span><ShieldCheck size={16} /> You approve every view</span>
@@ -170,13 +250,12 @@ export default function Landing() {
         )}
       </section>
 
-      {/* ---------- free tools (public, no sign-in) ---------- */}
+      {/* ---------- three things you can do right now (no sign-in) ---------- */}
       <section className="l-section" id="tools">
         <div className="l-container">
           <div className="l-section-head">
-            <span className="eyebrow">Free tools · no sign-in</span>
-            <h2>Check prices and find a doctor — free.</h2>
-            <p className="muted">Prices from verified chemists and labs on Sehatra, and verified doctors with reviews only from real visits.</p>
+            <span className="eyebrow">Free · no sign-in</span>
+            <h2>Try it right now.</h2>
           </div>
           <div className="l-portals">
             {FREE_TOOLS.map((p) => (
@@ -188,15 +267,95 @@ export default function Landing() {
               </Link>
             ))}
           </div>
+          <p className="center small mt-2"><Link to="/about">How Sehatra works, E-Clinics and privacy <ArrowRight size={14} className="inline-ic" /></Link></p>
         </div>
       </section>
 
-      {/* ---------- story / how it works ---------- */}
-      <section className="l-section" id="how">
+      {/* ---------- real stories (hidden until there are approved ones) ---------- */}
+      {stories.length > 0 && (
+        <section className="l-section tint">
+          <div className="l-container">
+            <div className="l-section-head">
+              <span className="eyebrow">From people who use it</span>
+              <h2>What people say</h2>
+            </div>
+            <div className="l-stories">
+              {stories.map((s) => (
+                <figure key={s.id} className="l-story">
+                  <blockquote>{s.text}</blockquote>
+                  <figcaption><strong translate="no">{s.name}</strong><span className="tiny muted">{[s.role, s.place].filter(Boolean).join(' · ')}</span></figcaption>
+                </figure>
+              ))}
+            </div>
+            <p className="center small mt-2"><Link to="/testimonials">Read more stories <ArrowRight size={14} className="inline-ic" /></Link></p>
+          </div>
+        </section>
+      )}
+
+      {/* ---------- faq ---------- */}
+      <section className={cx('l-section', stories.length === 0 && 'tint')} id="faq">
+        <div className="l-container l-faq-wrap">
+          <div>
+            <span className="eyebrow">Questions</span>
+            <h2>Things people ask us</h2>
+            <p className="muted">Can&apos;t find your answer? Tap the <strong>Saathi</strong> chat button{support.phone ? <> — or call us on <a href={telHref(support.phone)} translate="no">{support.phone}</a></> : null}.</p>
+          </div>
+          <div className="l-faq">
+            {FAQS.map((f, i) => (
+              <div key={f.q} className={cx('l-faq-item', faq === i && 'open')}>
+                <button onClick={() => setFaq(faq === i ? -1 : i)} aria-expanded={faq === i}>
+                  <span>{f.q}</span>
+                  <ChevronDown size={19} />
+                </button>
+                <div className="l-faq-a"><p className="muted">{f.a}</p></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <FinalCta demo={config?.demo === true} />
+    </Shell>
+  );
+}
+
+function FinalCta({ demo }) {
+  return (
+    <section className="l-section">
+      <div className="l-container">
+        <div className="l-cta">
+          <div>
+            <h2>Create your family&apos;s Health Passport today.</h2>
+            <p>Takes two minutes with your email. Free for patients.</p>
+          </div>
+          <div className="row wrap" style={{ gap: 12 }}>
+            <Link to="/signup" className="btn lg clay">Get started <ArrowRight /></Link>
+            {demo ? <Link to="/login" className="btn lg l-cta-ghost">Try the demo accounts</Link> : <Link to="/join" className="btn lg l-cta-ghost">Join as a doctor or clinic</Link>}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// How it works, E-Clinics, partners and privacy — moved off the home page so it stays short.
+export function About() {
+  const config = usePublicConfig();
+  const { hash } = useLocation();
+  // Arriving at /about#partners: the section only exists after this render, so scroll to it here.
+  useEffect(() => {
+    if (!hash) { window.scrollTo(0, 0); return; }
+    const el = document.getElementById(hash.slice(1));
+    if (el) setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  }, [hash]);
+
+  return (
+    <Shell>
+      <section className="l-section l-about-top" id="how">
         <div className="l-container">
           <div className="l-section-head">
             <span className="eyebrow">How it works</span>
-            <h2>From “I don&apos;t feel well” to medicine in hand.</h2>
+            <h1 className="l-about-title">From “I don&apos;t feel well” to medicine in hand.</h1>
             <p className="muted">Five steps — on your phone, or at an E-Clinic near you.</p>
           </div>
           <ol className="l-journey">
@@ -218,7 +377,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ---------- capabilities ---------- */}
       <section className="l-section tint">
         <div className="l-container">
           <div className="l-section-head">
@@ -243,7 +401,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ---------- kiosk ---------- */}
       <section className="l-section" id="kiosk">
         <div className="l-container l-kiosk">
           <div className="l-kiosk-art" aria-hidden="true">
@@ -258,12 +415,11 @@ export default function Landing() {
               <li><Check /> BP, SpO₂, temperature, weight and sugar checked by the health worker</li>
               <li><Check /> Video consult with a verified doctor</li>
               <li><Check /> Prescription printed on the spot, sent to the nearest pharmacy</li>
-                          </ul>
+            </ul>
           </div>
         </div>
       </section>
 
-      {/* ---------- partners ---------- */}
       <section className="l-section tint" id="partners">
         <div className="l-container">
           <div className="l-section-head">
@@ -294,7 +450,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ---------- privacy ---------- */}
       <section className="l-section" id="privacy">
         <div className="l-container l-privacy">
           <div>
@@ -311,77 +466,8 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ---------- faq ---------- */}
-      <section className="l-section tint" id="faq">
-        <div className="l-container l-faq-wrap">
-          <div>
-            <span className="eyebrow">Questions</span>
-            <h2>Things people ask us</h2>
-            <p className="muted">Can&apos;t find your answer? Tap <strong>Ask Saathi</strong> at the bottom right{support.phone ? <> — or call us on <a href={telHref(support.phone)} translate="no">{support.phone}</a></> : null}.</p>
-          </div>
-          <div className="l-faq">
-            {FAQS.map((f, i) => (
-              <div key={f.q} className={cx('l-faq-item', faq === i && 'open')}>
-                <button onClick={() => setFaq(faq === i ? -1 : i)} aria-expanded={faq === i}>
-                  <span>{f.q}</span>
-                  <ChevronDown size={19} />
-                </button>
-                <div className="l-faq-a"><p className="muted">{f.a}</p></div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ---------- cta ---------- */}
-      <section className="l-section">
-        <div className="l-container">
-          <div className="l-cta">
-            <div>
-              <h2>Create your family&apos;s Health Passport today.</h2>
-              <p>Takes two minutes with your email. Free for patients.</p>
-            </div>
-            <div className="row wrap" style={{ gap: 12 }}>
-              <Link to="/signup" className="btn lg clay">Get started <ArrowRight /></Link>
-              {config?.demo === true ? <Link to="/login" className="btn lg l-cta-ghost">Try the demo accounts</Link> : <Link to="/join" className="btn lg l-cta-ghost">Join as a doctor or clinic</Link>}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <footer className="l-footer">
-        <div className="l-container l-footer-grid">
-          <div>
-            <Logo />
-            <p className="muted small" style={{ marginTop: 12, maxWidth: 300 }}>An independent health-tech startup. Built in India, for every Indian.</p>
-            <div className="l-social">
-              <a href="https://www.linkedin.com/company/nexus-healthcare-official/" target="_blank" rel="noopener noreferrer" aria-label="Sehatra on LinkedIn" title="Follow us on LinkedIn">
-                {/* LinkedIn mark (brand icons aren't in our icon set) */}
-                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="currentColor"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.86 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13ZM7.12 20.45H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z" /></svg>
-                <span>LinkedIn</span>
-              </a>
-            </div>
-          </div>
-          <div>
-            <h4>Product</h4>
-            <Link to="/medicines">Medicine price checker</Link><Link to="/lab-tests">Lab test prices</Link><Link to="/find/doctors">Find a doctor</Link><Link to="/find/labs">Labs near you</Link>
-            <a href="#how">How it works</a><a href="#kiosk">E-Clinics</a><Link to="/testimonials">Testimonials</Link><Link to="/privacy">Privacy policy</Link><Link to="/cookies">Cookie policy</Link><button type="button" className="l-footer-link" onClick={openCookieSettings}>Cookie preferences</button>
-          </div>
-          <div>
-            <h4>Partners</h4>
-            <Link to="/join?track=doctor">Doctors — join Sehatra</Link><Link to="/join?track=facility">List your clinic or hospital</Link><Link to="/join?track=pharmacy">Medical stores</Link><Link to="/join?track=facility">Labs</Link><Link to="/login">Partner sign in</Link>
-          </div>
-          <div>
-            <h4>Help</h4>
-            {support.phone && <a href={telHref(support.phone)} translate="no">{support.phone}</a>}{support.email && <a href={`mailto:${support.email}`} translate="no">{support.email}</a>}{support.hours && <span className="muted small">{support.hours}</span>}<a href="tel:108">Emergency: 108</a>
-          </div>
-        </div>
-        <div className="l-container l-footer-bottom">
-          <span>© {new Date().getFullYear()} Sehatra · Made in India</span>
-          <span>Sehatra gives guidance, not diagnosis. In an emergency, call 108.</span>
-        </div>
-      </footer>
-    </div>
+      <FinalCta demo={config?.demo === true} />
+    </Shell>
   );
 }
 

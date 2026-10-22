@@ -42,7 +42,7 @@ export default function Twin() {
 
   return (
     <div className="stack lg">
-      <PageHeader eyebrow="Swasthya Twin" title={profileKey === 'self' ? 'Your Health Twin' : `${firstName(patient?.name)}’s Health Twin`}
+      <PageHeader eyebrow="My health trends" title={profileKey === 'self' ? 'Where your health is heading' : `Where ${firstName(patient?.name)}’s health is heading`}
         subtitle="A simple model built from your own readings and records. See where you’re headed — and how small changes shift it.">
         {dirty && <Button variant="secondary" icon={RotateCcw} onClick={() => setVals(baseline)}>Reset to my readings</Button>}
       </PageHeader>

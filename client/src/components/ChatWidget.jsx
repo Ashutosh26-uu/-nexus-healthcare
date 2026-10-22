@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { MessageCircleHeart, X, SendHorizontal, Phone, RotateCcw, Mic, Square, Volume2, VolumeX, Headphones } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { MessageCircleHeart, X, SendHorizontal, Phone, RotateCcw, Mic, Square, Volume2, VolumeX, Headphones, ArrowUpRight } from 'lucide-react';
 import { streamChat } from '../api';
 import { useAuth } from '../auth';
 import { useI18n, tr } from '../i18n';
@@ -10,6 +11,18 @@ import './chat.css';
 
 const STORE_KEY = 'oc_chat';
 const VOICE_KEY = 'oc_chat_voice'; // '1' = read every reply aloud
+// One-tap shortcuts under the suggestions: Saathi takes you there instead of only explaining how.
+const GO_PATIENT = [
+  { label: 'Book a doctor', to: '/patient/consult' },
+  { label: 'Order medicines', to: '/patient/medicines' },
+  { label: 'My reports', to: '/patient/records' },
+  { label: 'Emergency help (SOS)', to: '/patient/sos' },
+];
+const GO_PUBLIC = [
+  { label: 'Find a doctor', to: '/find/doctors' },
+  { label: 'Medicine prices', to: '/medicines' },
+  { label: 'Lab test prices', to: '/lab-tests' },
+];
 const SUGGESTIONS = [
   'How do I book a doctor?',
   'What is a Health Passport?',
@@ -89,6 +102,7 @@ export default function ChatWidget() {
   const { user, loading: authLoading } = useAuth() || {};
   const { lang } = useI18n();
   const support = useSupport();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [stored] = useState(loadStored);
   const [messages, setMessages] = useState(stored.messages);
@@ -327,6 +341,14 @@ export default function ChatWidget() {
           {messages.length === 0 && (
             <div className="chat-suggest">
               {SUGGESTIONS.map((s) => <button key={s} onClick={() => send(s)}>{s}</button>)}
+            </div>
+          )}
+          {messages.length === 0 && (!user || ['patient', 'caregiver'].includes(user.role)) && (
+            <div className="chat-go">
+              <span className="tiny muted">Or go straight to</span>
+              {(user ? GO_PATIENT : GO_PUBLIC).map((g) => (
+                <button key={g.to} type="button" onClick={() => { close(); navigate(g.to); }}>{g.label} <ArrowUpRight size={14} /></button>
+              ))}
             </div>
           )}
         </div>

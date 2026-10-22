@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Bell, LogOut, Menu, X, ChevronDown, KeyRound, Cookie, MapPin, ShieldCheck } from 'lucide-react';
+import { Bell, LogOut, Menu, X, ChevronDown, KeyRound, Cookie, MapPin, ShieldCheck, LayoutGrid, UserRound } from 'lucide-react';
 import Logo from './Logo';
 import LanguagePicker from './LanguagePicker';
 import { LocationChip, openCookieSettings, openLocationSettings } from '../consent';
@@ -16,9 +16,10 @@ const TwoStepModal = lazy(() => import('./TwoStep'));
 
 /**
  * Shared shell for every portal.
- * nav: [{ to, label, icon, end, badge }]
+ * nav: [{ to, label, icon, end, badge, group }] — an item with a new `group` starts a headed section.
+ * tabs: optional [{ to, label, icon, end, badge }] — on phones these become a bottom tab bar, plus "More" for the full menu.
  */
-export default function PortalLayout({ portal, nav, children, headerExtra }) {
+export default function PortalLayout({ portal, nav, children, headerExtra, tabs }) {
   const { user, facility, signOut } = useAuth();
   const support = useSupport();
   const [open, setOpen] = useState(false);
@@ -37,6 +38,14 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
   const menuRef = useRef(null);
 
   useEffect(() => { setOpen(false); setBellOpen(false); setMenuOpen(false); }, [location.pathname]);
+  // Floating buttons (Saathi, SOS) sit above the tab bar while it is showing.
+  useEffect(() => {
+    if (!tabs?.length) return undefined;
+    document.body.classList.add('has-tabbar');
+    return () => document.body.classList.remove('has-tabbar');
+  }, [tabs?.length]);
+  // "More" is lit when the current page isn't one of the tabs.
+  const onTab = tabs?.some((t) => (t.end ? location.pathname === t.to : location.pathname.startsWith(t.to)));
 
   // Popovers close on a tap anywhere else or Escape, like every other dropdown in the app.
   useEffect(() => {
@@ -79,12 +88,15 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
           <button className="icon-btn only-mobile" onClick={() => setOpen(false)} aria-label="Close menu"><X /></button>
         </div>
         <nav className="side-nav">
-          {nav.map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => cx('side-link', isActive && 'active')}>
-              {item.icon && <item.icon />}
-              <span className="grow">{item.label}</span>
-              {item.badge ? <span className="side-badge">{item.badge}</span> : null}
-            </NavLink>
+          {nav.map((item, i) => (
+            <div key={item.to} className="side-item">
+              {item.group && item.group !== nav[i - 1]?.group && <div className="side-group">{item.group}</div>}
+              <NavLink to={item.to} end={item.end} className={({ isActive }) => cx('side-link', isActive && 'active')}>
+                {item.icon && <item.icon />}
+                <span className="grow">{item.label}</span>
+                {item.badge ? <span className="side-badge">{item.badge}</span> : null}
+              </NavLink>
+            </div>
           ))}
         </nav>
         <div className="sidebar-foot">
@@ -104,7 +116,7 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
 
       <div className="portal-main">
         <header className="topbar">
-          <button className="icon-btn only-mobile" onClick={() => setOpen(true)} aria-label="Open menu"><Menu /></button>
+          <button className={cx('icon-btn only-mobile', tabs?.length && 'hide-with-tabs')} onClick={() => setOpen(true)} aria-label="Open menu"><Menu /></button>
           <div className="grow topbar-extra">{headerExtra}</div>
           {['patient', 'caregiver'].includes(user?.role) && <LocationChip />}
           <LanguagePicker compact />
@@ -130,8 +142,9 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
             )}
           </div>
           <div className="pop-wrap" ref={menuRef}>
-            <button className="user-btn" onClick={() => { setMenuOpen((v) => !v); setBellOpen(false); }} aria-haspopup="menu" aria-expanded={menuOpen}>
-              <Avatar name={user?.name} size="sm" />
+            <button className="user-btn" onClick={() => { setMenuOpen((v) => !v); setBellOpen(false); }} aria-haspopup="menu" aria-expanded={menuOpen} aria-label="Account and sign-out">
+              {/* Patients see the family switcher's initials beside this — an icon keeps the two apart. */}
+              {tabs?.length ? <span className="user-ic"><UserRound size={18} /></span> : <Avatar name={user?.name} size="sm" />}
               <span className="user-meta">
                 <span className="small notranslate" translate="no" style={{ fontWeight: 600 }}>{user?.name}</span>
                 <span className="tiny muted">{ROLE_LABEL[user?.role]}</span>
@@ -162,6 +175,21 @@ export default function PortalLayout({ portal, nav, children, headerExtra }) {
         )}
         <main className="portal-content" key={location.pathname}>{children}</main>
       </div>
+      {tabs?.length > 0 && (
+        <nav className="tabbar" aria-label="Main">
+          {tabs.map((t) => (
+            <NavLink key={t.to} to={t.to} end={t.end} className={({ isActive }) => cx('tab', isActive && !open && 'active')}>
+              <t.icon />
+              <span>{t.label}</span>
+              {t.badge ? <span className="tab-badge">{t.badge}</span> : null}
+            </NavLink>
+          ))}
+          <button type="button" className={cx('tab', (open || !onTab) && 'active')} onClick={() => setOpen(true)} aria-label="More — every page" aria-expanded={open}>
+            <LayoutGrid />
+            <span>More</span>
+          </button>
+        </nav>
+      )}
       <PasswordModal open={pwOpen} onClose={() => setPwOpen(false)} />
       {mfaOpen && <Suspense fallback={null}><TwoStepModal open={mfaOpen} onClose={() => setMfaOpen(false)} /></Suspense>}
     </div>

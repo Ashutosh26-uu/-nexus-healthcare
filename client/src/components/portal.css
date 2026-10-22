@@ -66,11 +66,47 @@
   .sidebar { position: fixed; inset-inline-start: 0; top: 0; transform: translateX(-100%); transition: transform 0.3s var(--ease); box-shadow: var(--shadow-lg); }
   [dir='rtl'] .sidebar { transform: translateX(100%); }
   .sidebar.open, [dir='rtl'] .sidebar.open { transform: none; }
+  /* The open menu covers the tab bar and the floating SOS / Saathi buttons, so its last items stay reachable. */
+  .sidebar { z-index: 97; }
+  .scrim { z-index: 96; }
   .topbar { padding: 0 14px; }
   .portal-content { padding: 20px 16px 90px; }
   .user-meta { display: none; }
 }
 @media (max-width: 640px) { .topbar-extra { overflow: hidden; } }
+
+/* Menu sections */
+.side-group { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); padding: 14px 12px 4px; }
+.side-item:first-child .side-group { padding-top: 4px; }
+
+/* Account button for patients: an icon, so it can't be mistaken for the family switcher's initials */
+.user-ic { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--paper-2); color: var(--ink-2); border: 1px solid var(--line); }
+
+/* Phone tab bar (patients): the four things people do most, plus More for everything else */
+.tabbar { display: none; }
+@media (max-width: 760px) {
+  .hide-with-tabs { display: none !important; }
+  .tabbar {
+    display: flex; position: fixed; inset-inline: 0; bottom: 0; z-index: 85; background: #fffdf9; border-top: 1px solid var(--line);
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); box-shadow: 0 -6px 20px -14px rgba(20, 30, 28, 0.35);
+  }
+  .tab {
+    flex: 1; min-width: 0; min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    border: 0; background: none; color: var(--ink-3); font: 600 0.72rem var(--sans); text-decoration: none; border-radius: 12px; position: relative; cursor: pointer;
+  }
+  .tab svg { width: 22px; height: 22px; }
+  .tab.active { color: var(--green); }
+  .tab.active svg { background: var(--green-soft); border-radius: 99px; padding: 3px 14px; width: 50px; height: 28px; }
+  .tab span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .tab-badge { position: absolute; top: 4px; inset-inline-start: calc(50% + 8px); background: var(--clay); color: #fff; font-size: 0.6rem; font-weight: 700; min-width: 16px; height: 16px; border-radius: 99px; display: grid; place-items: center; padding: 0 4px; }
+  body.has-tabbar .portal-content { padding-bottom: 150px; }
+  body.has-tabbar .chat-fab, body.has-tabbar .sos-fab { bottom: calc(76px + env(safe-area-inset-bottom)); }
+  body.has-tabbar .chat-nudge { bottom: calc(140px + env(safe-area-inset-bottom)); }
+  body.has-tabbar .toasts { bottom: calc(84px + env(safe-area-inset-bottom)); }
+  /* Bigger targets for thumbs: menu rows and small buttons */
+  .side-link { padding: 12px; min-height: 46px; }
+  .btn.sm { min-height: 40px; }
+}
 
 /* Call stream: shown when the browser blocked sound until a tap */
 .call-unmute { position: absolute; left: 50%; top: 56px; transform: translateX(-50%); z-index: 4; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 18px; border: 0; border-radius: 99px; background: #fff; color: var(--ink); font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,.3); cursor: pointer; white-space: nowrap; }

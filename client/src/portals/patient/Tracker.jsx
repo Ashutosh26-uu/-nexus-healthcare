@@ -62,7 +62,7 @@ export default function Tracker() {
 
   return (
     <div className="stack lg">
-      <PageHeader eyebrow="Health tracker" title={isSelf ? 'Your home readings' : `${firstName(patient?.name)}’s home readings`}
+      <PageHeader eyebrow="BP, sugar & weight" title={isSelf ? 'Your home readings' : `${firstName(patient?.name)}’s home readings`}
         subtitle="Log BP, sugar, weight, oxygen and temperature at home. We'll show the trend and tell you plainly when something needs a doctor." />
 
       <CarePlanCard who={who} />

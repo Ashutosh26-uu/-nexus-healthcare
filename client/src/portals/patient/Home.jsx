@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { HeartPulse, Video, FolderHeart, Pill, ShieldCheck, AlertTriangle, CalendarClock, ChevronRight, Droplet, IdCard, Megaphone, Clock, MessageCircle, Phone } from 'lucide-react';
+import { HeartPulse, Video, FolderHeart, Pill, ShieldCheck, AlertTriangle, CalendarClock, ChevronRight, Droplet, IdCard, Megaphone, Clock, MessageCircle, Phone, UserRoundPen, X, Truck } from 'lucide-react';
 import { Button, Card, Empty, StatusBadge, fmtDateTime, timeAgo } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, greeting, firstName, PageSkeleton, PassportQR } from './shared';
@@ -11,11 +12,14 @@ import { HealthToday, FamilyInvite } from './HomeHealth';
 import InviteCard from './InviteCard';
 
 const MODE_ICON = { video: Video, audio: Phone, chat: MessageCircle };
+const HIDDEN_ALERTS = 'oc_hidden_alerts';
+const readHidden = () => { try { return JSON.parse(localStorage.getItem(HIDDEN_ALERTS)) || []; } catch { return []; } };
 
 export default function Home() {
   const { home, homeLoading, homeError, profiles, reloadHome } = usePatient();
   const navigate = useNavigate();
   const hub = useLive('/family/overview', ['vitals', 'vaccines', 'consults', 'family', 'patients']);
+  const [hidden, setHidden] = useState(readHidden);
 
   if (homeLoading) return <PageSkeleton />;
   if (homeError && !home) return <Empty title="We couldn't load your home screen">{homeError}</Empty>;
@@ -29,76 +33,46 @@ export default function Home() {
   const pastRx = rxList.filter((r) => ['delivered', 'collected'].includes(r.status)).slice(0, 2);
 
   const today = new Date().toLocaleDateString(getLocale(), { weekday: 'long', day: 'numeric', month: 'long' });
+  const alerts = (home.alerts || []).filter((a) => !hidden.includes(a.id));
+  const hideAlert = (id) => {
+    const next = [...hidden, id].slice(-30);
+    setHidden(next);
+    try { localStorage.setItem(HIDDEN_ALERTS, JSON.stringify(next)); } catch { /* ignore */ }
+  };
 
   return (
     <div className="stack lg">
       <PageHeader
         eyebrow={today}
         title={isSelf ? `${greeting()}, ${firstName(p.name)}` : `${greeting()}, ${firstName(me?.name || '')}`}
-        subtitle={isSelf
-          ? 'Here’s everything about your health in one place. How are you feeling today?'
-          : `You’re looking after ${firstName(p.name)} right now. Anything you do here is saved to their passport.`}
+        subtitle={isSelf ? 'What would you like to do today?' : `You’re looking after ${firstName(p.name)}. Anything you do here is saved to their passport.`}
       />
 
-      {isSelf && p.profileComplete === false && (
-        <div className="pt-cp-banner fade-in">
-          <div className="grow">
-            <strong>Complete your profile</strong>
-            <div className="small muted">Add your age, address and symptoms — we&apos;ll show the best doctors near you.</div>
-          </div>
-          <Button variant="clay" onClick={() => navigate('/patient/complete-profile')}>Complete now</Button>
-        </div>
-      )}
+      {/* The four things people come here for — first, before anything else. */}
+      <div className="pt-quick">
+        <QuickAction to="/patient/symptoms" icon={HeartPulse} title="I feel unwell" text="Answer a few questions — 2 minutes" tone="clay" />
+        <QuickAction to="/patient/consult" icon={Video} title="Talk to a doctor" text="Video, audio, chat or a clinic visit" tone="green" />
+        <QuickAction to="/patient/medicines" icon={Pill} title="Medicines" text="Order, track or pick up" tone="sun" />
+        <QuickAction to="/patient/records" icon={FolderHeart} title="My reports" text="Reports, visits & prescriptions" tone="sky" />
+      </div>
 
-      {isSelf && (() => {
-        const next = [...(home.upcoming || [])].filter((c) => c.scheduledAt).sort((a, b) => (a.scheduledAt < b.scheduledAt ? -1 : 1))[0];
-        if (!next) return null;
-        return (
-          <Link to="/patient/follow-ups" className="pt-next-visit fade-in">
-            <span className="pt-next-ic">{new Date(next.scheduledAt).getDate()}<small>{new Date(next.scheduledAt).toLocaleDateString(getLocale(), { month: 'short' })}</small></span>
-            <span className="grow">
-              <strong>{next.followUp ? 'Next follow-up' : 'Next appointment'}: {new Date(next.scheduledAt).toLocaleString(getLocale(), { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</strong>
-              <span className="small muted block">with <span translate="no">{next.doctorName}</span>{next.mode === 'in_person' ? ` at ${next.location?.name || 'the clinic'}` : next.mode === 'audio' ? ' · audio call' : next.mode === 'chat' ? ' · chat' : ' · video'}{next.runningLate ? ` · running ~${next.runningLate.minutes} min late` : ''}</span>
-            </span>
-            <ChevronRight size={18} />
-          </Link>
-        );
-      })()}
+      <WhatsNext home={home} p={p} isSelf={isSelf} activeRx={activeRx} />
 
-      {(home.alerts || []).map((a) => (
-        <div key={a.id} className="callout rose pt-alert fade-in" role="status">
-          <AlertTriangle />
-          <div className="grow">
-            <strong>{a.disease} cases are rising in {a.district}.</strong>{' '}
-            {/dengue|malaria|chikungunya/i.test(a.disease || '')
-              ? 'Use mosquito nets, empty standing water around the house, and if anyone has a high fever with body ache, check symptoms early.'
-              : 'Take extra care with hygiene and clean water, and if anyone in the family feels unwell, check symptoms early.'}
-            <div className="tiny mt-1" style={{ opacity: 0.8 }}>{a.status === 'confirmed' ? 'Confirmed by the health department' : 'Early warning from local lab results'} · {timeAgo(a.createdAt)}</div>
+      {alerts.slice(0, 1).map((a) => (
+        <div key={a.id} className="pt-alert-strip fade-in" role="status">
+          <AlertTriangle size={18} />
+          <div className="grow small">
+            <strong>{a.disease} is rising in {a.district}.</strong>{' '}
+            {/dengue|malaria|chikungunya/i.test(a.disease || '') ? 'Use mosquito nets and empty standing water.' : 'Take care with hygiene and clean water.'}{' '}
+            <Link to="/patient/symptoms">Check symptoms</Link>
+            <span className="tiny muted block">{a.status === 'confirmed' ? 'Confirmed by the health department' : 'Early warning from local lab results'} · {timeAgo(a.createdAt)}</span>
           </div>
-          <Button size="sm" variant="secondary" onClick={() => navigate('/patient/symptoms')}>Check symptoms</Button>
+          <button type="button" className="icon-btn" onClick={() => hideAlert(a.id)} aria-label="Hide this alert"><X size={16} /></button>
         </div>
       ))}
 
-      {home.pendingConsents > 0 && (
-        <div className="callout pt-nudge fade-in">
-          <ShieldCheck />
-          <div className="grow">
-            <strong>{home.pendingConsents === 1 ? 'Someone is asking' : `${home.pendingConsents} requests are asking`} to see {isSelf ? 'your' : `${firstName(p.name)}’s`} records.</strong>{' '}
-            Nothing is shared until you say yes.
-          </div>
-          <Button size="sm" variant="secondary" onClick={() => navigate('/patient/consents')}>Review</Button>
-        </div>
-      )}
-
       <HealthToday card={(hub.data || []).find((x) => x.id === p.id)} isSelf={isSelf} name={firstName(p.name)} />
       {isSelf && profiles.length <= 1 && <FamilyInvite />}
-
-      <div className="pt-quick">
-        <QuickAction to="/patient/symptoms" icon={HeartPulse} title="Check symptoms" text="Tell us what's wrong — takes 2 minutes" tone="clay" />
-        <QuickAction to="/patient/consult" icon={Video} title="Talk to a doctor" text="Video, audio or chat, from home" tone="green" />
-        <QuickAction to="/patient/records" icon={FolderHeart} title="My records" text="Reports, visits & prescriptions" tone="sky" />
-        <QuickAction to="/patient/medicines" icon={Pill} title="Medicines" text="Order, track, or pick up" tone="sun" />
-      </div>
 
       <div className="grid side">
         <div className="stack lg">
@@ -190,6 +164,47 @@ export function rxStatusLabel(r) {
     delivered: 'Delivered',
     collected: 'Collected',
   }[r.status] || r.status;
+}
+
+// One card for everything that needs the person's attention, instead of a stack of banners.
+function WhatsNext({ home, p, isSelf, activeRx }) {
+  const rows = [];
+  if (isSelf && p.profileComplete === false) {
+    rows.push({ key: 'profile', to: '/patient/complete-profile', icon: UserRoundPen, tone: 'clay', title: 'Finish your profile', text: 'Age and address — so we can show doctors near you' });
+  }
+  const next = [...(home.upcoming || [])].filter((c) => c.scheduledAt || c.status !== 'scheduled').sort((a, b) => String(a.scheduledAt || '').localeCompare(String(b.scheduledAt || '')))[0];
+  if (next) {
+    const live = next.status === 'in_progress';
+    const when = next.scheduledAt ? new Date(next.scheduledAt).toLocaleString(getLocale(), { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
+    rows.push({
+      key: 'visit', to: live || next.status === 'queued' ? `/patient/consult/${next.id}` : '/patient/follow-ups', icon: CalendarClock, tone: live ? 'clay' : 'green',
+      title: live ? 'Your doctor is waiting — join now' : next.status === 'queued' ? 'You’re in the queue' : `${next.followUp ? 'Follow-up' : 'Appointment'}: ${when}`,
+      text: <>with <span translate="no">{next.doctorName}</span>{next.mode === 'in_person' ? ` at ${next.location?.name || 'the clinic'}` : next.mode === 'audio' ? ' · audio call' : next.mode === 'chat' ? ' · chat' : ' · video'}{next.runningLate ? ` · running ~${next.runningLate.minutes} min late` : ''}</>,
+    });
+  }
+  const toOrder = activeRx.filter((r) => r.status === 'issued').length;
+  if (toOrder) rows.push({ key: 'rx', to: '/patient/medicines', icon: Pill, tone: 'sun', title: toOrder === 1 ? 'A prescription is ready to order' : `${toOrder} prescriptions are ready to order`, text: 'Order delivery or pick up from a chemist' });
+  if (home.medicineOrders > 0) rows.push({ key: 'orders', to: '/patient/medicines', icon: Truck, tone: 'sun', title: home.medicineOrders === 1 ? 'A medicine order is in progress' : `${home.medicineOrders} medicine orders in progress`, text: 'Track where it is' });
+  if (home.pendingConsents > 0) {
+    rows.push({ key: 'consent', to: '/patient/consents', icon: ShieldCheck, tone: 'sky', title: home.pendingConsents === 1 ? 'Someone wants to see your records' : `${home.pendingConsents} requests to see your records`, text: 'Nothing is shared until you say yes' });
+  }
+  if (!rows.length) return null;
+  return (
+    <Card title="What’s next" className="pt-whatsnext fade-in">
+      <div className="pt-wn-list">
+        {rows.map((r) => (
+          <Link key={r.key} to={r.to} className="pt-wn-row">
+            <span className={`pt-ic-tile ${r.tone}`}><r.icon size={18} /></span>
+            <span className="grow">
+              <span className="strong block">{r.title}</span>
+              <span className="small muted">{r.text}</span>
+            </span>
+            <ChevronRight size={18} className="muted" />
+          </Link>
+        ))}
+      </div>
+    </Card>
+  );
 }
 
 function QuickAction({ to, icon, title, text, tone }) {
