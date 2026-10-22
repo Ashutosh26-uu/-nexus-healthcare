@@ -2,11 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Mic, MicOff, Square } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { cx } from './ui';
+import { speechLang, Recognition } from './speech';
 
-// Speech language for the browser's recogniser — from the app language (hi → hi-IN, ta → ta-IN …).
-const INDIAN = new Set(['hi', 'bn', 'ta', 'te', 'mr', 'gu', 'kn', 'ml', 'pa', 'or', 'as', 'ur']);
-const speechLang = (code) => (!code || code === 'en' ? (navigator.language || 'en-IN') : INDIAN.has(code) ? `${code}-IN` : code);
-const Recognition = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
 export const voiceSupported = () => !!Recognition;
 
 // A mic button that types what the person says into a field — for patients who'd rather speak than

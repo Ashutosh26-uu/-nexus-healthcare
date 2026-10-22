@@ -86,7 +86,7 @@ export function PrivacyPolicy() {
           <li>An <strong>email delivery service</strong> sends your one-time sign-in codes and notifications.</li>
           <li><strong>DxGPT</strong> (by Foundation29, a non-profit) answers health questions you type to Saathi. Only the message you type is sent — never your name, Health Passport, records or medicines — and DxGPT removes any personal details it still finds. If DxGPT is busy or out of capacity, the same question goes to <strong>Corti</strong> (a medical AI company, servers in the EU) under the same rule — only what you typed. Questions about using Sehatra are answered by Saathi itself.</li>
           <li><strong>Razorpay</strong>, only if card or net-banking payments are switched on for the network — it then handles those payments on its own secure pages.</li>
-          <li>Your <strong>browser’s speech service</strong> when you use voice input, as described above.</li>
+          <li>Your <strong>browser’s speech service</strong> when you use voice input, as described above — including when you speak to Saathi. When Saathi reads a reply aloud, your device’s own voice is used where one is installed for that language; otherwise the browser’s online voice (for example Google’s in Chrome) receives the reply’s text to speak it.</li>
           <li>An <strong>AI provider</strong> for the consult scribe assistant, only when a doctor switches it on and you agree. It is currently off.</li>
         </ul>
 
@@ -157,7 +157,7 @@ export function CookiePolicy() {
             <Row k="nx_location" what="Your live location (rounded to about 100 m) or the town you typed, only after you allow it. Signed-in patients also send it to Sehatra so that searches start from where they are." />
             <Row k="nx_radius_*" what="How far you chose to search for doctors or chemists." />
             <Row k="oc_patient_notifs · oc_pref_place · oc_relations" what="Notification settings, your usual place and the family relationships you use, so forms are pre-filled." />
-            <Row k="oc_chat · oc_chat_nudged · oc_install_snooze_until" what="Your Saathi help chat on this device, and whether you dismissed the ‘get the app’ prompt." />
+            <Row k="oc_chat · oc_chat_nudged · oc_chat_voice · oc_install_snooze_until" what="Your Saathi help chat on this device, whether Saathi reads replies aloud, and whether you dismissed the ‘get the app’ prompt." />
             <Row k="oc_kiosk_lang · oc_kiosk_voice · oc_kiosk_flow" what="On an E-Clinic kiosk: the language, voice and the visit in progress." />
             <Row k="oc_dr_draft_* · nx_lab_signer" what="For health workers: an unsent prescription draft and the reporting pathologist, so nothing is lost if the page closes." />
           </tbody>
