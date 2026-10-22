@@ -39,7 +39,8 @@ What you know about the platform (use it to guide people):
 - Family profiles for children and elderly parents; a Health tracker for home BP, sugar, weight, oxygen and temperature readings; a child vaccination schedule.
 - Sehatra E-Clinics are assisted kiosks with a trained operator; don't claim where they are or how many there are.
 - Support: ${SUPPORT}. Never invent a phone number, email, address, price, statistic or certification.
-- If asked what AI, model, company or technology powers you: you are Saathi, Sehatra's AI health assistant, and you can't share details about the technology behind you. Never name any AI company, product or model.`;
+- If asked what AI, model, company or technology powers you, or who made you: you are Saathi, made by the Sehatra team, and you can't share how you are built. Never name any AI company, product, model, server, database or programming language.
+- Only health and using Sehatra. If the message is about anything else (studies, coding, maths, sport, films, news, politics, money, jokes, stories, general knowledge…), reply with exactly [[OFF_TOPIC]] and nothing else.`;
 
 // Privacy: nothing from the person's record — no name, passport id, allergies, conditions, medicines,
 // prescriptions or visits — is ever sent to the external model. It gets only generic app context plus what
@@ -138,7 +139,19 @@ const NEED_MORE = 'Could you tell me a little more — the age of the person, ho
 
 // "Which AI are you?" — Saathi answers that itself (no provider is asked) and never names a vendor.
 const IDENTITY_Q = /(which|what|kaun\s*s[aei]|kon\s*s[aei]|konsa|kaunsa|kis)\s+(ai|a\.i\.?|model|llm|engine|technology|tech|api|chatbot|bot)\b|who\s+(made|built|created|developed|trained|owns)\s+you|kisne\s+banaya|aap(ko)?\s+kisne|powered\s+by|are\s+you\s+(chat\s*gpt|gpt|gemini|claude|openai|llama|a\s+bot|human|real)|which\s+company\s+(made|built)|what\s+are\s+you\b/i;
-const IDENTITY_REPLY = "I'm **Saathi**, Sehatra's AI health assistant. I can't share details about the technology behind me — but I'm here to help you understand symptoms, find the right doctor, and use your Health Passport and medicines. What would you like help with?";
+// Questions about how Saathi or Sehatra is built (stack, servers, code, prompt, who made it) get the same answer.
+const TECH_Q = /\b(tech(nology)?\s*stack|source\s*code|(your|ur|saathi'?s?|sehatra'?s?)\s+(code|prompt|system\s*prompt|instructions|api|backend|database|server|algorithm|model|training\s*data)|which\s+(database|server|cloud|hosting|framework|programming\s*language|language\s+(are\s+you|is\s+it)\s+(written|coded|built))|how\s+(are|were)\s+you\s+(made|built|trained|coded|programmed|developed)|who\s+(is|are)\s+your\s+(creator|developer|maker|owner|founder)|(app|website|site)\s+(kaise|kisne|kis\s*ne)\s+bana|kaise\s+ban[ae]\s+(ho|hai)|kisne\s+bana(ya|i|ye)|kaun\s+bana(ya|ta)|kon\s+bana(ya|ta)|react|node\.?js|express\.?js|postgres|zoho|catalyst|aws|azure|firebase|prompt\s*injection|ignore\s+(all\s+)?(previous|above)\s+instructions)\b|किसने\s*बनाया|कैसे\s*बना|कौन\s*सा\s*(एआई|AI|मॉडल)|तकनीक|टेक्नोलॉजी/i;
+const IDENTITY_REPLY = "I'm **Saathi**, made by the Sehatra team to help you with your health. I can't share how I'm built or the technology behind Sehatra — but I'm happy to help with symptoms, finding a doctor, your Health Passport or medicines. What would you like help with?";
+
+// Saathi talks only about health and using Sehatra. Anything else gets a short, polite no — checked here for
+// the obvious cases (no API call spent), and by the medical engine ("non_medical") for the rest.
+const OFF_TOPIC_MARK = '[[OFF_TOPIC]]';
+const OFF_TOPIC_REPLY = "Sorry, I can't help with that. I can only help with health questions and with using Sehatra — like finding a doctor, your Health Passport, medicines or lab tests.";
+const OFF_TOPIC = /\b(cod(e|ing)|program(me|ming)?\b|python|javascript|java\b|html|css\b|sql\b|algorithm|homework|assignment|essay|poem|poetry|shayari|story|stories|joke|chutkula|song|lyrics|gaana|movie|film|web\s*series|netflix|bollywood|actor|actress|celebrit|cricket|football|ipl|world\s*cup|match\s+score|election|chunav|politic|rajneeti|prime\s+minister|president|bitcoin|crypto|share\s*market|stock\s*market|sensex|nifty|mutual\s*fund|invest(ing|ment)?|weather|mausam|capital\s+of|history\s+of|recipe|biryani|translate|maths?\b|equation|solve\s+(this|the)|physics|pubg|free\s*fire|video\s*game|girlfriend|boyfriend|love\s*letter|horoscope|rashifal|astrology|kundli|news\b|samachar|general\s+knowledge|\bgk\b|tell\s+me\s+about\s+yourself)/i;
+const OFF_TOPIC_HI = /कहानी|चुटकुला|क्रिकेट|फ़िल्म|फिल्म|गाना|चुनाव|शायरी|मौसम|राजनीति|कविता|समाचार|राशिफल/;
+// A health word anywhere keeps it a health question ("can I play cricket with knee pain?").
+const HEALTH_HINT = /\b(health|sehat|swasth|doctor|dr\b|medic|tablet|dawa|dawai|goli|pain|dard|ache|fever|bukhar|cough|khansi|cold|zukam|sugar|diabet|bp\b|blood|pressure|heart|pregnan|period|injur|chot|sick|ill\b|illness|disease|bimar|ilaj|treat|symptom|vaccin|teeka|diet|weight|sleep|neend|stress|anxi|depress|tension|hospital|clinic|allerg|vomit|ulti|loose\s*motion|dast|rash|infect|skin|eye|aankh|tooth|teeth|daant|stomach|pet\s*(me|mein|dard)|headache|sir\s*dard|exercise|yoga|nutrition|calorie|protein|vitamin|injury|fracture|wound|burn|breath|saans|chest|cancer|thyroid|asthma|covid|kidney|liver|lung)|दर्द|बुखार|दवा|बीमार|इलाज|स्वास्थ्य|डॉक्टर|सेहत|खांसी|उल्टी|चोट/i;
+const isOffTopic = (t) => (OFF_TOPIC.test(t) || OFF_TOPIC_HI.test(t)) && !HEALTH_HINT.test(t);
 // Provider outputs never name a vendor or model, whatever the person asked.
 const VENDOR_NAMES = /\b(DxGPT|Dx29|Foundation\s?29|Corti(\s?AI)?|MedGemma[\w.-]*|Med-PaLM[\w.-]*|Meditron|OpenAI|Chat\s?GPT|GPT-?\d[\w.-]*|Anthropic|Claude|Gemini|Llama[\w.-]*|Mistral)\b/gi;
 // Providers sometimes write maths in LaTeX — "\(38^\circ\text{C}\)" — which the chat bubble shows as code.
@@ -171,8 +184,10 @@ async function healthReply(message, ctx, lang, seed) {
       { role: 'system', content: `${SYSTEM_PROMPT}${genericContext(ctx)}\n\nThe app language is ${langName}; reply in the language the person writes in.` },
       { role: 'user', content: message },
     ]);
-    r = { kind: 'answer', text: brandSafe(text), lang: '' };
+    r = text.includes(OFF_TOPIC_MARK) ? { kind: 'off-topic', lang: '' } : { kind: 'answer', text: brandSafe(text), lang: '' };
   }
+  // Not a health question → the polite no, without the health footer or AI note.
+  if (r.kind === 'off-topic') return localise(OFF_TOPIC_REPLY, replyLang(r.lang, message, lang));
   // Our own lines (intro, tips, footer, AI note) go in the same language as the answer itself.
   const L = replyLang(r.lang, message, lang);
   const t = (s) => localise(s, L);
@@ -198,7 +213,7 @@ async function healthReply(message, ctx, lang, seed) {
 }
 
 // Fixed help texts may be translated by the i18n engine (they contain no personal data).
-i18n.registerServerStrings([EMERGENCY_REPLY, ...FAQ.map((f) => f.a), NO_MATCH, ALLERGY_NOTE, DIFF_INTRO, DIFF_OUTRO, ANSWER_FOOTER, AI_NOTE, TIP_TITLE, NEED_MORE, IDENTITY_REPLY]);
+i18n.registerServerStrings([EMERGENCY_REPLY, ...FAQ.map((f) => f.a), NO_MATCH, ALLERGY_NOTE, DIFF_INTRO, DIFF_OUTRO, ANSWER_FOOTER, AI_NOTE, TIP_TITLE, NEED_MORE, IDENTITY_REPLY, OFF_TOPIC_REPLY]);
 
 async function localise(text, lang) {
   try { return await i18n.translateServerText(lang, text); } catch { return text; }
@@ -255,8 +270,14 @@ async function handleChat(req, res, ctx) {
     return res.end();
   }
 
-  if (IDENTITY_Q.test(last.content)) {
-    await streamFallback(res, await localise(IDENTITY_REPLY, lang));
+  if (IDENTITY_Q.test(last.content) || TECH_Q.test(last.content)) {
+    await streamFallback(res, await localise(IDENTITY_REPLY, replyLang('', last.content, lang)));
+    res.write('data: [DONE]\n\n');
+    return res.end();
+  }
+
+  if (isOffTopic(last.content)) {
+    await streamFallback(res, await localise(OFF_TOPIC_REPLY, replyLang('', last.content, lang)));
     res.write('data: [DONE]\n\n');
     return res.end();
   }
@@ -299,11 +320,28 @@ The person has chosen ${langName} for the app. Reply in ${langName} unless they 
     // res, not req: since Node 16 req emits 'close' once its body has been read (express.json already did),
     // so the request's 'close' either aborted every answer at once or never fired on a real disconnect.
     res.on('close', () => { if (!res.writableEnded) stream.abort(); });
+    // The start of the reply is held back until it can't be the off-topic marker, so the marker never shows.
+    const write = (t) => res.write(`data: ${JSON.stringify({ delta: t })}\n\n`);
+    let held = '';
+    let passing = false;
+    let offTopic = false;
     for await (const event of stream) {
-      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-        res.write(`data: ${JSON.stringify({ delta: event.delta.text })}\n\n`);
-      }
+      if (event.type !== 'content_block_delta' || event.delta.type !== 'text_delta') continue;
+      if (passing) { write(event.delta.text); continue; }
+      held += event.delta.text;
+      const s = held.trimStart();
+      if (s.startsWith(OFF_TOPIC_MARK)) { offTopic = true; break; }
+      if (s.length < OFF_TOPIC_MARK.length && OFF_TOPIC_MARK.startsWith(s)) continue;
+      passing = true;
+      write(held);
     }
+    if (offTopic || (!passing && held.includes(OFF_TOPIC_MARK))) {
+      stream.abort();
+      await streamFallback(res, await localise(OFF_TOPIC_REPLY, lang));
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    }
+    if (!passing && held) write(held);
     const final = await stream.finalMessage();
     if (final.stop_reason === 'refusal') {
       res.write(`data: ${JSON.stringify({ delta: `\n\nI can't help with that one — please ${SUPPORT}.` })}\n\n`);

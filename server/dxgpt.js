@@ -88,12 +88,14 @@ const clean = (t) => String(t || '').replace(/\s*\[\d+\](\[\d+\])*/g, '').replac
 /**
  * Answer a health message. Returns { kind: 'answer', text, lang } for a question, or
  * { kind: 'differential', items: [{ name, about }], lang } when it reads as a description of someone's
- * symptoms. `lang` is the language DxGPT detected (e.g. 'hi', 'hi-Latn', 'en').
+ * symptoms, or { kind: 'off-topic' } when it isn't about health. `lang` is the language DxGPT detected (e.g. 'hi', 'hi-Latn', 'en').
  */
 async function answer(message, seed) {
   const a = await call('/ask', message, seed);
   const text = clean(a.medicalAnswer);
   if (text) return { kind: 'answer', text, lang: a.detectedLang || '' };
+  // DxGPT flags questions that aren't about health — Saathi declines those (no second call).
+  if (a.intentReason === 'non_medical') return { kind: 'off-topic', lang: a.detectedLang || '' };
   // An empty answer means DxGPT read it as a case ("go"/"enrich") — ask it for the likely causes instead.
   const d = await call('/diagnose', message, seed);
   const items = (d.data || []).slice(0, 3).map((x) => ({ name: clean(x.diagnosis), about: clean(x.description) })).filter((x) => x.name);
