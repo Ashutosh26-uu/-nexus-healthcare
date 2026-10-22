@@ -47,6 +47,7 @@ export function PrivacyPolicy() {
         <h3>Your location</h3>
         <ul>
           <li>Only with your permission. Live location is rounded to about 100 metres before it is stored, and is used solely to show doctors, hospitals, labs and chemists near you. You can type a town instead at any time, and switch live location off under <button type="button" className="link" onClick={openCookieSettings}>Cookie preferences</button>.</li>
+          <li><strong>SOS:</strong> when you press and hold SOS, your exact location (if you allow it) is saved with that alert and shown to your family on a private link. The link works only for 24 hours, or until you mark yourself safe, and every opening is counted so you can see it. Your emergency contacts who use Sehatra are alerted in the app and by email. A hospital gets your name, age, blood group, allergies and conditions only if you tap “Tell them I’m coming” for that hospital.</li>
         </ul>
         <h3>Payments</h3>
         <ul>

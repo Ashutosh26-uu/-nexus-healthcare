@@ -3732,6 +3732,7 @@ async function erasePatient(p, { by = 'system' } = {}) {
   drop('monitorAlerts', mine);
   drop('consents', mine);
   drop('careTransfers', mine);
+  drop('sosEvents', mine);
   // Ratings a patient left: keep the star score so doctors' averages stay honest, but strip everything that
   // points back to the person (their partial name, the free-text note, and the passport/consult ids).
   for (const r of d.reviews || []) if (mine(r)) { delete r.name; delete r.text; delete r.consultId; r.patientId = null; }
@@ -7961,6 +7962,13 @@ app.post('/api/admin/automation/test', auth, role('super_admin'), async (req, re
   const r = await automation.sendTest(req.user.name);
   audit(req.user, 'automation_test', null, 'automation', r.ok ? 'test event delivered' : `test failed: ${r.error}`);
   res.status(r.ok ? 200 : 502).json(r);
+});
+
+// One-tap SOS (sos.js). Helpers defined further down are passed as arrows — they're only read per request.
+require('./sos')(app, {
+  auth, role, activePatient, db, store, notify, touch, touchFacility, broadcast, audit, nowIso, clean, findUserByPhone,
+  patientOwnerUserIds, patientPoint, geo, otp, publicLimiter, userById, ageOf, DEMO_EMAIL,
+  appUrl: () => APP_URL(), emailsOn: () => reminderEmailsOn(), escHtml: (s) => escHtml(s),
 });
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.' }));

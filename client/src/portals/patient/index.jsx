@@ -1,7 +1,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Home as HomeIcon, HeartPulse, Video, FolderHeart, Pill, ShieldCheck, Users, IdCard, Settings as SettingsIcon, ChevronDown, Check, UserPlus, Activity, Coins, Dna, ScanLine, UserRoundPen, MapPin, Stethoscope, FileUp, FlaskConical, CalendarClock, Repeat, Gauge, Syringe } from 'lucide-react';
-import { Gift } from 'lucide-react'; // Invite & earn
+import { Gift, Siren } from 'lucide-react'; // Invite & earn · SOS
 import PortalLayout from '../../components/PortalLayout';
 import { pageLoader } from '../../prefetch';
 import { Avatar, Button, Modal, cx, useToast } from '../../components/ui';
@@ -9,6 +9,7 @@ import { session } from '../../api';
 import { useLive } from '../../live';
 import { PatientContext, HOME_TOPICS, PageSkeleton, firstName, greeting, relationOf, usePatient } from './shared';
 import Home from './Home';
+import { SosButton } from './Sos';
 import { useI18n, codeForName } from '../../i18n';
 import './patient.css';
 
@@ -36,6 +37,7 @@ const Consents = page(() => import('./Consents'));
 const Family = page(() => import('./Family'));
 const Tracker = page(() => import('./Tracker'));
 const Vaccines = page(() => import('./Vaccines'));
+const SosPage = page(() => import('./Sos'));
 
 // Keyed by id so state from one consult never carries into the next.
 function ConsultRoomById() {
@@ -104,6 +106,7 @@ export default function PatientApp() {
     { to: '/patient/family', label: 'Family', icon: Users },
     { to: '/patient/family-graph', label: 'Family health', icon: Dna },
     { to: '/patient/scan', label: 'Check a medicine', icon: ScanLine },
+    { to: '/patient/sos', label: 'SOS', icon: Siren },
     { to: '/patient/emergency', label: 'Emergency card', icon: IdCard },
     { to: '/patient/settings', label: 'Settings', icon: SettingsIcon },
   ];
@@ -130,6 +133,7 @@ export default function PatientApp() {
           <Route path="family-graph" element={<FamilyGraph />} />
           <Route path="scan" element={<MedicineScan />} />
           <Route path="emergency" element={<EmergencyCard />} />
+          <Route path="sos" element={<SosPage />} />
           <Route path="settings" element={<Settings />} />
           <Route path="complete-profile" element={<CompleteProfile />} />
           <Route path="tests" element={<Tests />} />
@@ -141,6 +145,7 @@ export default function PatientApp() {
         </Suspense>
         </div>
         <CompleteProfilePrompt />
+        <SosButton />
       </PortalLayout>
     </PatientContext.Provider>
   );
