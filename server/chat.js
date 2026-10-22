@@ -6,6 +6,8 @@ const Anthropic = require('@anthropic-ai/sdk');
 const dxgpt = require('./dxgpt');
 const corti = require('./corti');
 const i18n = require('./i18n');
+const LINES = require('./saathi-lines');
+const { isHinglish, romanize } = require('./hinglish');
 
 // The real support contact, only if the operator configured one (SUPPORT_PHONE / SUPPORT_EMAIL) — never a
 // made-up helpline. Read once at start-up: the help texts below are fixed strings (they get translated).
@@ -16,7 +18,7 @@ const SUPPORT = SUPPORT_PHONE
   ? `call our team at **${SUPPORT_PHONE}**${SUPPORT_HOURS ? ` (${SUPPORT_HOURS})` : ''}${SUPPORT_EMAIL ? ` or email ${SUPPORT_EMAIL}` : ''}`
   : SUPPORT_EMAIL ? `email our team at **${SUPPORT_EMAIL}**` : 'contact the Sehatra team';
 
-const EMERGENCY_WORDS = ['सीने में दर्द', 'छाती में दर्द', 'सांस नहीं', 'साँस नहीं', 'बेहोश', 'दौरा', 'खून की उल्टी', 'आत्महत्या', 'सांप ने काटा', 'ज़हर', 'dolor de pecho', 'no puedo respirar', 'douleur thoracique', 'ألم في الصدر', 'سینے میں درد', 'chest pain', 'can\'t breathe', 'cannot breathe', 'breathless', 'unconscious', 'seizure', 'fits', 'stroke', 'heavy bleeding', 'vomiting blood', 'suicide', 'kill myself', 'snake bite', 'poison', 'face drooping', 'slurred'];
+const EMERGENCY_WORDS = ['सीने में दर्द', 'छाती में दर्द', 'सांस नहीं', 'साँस नहीं', 'बेहोश', 'दौरा', 'खून की उल्टी', 'आत्महत्या', 'सांप ने काटा', 'ज़हर', 'seene me dard', 'seene mein dard', 'sine me dard', 'chhati me dard', 'chati me dard', 'saans nahi', 'sans nahi', 'saans nahin', 'behosh', 'khoon ki ulti', 'khun ki ulti', 'atmahatya', 'khudkushi', 'saanp ne kata', 'sanp ne kata', 'zeher kha', 'jahar kha', 'dolor de pecho', 'no puedo respirar', 'douleur thoracique', 'ألم في الصدر', 'سینے میں درد', 'chest pain', 'can\'t breathe', 'cannot breathe', 'breathless', 'unconscious', 'seizure', 'fits', 'stroke', 'heavy bleeding', 'vomiting blood', 'suicide', 'kill myself', 'snake bite', 'poison', 'face drooping', 'slurred'];
 
 const EMERGENCY_REPLY =
   "This sounds like it could be an emergency. **Please call 108 (ambulance) right now**, or go to the nearest emergency department. If you're at a Sehatra E-Clinic, tell the operator immediately — they will help you call and show you the nearest hospital.\n\nIf you have thoughts of harming yourself, please call **Tele-MANAS at 14416** — it's free and open 24/7.";
@@ -113,12 +115,34 @@ const AI_NOTE = '⚠️ **Saathi is an AI and can make mistakes.** Please consul
 // The language to write our own lines in: the language the answer came back in (DxGPT detects it), or
 // Hindi when the person typed in Devanagari, else the app language. Romanised Hindi ("hi-Latn") keeps the
 // app language, since our translations are in the native script.
+// Saathi answers in the language the question was written in — not the app's language. The script decides
+// first (Tamil letters → Tamil), then Hindi typed in English letters → Hinglish ('hi-Latn'), then what the
+// medical engine detected (e.g. Spanish). Plain English stays English; text with no letters uses the app language.
+const SCRIPTS = [
+  [/[\u0980-\u09FF]/, 'bn'], [/[\u0A00-\u0A7F]/, 'pa'], [/[\u0A80-\u0AFF]/, 'gu'], [/[\u0B00-\u0B7F]/, 'or'],
+  [/[\u0B80-\u0BFF]/, 'ta'], [/[\u0C00-\u0C7F]/, 'te'], [/[\u0C80-\u0CFF]/, 'kn'], [/[\u0D00-\u0D7F]/, 'ml'],
+  [/[\u0600-\u06FF]/, 'ur'],
+];
 function replyLang(detected, message, appLang) {
-  if (/[ऀ-ॿ]/.test(message)) return 'hi'; // typed in Devanagari → Hindi, whatever a provider reports
-  const base = String(detected || '').split('-')[0].toLowerCase();
-  if (base && base !== 'en' && !/latn/i.test(String(detected)) && i18n.langInfo(base)) return base;
+  const det = String(detected || '').split('-')[0].toLowerCase();
+  const latn = /latn/i.test(String(detected));
+  if (/[\u0900-\u097F]/.test(message)) {
+    // Devanagari: Hindi, unless Marathi/Nepali was detected or is the app language.
+    if (['mr', 'ne'].includes(det)) return det;
+    return ['mr', 'ne'].includes(appLang) ? appLang : 'hi';
+  }
+  for (const [re, code] of SCRIPTS) {
+    if (!re.test(message)) continue;
+    if (code === 'bn' && (det === 'as' || appLang === 'as')) return 'as';
+    if (code === 'ur' && ['ar', 'fa'].includes(det || appLang)) return det || appLang;
+    return i18n.langInfo(code) ? code : appLang;
+  }
+  if ((latn && det === 'hi') || isHinglish(message)) return 'hi-Latn';
+  if (det && det !== 'en' && !latn && i18n.langInfo(det)) return det;
+  if (/[a-z]/i.test(message)) return 'en';
   return appLang;
 }
+
 
 // The built-in self-care advice for this symptom, if there is one (ORS for loose motions, fluids for fever…).
 function selfCareTip(message) {
@@ -147,7 +171,7 @@ const IDENTITY_REPLY = "I'm **Saathi**, made by the Sehatra team to help you wit
 // the obvious cases (no API call spent), and by the medical engine ("non_medical") for the rest.
 const OFF_TOPIC_MARK = '[[OFF_TOPIC]]';
 const OFF_TOPIC_REPLY = "Sorry, I can't help with that. I can only help with health questions and with using Sehatra — like finding a doctor, your Health Passport, medicines or lab tests.";
-const OFF_TOPIC = /\b(cod(e|ing)|program(me|ming)?\b|python|javascript|java\b|html|css\b|sql\b|algorithm|homework|assignment|essay|poem|poetry|shayari|story|stories|joke|chutkula|song|lyrics|gaana|movie|film|web\s*series|netflix|bollywood|actor|actress|celebrit|cricket|football|ipl|world\s*cup|match\s+score|election|chunav|politic|rajneeti|prime\s+minister|president|bitcoin|crypto|share\s*market|stock\s*market|sensex|nifty|mutual\s*fund|invest(ing|ment)?|weather|mausam|capital\s+of|history\s+of|recipe|biryani|translate|maths?\b|equation|solve\s+(this|the)|physics|pubg|free\s*fire|video\s*game|girlfriend|boyfriend|love\s*letter|horoscope|rashifal|astrology|kundli|news\b|samachar|general\s+knowledge|\bgk\b|tell\s+me\s+about\s+yourself)/i;
+const OFF_TOPIC = /\b(cod(e|ing)|program(me|ming)?\b|python|javascript|java\b|html|css\b|sql\b|algorithm|homework|assignment|essay|poem|poetry|shayari|story|stories|kahani|kavita|joke|chutkula|song|lyrics|gaana|movie|film|web\s*series|netflix|bollywood|actor|actress|celebrit|cricket|football|ipl|world\s*cup|match\s+score|election|chunav|politic|rajneeti|prime\s+minister|president|bitcoin|crypto|share\s*market|stock\s*market|sensex|nifty|mutual\s*fund|invest(ing|ment)?|weather|mausam|capital\s+of|history\s+of|recipe|biryani|translate|maths?\b|equation|solve\s+(this|the)|physics|pubg|free\s*fire|video\s*game|girlfriend|boyfriend|love\s*letter|horoscope|rashifal|astrology|kundli|news\b|samachar|general\s+knowledge|\bgk\b|tell\s+me\s+about\s+yourself)/i;
 const OFF_TOPIC_HI = /कहानी|चुटकुला|क्रिकेट|फ़िल्म|फिल्म|गाना|चुनाव|शायरी|मौसम|राजनीति|कविता|समाचार|राशिफल/;
 // A health word anywhere keeps it a health question ("can I play cricket with knee pain?").
 const HEALTH_HINT = /\b(health|sehat|swasth|doctor|dr\b|medic|tablet|dawa|dawai|goli|pain|dard|ache|fever|bukhar|cough|khansi|cold|zukam|sugar|diabet|bp\b|blood|pressure|heart|pregnan|period|injur|chot|sick|ill\b|illness|disease|bimar|ilaj|treat|symptom|vaccin|teeka|diet|weight|sleep|neend|stress|anxi|depress|tension|hospital|clinic|allerg|vomit|ulti|loose\s*motion|dast|rash|infect|skin|eye|aankh|tooth|teeth|daant|stomach|pet\s*(me|mein|dard)|headache|sir\s*dard|exercise|yoga|nutrition|calorie|protein|vitamin|injury|fracture|wound|burn|breath|saans|chest|cancer|thyroid|asthma|covid|kidney|liver|lung)|दर्द|बुखार|दवा|बीमार|इलाज|स्वास्थ्य|डॉक्टर|सेहत|खांसी|उल्टी|चोट/i;
@@ -181,7 +205,7 @@ async function healthReply(message, ctx, lang, seed) {
     console.warn(`[chat] DxGPT unavailable (${e.message}) — trying Corti`);
     const langName = i18n.langInfo(lang)?.name || 'English';
     const text = await corti.complete([
-      { role: 'system', content: `${SYSTEM_PROMPT}${genericContext(ctx)}\n\nThe app language is ${langName}; reply in the language the person writes in.` },
+      { role: 'system', content: `${SYSTEM_PROMPT}${genericContext(ctx)}\n\nThe app language is ${langName}. Reply in exactly the language and script the person writes in — Hindi typed in English letters (Hinglish) gets a Hinglish reply in English letters, Tamil script gets Tamil script, and so on.` },
       { role: 'user', content: message },
     ]);
     r = text.includes(OFF_TOPIC_MARK) ? { kind: 'off-topic', lang: '' } : { kind: 'answer', text: brandSafe(text), lang: '' };
@@ -191,17 +215,20 @@ async function healthReply(message, ctx, lang, seed) {
   // Our own lines (intro, tips, footer, AI note) go in the same language as the answer itself.
   const L = replyLang(r.lang, message, lang);
   const t = (s) => localise(s, L);
+  // The engine answers Hinglish questions in Devanagari — write it in English letters, as it was asked.
+  const own = (s) => (L === 'hi-Latn' ? romanize(brandSafe(s)) : brandSafe(s));
+  const tipLine = async (tip) => {
+    const text = tip && await localiseOptional(tip, L);
+    return text ? `\n\n${await t(TIP_TITLE)} ${text}` : '';
+  };
   let out;
   if (r.kind === 'need-more') {
-    const tip = selfCareTip(message);
-    out = `${await t(NEED_MORE)}${tip ? `\n\n${await t(TIP_TITLE)} ${await t(tip)}` : ''}\n\n${await t(ANSWER_FOOTER)}`;
+    out = `${await t(NEED_MORE)}${await tipLine(selfCareTip(message))}\n\n${await t(ANSWER_FOOTER)}`;
   } else if (r.kind === 'differential') {
-    const list = r.items.map((x, i) => `${i + 1}. **${brandSafe(x.name)}** — ${brandSafe(x.about)}`).join('\n');
-    const tip = selfCareTip(message);
-    const tipText = tip ? `\n\n${await t(TIP_TITLE)} ${await t(tip)}` : '';
-    out = `${await t(DIFF_INTRO)}\n\n${list}${tipText}\n\n${await t(DIFF_OUTRO)}`;
+    const list = r.items.map((x, i) => `${i + 1}. **${own(x.name)}** — ${own(x.about)}`).join('\n');
+    out = `${await t(DIFF_INTRO)}\n\n${list}${await tipLine(selfCareTip(message))}\n\n${await t(DIFF_OUTRO)}`;
   } else {
-    out = `${brandSafe(r.text)}\n\n${await t(ANSWER_FOOTER)}`;
+    out = `${own(r.text)}\n\n${await t(ANSWER_FOOTER)}`;
   }
   // Same allergy reminder as the built-in answers — read from the record on our server, never sent to DxGPT.
   const allergies = (ctx?.patient?.allergies || []).filter(Boolean);
@@ -215,8 +242,27 @@ async function healthReply(message, ctx, lang, seed) {
 // Fixed help texts may be translated by the i18n engine (they contain no personal data).
 i18n.registerServerStrings([EMERGENCY_REPLY, ...FAQ.map((f) => f.a), NO_MATCH, ALLERGY_NOTE, DIFF_INTRO, DIFF_OUTRO, ANSWER_FOOTER, AI_NOTE, TIP_TITLE, NEED_MORE, IDENTITY_REPLY, OFF_TOPIC_REPLY]);
 
+// Every fixed line by name, so its hand-written version in saathi-lines.js can be found.
+const LINE_NAMES = new Map([
+  [AI_NOTE, 'AI_NOTE'], [ANSWER_FOOTER, 'ANSWER_FOOTER'], [OFF_TOPIC_REPLY, 'OFF_TOPIC_REPLY'], [IDENTITY_REPLY, 'IDENTITY_REPLY'],
+  [NEED_MORE, 'NEED_MORE'], [EMERGENCY_REPLY, 'EMERGENCY_REPLY'], [DIFF_INTRO, 'DIFF_INTRO'], [DIFF_OUTRO, 'DIFF_OUTRO'],
+  [TIP_TITLE, 'TIP_TITLE'], [ALLERGY_NOTE, 'ALLERGY_NOTE'],
+  ...FAQ.filter((f) => f.tip).map((f) => [f.a, `TIP_${f.k[0]}`]),
+]);
+
 async function localise(text, lang) {
-  try { return await i18n.translateServerText(lang, text); } catch { return text; }
+  const own = LINES[lang]?.[LINE_NAMES.get(text)];
+  if (own) return own;
+  try {
+    // Hinglish: the Hindi version written in English letters (English if there's no Hindi one).
+    if (lang === 'hi-Latn') return romanize(await i18n.translateServerText('hi', text));
+    return await i18n.translateServerText(lang, text);
+  } catch { return text; }
+}
+// An extra line (a self-care tip) is left out rather than shown in a different language from the answer.
+async function localiseOptional(text, lang) {
+  const out = await localise(text, lang);
+  return out === text && lang !== 'en' ? null : out;
 }
 
 async function streamFallback(res, text) {
@@ -263,21 +309,22 @@ async function handleChat(req, res, ctx) {
   }
 
   const lower = last.content.toLowerCase();
+  const qLang = replyLang('', last.content, lang); // the question's own language
   if (EMERGENCY_WORDS.some((w) => lower.includes(w))) {
     res.write(`data: ${JSON.stringify({ emergency: true })}\n\n`);
-    await streamFallback(res, await localise(EMERGENCY_REPLY, lang));
+    await streamFallback(res, await localise(EMERGENCY_REPLY, qLang));
     res.write('data: [DONE]\n\n');
     return res.end();
   }
 
   if (IDENTITY_Q.test(last.content) || TECH_Q.test(last.content)) {
-    await streamFallback(res, await localise(IDENTITY_REPLY, replyLang('', last.content, lang)));
+    await streamFallback(res, await localise(IDENTITY_REPLY, qLang));
     res.write('data: [DONE]\n\n');
     return res.end();
   }
 
   if (isOffTopic(last.content)) {
-    await streamFallback(res, await localise(OFF_TOPIC_REPLY, replyLang('', last.content, lang)));
+    await streamFallback(res, await localise(OFF_TOPIC_REPLY, qLang));
     res.write('data: [DONE]\n\n');
     return res.end();
   }
@@ -293,9 +340,9 @@ async function handleChat(req, res, ctx) {
     }
     if (res.writableEnded || res.destroyed) return undefined; // the chat was closed while we waited
     if (!text) {
-      text = await fallbackText(last.content, ctx, lang);
+      text = await fallbackText(last.content, ctx, qLang);
       // A health question answered from the built-in tips still gets the same AI disclaimer at the end.
-      if (!isAppQuestion(last.content)) text += `\n\n${await localise(AI_NOTE, replyLang('', last.content, lang))}`;
+      if (!isAppQuestion(last.content)) text += `\n\n${await localise(AI_NOTE, qLang)}`;
     }
     await streamFallback(res, text);
     res.write('data: [DONE]\n\n');
@@ -314,7 +361,7 @@ async function handleChat(req, res, ctx) {
       fallbacks: 'default',
       system: `${SYSTEM_PROMPT}${genericContext(ctx)}
 
-The person has chosen ${langName} for the app. Reply in ${langName} unless they clearly write in another language — then reply in the language they wrote in. Keep medical terms understandable for that language's speakers.`,
+The person has chosen ${langName} for the app, but always reply in exactly the language and script of their latest message — Hindi typed in English letters (Hinglish) gets Hinglish in English letters, Tamil script gets Tamil script, English gets English. Keep medical terms understandable for that language's speakers.`,
       messages: history,
     });
     // res, not req: since Node 16 req emits 'close' once its body has been read (express.json already did),
