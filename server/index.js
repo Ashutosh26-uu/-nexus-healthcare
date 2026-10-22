@@ -7980,7 +7980,7 @@ app.use((err, _req, res, _next) => {
 // ---------- automatic reminders & patient emails ----------
 // Emails carry NO medical details (no symptoms, diagnosis, medicines, tests or results) — only who, when, where,
 // what to bring, and a link to the app, where the patient signs in to see the rest.
-const APP_URL = () => (process.env.APP_URL || process.env.PUBLIC_URL || 'https://sehatra-50046997916.development.catalystappsail.in').trim().replace(/\/+$/, '');
+const APP_URL = () => (process.env.APP_URL || process.env.PUBLIC_URL || 'https://sehatra-50047089327.development.catalystappsail.in').trim().replace(/\/+$/, '');
 // Demo networks are full of seeded people — only a live network (or an explicit opt-in) emails anyone.
 const reminderEmailsOn = () => DATA_MODE === 'live' || process.env.REMINDER_EMAILS === 'true';
 const escHtml = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));

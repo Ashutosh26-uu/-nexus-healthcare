@@ -3,7 +3,7 @@
 // working. No database, no app code — the real server runs only under the new name.
 const http = require('http');
 
-const NEW_URL = (process.env.NEW_URL || 'https://sehatra-50046997916.development.catalystappsail.in').replace(/\/+$/, '');
+const NEW_URL = (process.env.NEW_URL || 'https://sehatra-50047089327.development.catalystappsail.in').replace(/\/+$/, '');
 const PORT = Number(process.env.X_ZOHO_CATALYST_LISTEN_PORT || process.env.PORT || 9000);
 
 http.createServer((req, res) => {
