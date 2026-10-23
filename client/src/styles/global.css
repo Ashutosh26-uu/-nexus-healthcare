@@ -514,3 +514,8 @@ table { max-width: 100%; }
   .pt-scope button { min-height: 38px; padding: 6px 14px; font-size: 0.86rem; }
   .link-btn { min-height: 32px; }
 }
+
+/* Fast answers shouldn't flash a placeholder: page skeletons and spinners fade in only after 150 ms,
+   so a screen that loads quickly goes straight from the old page to the new one. */
+[aria-busy="true"][aria-label="Loading"], .page-loading { animation: lateIn 0.25s ease 0.15s both; }
+@keyframes lateIn { from { opacity: 0; } }

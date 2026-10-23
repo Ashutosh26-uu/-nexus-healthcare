@@ -7,6 +7,18 @@ import App from './App';
 // so the patient portal can adopt the profile language on first login.
 try { window.__ocLangSaved = Boolean(localStorage.getItem('oc_lang')); } catch { window.__ocLangSaved = true; }
 
+// Web fonts: index.html preloads the stylesheet; applying it here (not as a <link rel=stylesheet> in the HTML)
+// means it never blocks the first paint — on a slow connection the page shows at once in system fonts.
+{
+  const href = document.querySelector('link[rel="preload"][as="style"][href*="fonts.googleapis.com"]')?.href;
+  if (href && !document.querySelector(`link[rel="stylesheet"][href="${href}"]`)) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = href;
+    document.head.appendChild(link);
+  }
+}
+
 // Installable app (PWA): the service worker caches the app shell only — never /api health data.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}); });

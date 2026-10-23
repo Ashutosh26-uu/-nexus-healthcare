@@ -6,7 +6,7 @@ import PortalLayout from '../../components/PortalLayout';
 import { pageLoader } from '../../prefetch';
 import { Avatar, Button, Modal, cx, useToast } from '../../components/ui';
 import { session } from '../../api';
-import { useLive } from '../../live';
+import { useLive, prefetchLive } from '../../live';
 import { PatientContext, HOME_TOPICS, PageSkeleton, firstName, greeting, relationOf, usePatient } from './shared';
 import Home from './Home';
 import { SosButton } from './Sos';
@@ -51,6 +51,14 @@ export default function PatientApp() {
   usePrefetch();
   const [profileKey, setProfileKey] = useState(() => session.profile || 'self');
   const home = useLive('/patient/home', HOME_TOPICS, [profileKey]);
+  // Once Home is showing, quietly load the screens people open most, so even their first tap is instant.
+  const homeReady = Boolean(home.data);
+  useEffect(() => {
+    if (!homeReady) return undefined;
+    const t = setTimeout(() => { stop = prefetchLive(['/patient/records', '/patient/tests', '/patient/medicine-orders', '/patient/refills', '/patient/follow-ups', '/patient/recovery']); }, 1500);
+    let stop = () => {};
+    return () => { clearTimeout(t); stop(); };
+  }, [homeReady, profileKey]);
   const toast = useToast();
   const navigate = useNavigate();
   const { lang, setLang } = useI18n();
