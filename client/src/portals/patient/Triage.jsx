@@ -6,6 +6,7 @@ import NearbyDoctors from './NearbyDoctors';
 import { Avatar, Button, Field, TriageBadge, cx, useToast } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, firstName, relationOf, SPEECH_LANG } from './shared';
+import { joinResults } from '../../components/speech';
 
 const QUICK_SYMPTOMS = ['Fever', 'Cough', 'Headache', 'Body ache', 'Sore throat', 'Cold / runny nose', 'Vomiting', 'Loose motions', 'Stomach pain', 'Dizziness', 'Rash or itching', 'Burning urine', 'Tiredness', 'Acidity'];
 const DANGER_SIGNS = [
@@ -188,11 +189,7 @@ function SymptomInput({ value, onChange, language }) {
     rec.interimResults = true;
     rec.continuous = true;
     baseRef.current = value ? `${value.trim()} ` : '';
-    rec.onresult = (e) => {
-      let said = '';
-      for (let i = 0; i < e.results.length; i++) said += e.results[i][0].transcript;
-      onChange(baseRef.current + said);
-    };
+    rec.onresult = (e) => onChange(baseRef.current + joinResults(e.results));
     rec.onerror = (e) => {
       if (e.error === 'not-allowed') toast('Microphone permission was blocked. You can type instead.', 'error');
       setListening(false);

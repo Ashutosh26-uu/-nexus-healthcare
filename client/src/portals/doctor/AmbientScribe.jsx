@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Sparkles, Mic, Square, FileText, Check, Trash2, ShieldCheck } from 'lucide-react';
 import { api } from '../../api';
 import { Button, useAction, cx } from '../../components/ui';
+import { joinResults } from '../../components/speech';
 
 // Ambient scribe: listen to the consultation (with the patient's consent), keep an editable transcript, then
 // draft a SOAP note, codes and medicines the doctor reviews and drops into the prescription. Sehatra stores
@@ -37,19 +38,20 @@ export default function AmbientScribe({ consultId, onUse }) {
   const startRec = () => {
     const r = new Recognition();
     r.lang = lang;
-    r.continuous = true;
+    // One phrase per session (the browser ends it at a pause; onend starts the next). The phrase shows live
+    // and is added to the transcript once when it ends — Android Chrome repeats the growing sentence as
+    // separate results, which used to write every version of it.
+    r.continuous = false;
     r.interimResults = true;
-    const sent = new Set(); // Android repeats final results within a session — add each one once
+    let said = '';
+    const commit = () => {
+      if (said) setTranscript((x) => `${x}${x && !x.endsWith(' ') ? ' ' : ''}${said}${/[.!?।]$/.test(said) ? '' : '.'} `);
+      said = '';
+    };
     r.onresult = (e) => {
-      let finals = '';
-      let live = '';
-      for (let i = e.resultIndex; i < e.results.length; i += 1) {
-        const t = e.results[i][0].transcript;
-        if (e.results[i].isFinal) { if (!sent.has(i)) { sent.add(i); finals += `${t.trim()}. `; } } else live += t;
-      }
+      said = joinResults(e.results, { finalOnly: true }) || said;
       restarts.current = 0;
-      if (finals) setTranscript((x) => `${x}${x && !x.endsWith(' ') ? ' ' : ''}${finals}`);
-      setInterim(live);
+      setInterim(joinResults(e.results));
     };
     r.onerror = (e) => {
       if (e.error === 'no-speech' || e.error === 'aborted' || e.error === 'network') return;
@@ -58,6 +60,7 @@ export default function AmbientScribe({ consultId, onUse }) {
     };
     // Browsers end recognition after a pause; keep going until the doctor taps Stop.
     r.onend = () => {
+      commit();
       setInterim('');
       if (wantOn.current && restarts.current < 50) { restarts.current += 1; try { startRec(); return; } catch { /* fall through */ } }
       if (wantOn.current) { wantOn.current = false; setMicError('The microphone keeps stopping — check your connection, then tap Listen again.'); }

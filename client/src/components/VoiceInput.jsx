@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Mic, MicOff, Square } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { cx } from './ui';
-import { speechLang, Recognition } from './speech';
+import { speechLang, Recognition, joinResults } from './speech';
 
 export const voiceSupported = () => !!Recognition;
 
@@ -24,22 +24,17 @@ export default function VoiceInput({ onText, onStart, className, label = 'Speak'
   useEffect(() => () => { wantOn.current = false; rec.current?.abort?.(); }, []);
   if (!Recognition) return null;
 
+  // One phrase per session: the browser ends it at a pause, the phrase is sent once, and a new session starts.
+  // (Android Chrome repeats the growing sentence as separate results — "kafi", "kafi din", "kafi din se" —
+  // so sending each result as it came wrote every version. Now the whole phrase goes once, de-duplicated.)
   const session = () => {
     const r = new Recognition();
     r.lang = speechLang(lang);
     r.interimResults = false;
-    r.continuous = true;
+    r.continuous = false;
     r.maxAlternatives = 1;
-    // Android repeats a final result in later events of the same session — send each result index once.
-    const sent = new Set();
-    r.onresult = (e) => {
-      const parts = [];
-      for (let i = e.resultIndex; i < e.results.length; i += 1) {
-        if (e.results[i].isFinal && !sent.has(i)) { sent.add(i); parts.push(e.results[i][0].transcript); }
-      }
-      const said = parts.join(' ').trim();
-      if (said) { restarts.current = 0; onTextRef.current?.(said); }
-    };
+    let said = '';
+    r.onresult = (e) => { said = joinResults(e.results, { finalOnly: true }) || said; };
     r.onerror = (e) => {
       // Silence or a dropped session is normal while listening; onend restarts it.
       if (e.error === 'no-speech' || e.error === 'aborted' || e.error === 'network') return;
@@ -47,6 +42,7 @@ export default function VoiceInput({ onText, onStart, className, label = 'Speak'
       setError(e.error === 'not-allowed' || e.error === 'service-not-allowed' ? 'Allow the microphone for this site to speak.' : 'The mic stopped — tap to start again.');
     };
     r.onend = () => {
+      if (said) { restarts.current = 0; onTextRef.current?.(said); said = ''; }
       // A runaway loop (mic grabbed by another app) stops after many empty restarts in a row.
       if (wantOn.current && restarts.current < 50) {
         restarts.current += 1;

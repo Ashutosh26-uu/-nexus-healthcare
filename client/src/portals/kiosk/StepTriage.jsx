@@ -7,6 +7,7 @@ import { KButton, KError, StepFrame } from './KUi';
 import Slip from './Slip';
 import { langOf } from './i18n';
 import { getLocale } from '../../i18n';
+import { joinResults } from '../../components/speech';
 
 const SYMPTOMS = [
   { id: 'fever', icon: Thermometer, text: 'fever' },
@@ -52,7 +53,7 @@ function useSpeechInput(lang, onText) {
       const rec = new SR();
       rec.lang = lang;
       rec.interimResults = false;
-      rec.onresult = (e) => onText(Array.from(e.results).map((r) => r[0].transcript).join(' '));
+      rec.onresult = (e) => onText(joinResults(e.results)); // Android repeats the growing sentence — keep it once
       rec.onend = () => setListening(false);
       rec.onerror = () => setListening(false);
       recRef.current = rec;

@@ -6,6 +6,27 @@ const INDIAN = new Set(['hi', 'bn', 'ta', 'te', 'mr', 'gu', 'kn', 'ml', 'pa', 'o
 export const speechLang = (code) => (!code || code === 'en' ? (typeof navigator !== 'undefined' && navigator.language) || 'en-IN' : INDIAN.has(code) ? `${code}-IN` : code);
 
 export const Recognition = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
+
+/**
+ * The words in a recognition result list, said once. Android Chrome repeats the growing sentence as new
+ * results ("kafi", "kafi din", "kafi din se"…) instead of updating one, so plain joining wrote every
+ * version. A result that extends the previous one replaces it; an older, shorter copy is skipped.
+ * `finalOnly` leaves out words the browser may still change.
+ */
+export function joinResults(results, { finalOnly = false } = {}) {
+  const parts = [];
+  const norm = (s) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+  for (let i = 0; i < results.length; i += 1) {
+    if (finalOnly && !results[i].isFinal) continue;
+    const t = String(results[i][0]?.transcript || '').replace(/\s+/g, ' ').trim();
+    if (!t) continue;
+    const last = parts[parts.length - 1];
+    if (last && norm(t).startsWith(norm(last))) parts[parts.length - 1] = t;
+    else if (last && norm(last).startsWith(norm(t))) continue;
+    else parts.push(t);
+  }
+  return parts.join(' ');
+}
 const synth = typeof window !== 'undefined' && 'speechSynthesis' in window && window.SpeechSynthesisUtterance ? window.speechSynthesis : null;
 export const listenSupported = () => !!Recognition;
 export const speakSupported = () => !!synth;
@@ -119,13 +140,8 @@ export function listenOnce({ lang, onInterim, onEnd, onError }) {
   let finalText = '';
   let failed = false;
   r.onresult = (e) => {
-    let interim = '';
-    finalText = '';
-    for (let i = 0; i < e.results.length; i += 1) {
-      if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
-      else interim += e.results[i][0].transcript;
-    }
-    onInterim?.((finalText + interim).trim());
+    finalText = joinResults(e.results, { finalOnly: true });
+    onInterim?.(joinResults(e.results));
   };
   r.onerror = (e) => {
     if (e.error === 'no-speech' || e.error === 'aborted') return;
