@@ -2551,6 +2551,40 @@ app.get('/api/patient/refills', auth, role('patient', 'caregiver'), (req, res) =
   res.json(out.sort((a, b) => a.daysLeft - b.daysLeft));
 });
 
+// Refill forecast (pharmacy): regular medicines filled at this store that run out in the next 14 days — the
+// people who will be back for them — against what's on the shelf, so the stock is ready before they come.
+app.get('/api/pharmacy/refill-forecast', auth, role('pharmacist'), (req, res) => {
+  const d = db();
+  const fid = req.user.facilityId;
+  const now = Date.now();
+  const latest = latestRxByDrug(d);
+  const byRx = medOrdersByRx(d);
+  const keyOf = (drug) => normDrug(catalog.priceOf(drug)?.name || drug);
+  const need = new Map();
+  const people = new Set();
+  for (const rx of d.prescriptions) {
+    const info = rx.items?.length && refillInfo(d, rx, latest, byRx);
+    if (!info || info.superseded || info.pharmacyId !== fid) continue;
+    const days = Math.ceil((info.runOut - now) / 86400000);
+    if (days < -7 || days > 14) continue;
+    people.add(rx.patientId);
+    for (const it of info.items) {
+      const k = keyOf(it.drug);
+      const row = need.get(k) || { drug: catalog.priceOf(it.drug)?.name || it.drug, units: 0, thisWeek: 0, patients: 0 };
+      const u = catalog.unitsFor(it);
+      row.units += u;
+      if (days <= 7) row.thisWeek += u;
+      row.patients += 1;
+      need.set(k, row);
+    }
+  }
+  const stock = new Map();
+  for (const i of d.inventory) if (i.facilityId === fid) stock.set(keyOf(i.drug), (stock.get(keyOf(i.drug)) || 0) + (i.qty || 0));
+  const items = [...need.entries()].map(([k, r]) => ({ ...r, stock: stock.get(k) || 0, short: Math.max(0, r.units - (stock.get(k) || 0)) }))
+    .sort((a, b) => b.short - a.short || b.units - a.units);
+  res.json({ windowDays: 14, patients: people.size, items });
+});
+
 // ---------- stock intelligence (pharmacy) ----------
 // Reorder = 30-day usage × lead-time factor (30 days of cover + ~a week for the distributor) − stock, in whole packs.
 const LEAD_TIME_FACTOR = 1.25;
@@ -8031,6 +8065,8 @@ require('./intakes')(app, { auth, role, db, store, notify, audit, broadcast, tou
 
 // Near-expiry stock → nearby stores that will sell it before it expires (expiry.js).
 require('./expiry')(app, { auth, role, db, store, notify, audit, broadcast, touchFacility, nowIso, istDay, geo, catalog, normDrug, facilityName });
+require('./ops')(app, { auth, role, db, store, notify, audit, broadcast, touch, touchFacility, nowIso, istDay, clean, geo, catalog, normDrug,
+  patientById, patientPoint, facilityName, patientOwnerUserIds, govScope, wellness, planProgress, userById });
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.' }));
 

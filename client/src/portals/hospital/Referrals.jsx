@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BedDouble, Stethoscope, Check, X, Ambulance, IdCard } from 'lucide-react';
+import { BedDouble, Stethoscope, Check, X, Ambulance, IdCard, Home } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Card, Button, TriageBadge, StatusBadge, Empty, Tabs, timeAgo, fmtDateTime, useAction } from '../../components/ui';
 import { api } from '../../api';
@@ -11,14 +11,23 @@ export default function Referrals({ home, reload }) {
   const [tab, setTab] = useState('pending');
   const all = home.referrals || [];
   const pending = all.filter((r) => r.status === 'pending');
-  const history = all.filter((r) => r.status !== 'pending').sort((a, b) => new Date(b.decidedAt || b.createdAt) - new Date(a.decidedAt || a.createdAt));
+  const admitted = all.filter((r) => r.status === 'accepted').sort((a, b) => new Date(a.decidedAt || a.createdAt) - new Date(b.decidedAt || b.createdAt));
+  const history = all.filter((r) => !['pending', 'accepted'].includes(r.status)).sort((a, b) => new Date(b.decidedAt || b.createdAt) - new Date(a.decidedAt || a.createdAt));
 
   return (
     <>
       <PageHeader title="Incoming referrals" subtitle="Patients the network wants to send you. A quick yes or no helps the doctor find another bed fast if you can't take them." />
-      <Tabs value={tab} onChange={setTab} tabs={[{ value: 'pending', label: 'Waiting for you', count: pending.length }, { value: 'history', label: 'History', count: history.length }]} />
+      <Tabs value={tab} onChange={setTab} tabs={[{ value: 'pending', label: 'Waiting for you', count: pending.length }, { value: 'admitted', label: 'Admitted', count: admitted.length }, { value: 'history', label: 'History', count: history.length }]} />
 
-      {tab === 'pending' ? (
+      {tab === 'admitted' ? (
+        admitted.length === 0 ? (
+          <Card><Empty icon={BedDouble} title="No one admitted from referrals">Patients you accept show here until you discharge them.</Empty></Card>
+        ) : (
+          <div className="stack lg">
+            {admitted.map((r) => <AdmittedCard key={r.id} r={r} reload={reload} />)}
+          </div>
+        )
+      ) : tab === 'pending' ? (
         pending.length === 0 ? (
           <Card><Empty icon={Ambulance} title="All caught up">No referrals are waiting. New ones appear here as soon as a doctor sends them.</Empty></Card>
         ) : (
@@ -41,7 +50,7 @@ export default function Referrals({ home, reload }) {
                   <td><TriageBadge level={r.urgency} /></td>
                   <td><StatusBadge status={r.status} /></td>
                   <td className="small muted">{r.note || '—'}</td>
-                  <td className="small nowrap muted">{fmtDateTime(r.decidedAt || r.createdAt)}</td>
+                  <td className="small nowrap muted">{fmtDateTime(r.dischargedAt || r.decidedAt || r.createdAt)}</td>
                 </tr>
               ))}
             </tbody>
@@ -49,6 +58,47 @@ export default function Referrals({ home, reload }) {
         </div>
       )}
     </>
+  );
+}
+
+// Discharge in one go: the summary lands in the patient's records, the bed is freed, the referring doctor is told.
+function AdmittedCard({ r, reload }) {
+  const [open, setOpen] = useState(false);
+  const [f, setF] = useState({ diagnosis: '', summary: '', medicines: '', instructions: '', followUpDays: 7 });
+  const [run, busy] = useAction();
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const discharge = async () => {
+    const ok = await run('dis', () => api.post(`/hospital/referrals/${r.id}/discharge`, f), `${r.patientName} discharged — summary sent to the patient and ${r.fromName?.split(' (')[0] || 'their doctor'}`);
+    if (ok) reload();
+  };
+  return (
+    <div className="card ref-card">
+      <div className="row wrap" style={{ gap: 10 }}>
+        <h3 className="mb-0 grow" translate="no">{r.patientName}</h3>
+        <span className="badge sky"><BedDouble /> {bedLabel(r.bedType)}</span>
+      </div>
+      <div className="tiny muted mt-1">Admitted {timeAgo(r.decidedAt || r.createdAt)} · from {r.fromName}</div>
+      <p className="ref-reason">{r.reason}</p>
+      {open ? (
+        <div className="ref-decide fade-in stack">
+          <input className="input" value={f.diagnosis} onChange={set('diagnosis')} placeholder="Final diagnosis (e.g. Dengue fever, recovered)" maxLength={200} />
+          <textarea className="textarea" rows={3} value={f.summary} onChange={set('summary')} placeholder="What was done, and how the patient is now" maxLength={1500} />
+          <textarea className="textarea" rows={2} style={{ minHeight: 56 }} value={f.medicines} onChange={set('medicines')} placeholder="Medicines to take at home (optional)" maxLength={600} />
+          <textarea className="textarea" rows={2} style={{ minHeight: 56 }} value={f.instructions} onChange={set('instructions')} placeholder="Care at home and warning signs (optional)" maxLength={600} />
+          <label className="small row wrap" style={{ gap: 8 }}>Follow-up with their doctor in
+            <select className="select" style={{ width: 'auto' }} value={f.followUpDays} onChange={set('followUpDays')}>
+              {[[0, 'Not needed'], [3, '3 days'], [7, '1 week'], [14, '2 weeks'], [30, '1 month']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </label>
+          <div className="row" style={{ justifyContent: 'flex-end' }}>
+            <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button size="sm" icon={Home} loading={busy === 'dis'} disabled={f.summary.trim().length < 10} onClick={discharge}>Discharge</Button>
+          </div>
+        </div>
+      ) : (
+        <div className="row ref-actions"><Button icon={Home} onClick={() => setOpen(true)}>Discharge home</Button></div>
+      )}
+    </div>
   );
 }
 

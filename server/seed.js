@@ -265,7 +265,7 @@ function demoSeed() {
     careTransfers: [],
     credits: [], // Sehatra credit ledger (credits.js)
     vitalsLog: [],
-    monitorAlerts: [], carePlans: [], bills: [], gtinMap: [], stories: [], sosEvents: [], recoveryChecks: [], kioskIntakes: [], // remote-monitoring alerts (monitoring.js); SOS alerts (sos.js); Care Companion check-ins (recovery.js)
+    monitorAlerts: [], carePlans: [], bills: [], gtinMap: [], stories: [], sosEvents: [], recoveryChecks: [], kioskIntakes: [], bedHistory: [], // remote-monitoring alerts (monitoring.js); SOS alerts (sos.js); Care Companion check-ins (recovery.js)
   };
 }
 
@@ -277,7 +277,7 @@ const dataMode = () => (process.env.DATA_MODE || (process.env.NODE_ENV === 'prod
 function liveSeed({ withAdmin = true } = {}) {
   const full = demoSeed();
   const crypto = require('crypto');
-  const empty = ['sosEvents', 'recoveryChecks', 'kioskIntakes', 'stories', 'gtinMap', 'bills', 'carePlans', 'reviews', 'medOrders', 'careTransfers', 'payments', 'patients', 'doctors', 'facilities', 'consults', 'prescriptions', 'labOrders', 'inventory', 'beds', 'roster', 'referrals', 'opdSlots', 'transfers', 'deliveries', 'alerts', 'corridors', 'consents', 'audit', 'notifications', 'advisories', 'regions', 'records', 'pharmacyReturns', 'purchaseOrders', 'credits', 'vitalsLog', 'monitorAlerts'];
+  const empty = ['sosEvents', 'recoveryChecks', 'kioskIntakes', 'bedHistory', 'stories', 'gtinMap', 'bills', 'carePlans', 'reviews', 'medOrders', 'careTransfers', 'payments', 'patients', 'doctors', 'facilities', 'consults', 'prescriptions', 'labOrders', 'inventory', 'beds', 'roster', 'referrals', 'opdSlots', 'transfers', 'deliveries', 'alerts', 'corridors', 'consents', 'audit', 'notifications', 'advisories', 'regions', 'records', 'pharmacyReturns', 'purchaseOrders', 'credits', 'vitalsLog', 'monitorAlerts'];
   // The rule set is reference data, but the demo's change history ("signed off by medical advisor", "after
   // pilot feedback") never happened on a live network: start at v1 with one honest entry (and a snapshot,
   // so an admin can roll back to the defaults).

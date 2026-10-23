@@ -5,6 +5,7 @@ import { api } from '../../api';
 import { Card, Stat, Empty, StatusBadge, Button, Modal, Field, useAction, cx, fmtNum, timeAgo } from '../../components/ui';
 import { useGov, regionOptions, isOpen } from './shared';
 import AlertAction from './AlertAction';
+import ShortageRisk from './ShortageRisk';
 
 function daysTone(d) {
   if (d <= 3) return 'rose';
@@ -107,6 +108,8 @@ export default function Supply() {
         <Stat label="Critical (≤ 3 days)" icon={PackageX} value={critical} sub={critical ? 'act today' : 'none right now'} />
         <Stat label="Transfers in transit" icon={Truck} value={transfers.length} sub={`${fmtNum(transfers.reduce((s, t) => s + t.qty, 0))} units moving`} />
       </div>
+
+      <div className="mb-2"><ShortageRisk onMove={(drug) => setMove({ drug })} /></div>
 
       <div className="grid side">
         <Card title="Stock running low" action={<span className="tiny muted">days of stock left</span>}>

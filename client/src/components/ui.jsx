@@ -57,7 +57,7 @@ const STATUS_TONES = {
   active: 'green', online: 'green', completed: 'green', delivered: 'green', collected: 'green', accepted: 'green', reported: 'green', confirmed: 'rose', published: 'green', verified: 'green',
   queued: 'sun', pending: 'sun', requested: 'sun', scheduled: 'sky', in_progress: 'clay', processing: 'sky', received: 'sky', collected_sample: 'sky', ordered: 'sun', sent: 'sky', issued: 'sun', raised: 'sun', set_aside: 'sun',
   dispensed: 'sky', out_for_delivery: 'clay', dispatched: 'clay', in_transit: 'clay', picked: 'clay', assigned: 'sun', acknowledged: 'sky', draft: '',
-  cancelled: '', declined: 'rose', rejected: 'rose', denied: 'rose', revoked: 'rose', expired: '', offline: 'rose', suspended: 'rose', dismissed: '', resolved: 'green', closed: '', open: 'clay',
+  cancelled: '', declined: 'rose', rejected: 'rose', denied: 'rose', revoked: 'rose', expired: '', offline: 'rose', suspended: 'rose', dismissed: '', resolved: 'green', closed: '', open: 'clay', discharged: 'green',
 };
 export function StatusBadge({ status, children }) {
   const label = children || String(status || '').replace(/_/g, ' ');

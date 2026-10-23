@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/PortalLayout';
 import { Card, Stat, Donut, Sparkline, TriageBadge, Avatar, Empty, timeAgo, fmtNum } from '../../components/ui';
 import { useAuth } from '../../auth';
 import { BED_TYPES, bedLabel, occTone } from './shared';
+import BedForecast from './BedForecast';
 
 function greeting() {
   const h = new Date().getHours();
@@ -37,6 +38,7 @@ export default function Overview({ home }) {
         <Stat label="Referrals waiting" icon={Ambulance} value={pending.length} sub={pending.length ? 'A doctor is waiting for your answer' : 'Nothing pending'} />
         <Stat label="Doctors on duty" icon={Stethoscope} value={onDuty.length} sub={`${roster.filter((r) => r.teleconsult).length} open for teleconsult`} />
       </div>
+      <div className="mt-2"><BedForecast /></div>
 
       <div className="grid side mt-3">
         <Card title="Bed occupancy" action={<Link to="/hospital/beds" className="small row" style={{ gap: 4 }}>Update beds <ArrowRight size={14} /></Link>}>

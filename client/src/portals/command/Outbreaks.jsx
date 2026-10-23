@@ -6,6 +6,7 @@ import { Card, Progress, Pills, Empty, LineChart, StatusBadge, Button, cx, fmtDa
 import { useGov, ALERT_KIND, alertTitle, isOpen } from './shared';
 import DistrictSketch from './DistrictSketch';
 import AlertAction from './AlertAction';
+import OutbreakPlan from './OutbreakPlan';
 
 function confidenceWord(c) {
   if (c >= 0.85) return 'High';
@@ -124,6 +125,8 @@ export default function Outbreaks() {
             {justConfirmed === sel.id && (
               <div className="callout green small mt-2"><Check /> <span>District pharmacies and doctors have been notified. A public advisory is still your call.</span></div>
             )}
+
+            {sel.type === 'outbreak' && sel.status !== 'dismissed' && sel.status !== 'resolved' && <OutbreakPlan key={sel.id} alert={sel} />}
 
             <h4 className="mt-3 mb-1">Case cluster</h4>
             <DistrictSketch district={sel.district} alerts={(data.alerts || []).filter((a) => a.id === sel.id)} hospitals={(data.capacity || []).filter((h) => h.district === sel.district)} selectedPin={sel.pincode} />

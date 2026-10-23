@@ -7,6 +7,7 @@ import { api } from '../../api';
 import { Avatar, Empty, Switch, fmtMoney, fmtTime, fmtDateTime, timeAgo, useAction, cx } from '../../components/ui';
 import { JobSummary, JobMeta, RouteMap, DeliverSheet, stage, payFor, isToday } from './parts';
 import LanguagePicker from '../../components/LanguagePicker';
+import RouteStops from '../../components/RouteStops';
 import './dispatch.css';
 
 export default function DispatchApp() {
@@ -179,6 +180,7 @@ function Active({ active, reload }) {
 
   return (
     <>
+      <RiderRoute count={active.length} />
       <h2 className="dj-h">On the road</h2>
       {active.map((j) => {
         const st = stage(j);
@@ -208,6 +210,23 @@ function Active({ active, reload }) {
         );
       })}
       {sheet}
+    </>
+  );
+}
+
+// With two or more jobs: every pickup and drop in one sensible order (a drop never before its pickup).
+function RiderRoute({ count }) {
+  const { data } = useLive(count > 1 ? '/dispatch/route' : null, ['dispatch'], [count]);
+  const stops = data?.stops || [];
+  if (count < 2 || stops.length < 2) return null;
+  const view = stops.map((s) => ({
+    key: `${s.jobId}-${s.kind}`, label: s.label || (s.kind === 'pickup' ? 'Pickup' : 'Drop'), tag: s.kind === 'pickup' ? 'Pick up' : 'Drop', tone: s.kind === 'pickup' ? 'clay' : 'green',
+    sub: [s.coldChain && 'Keep cold', s.collect ? `Collect ${fmtMoney(s.collect)}` : null].filter(Boolean).join(' · ') || null, legKm: s.legKm, etaMin: s.etaMin, hasLocation: s.hasLocation,
+  }));
+  return (
+    <>
+      <h2 className="dj-h">Your route · {data.jobs} jobs</h2>
+      <div className="dj-card"><RouteStops stops={view} totalKm={data.totalKm} totalMin={stops[stops.length - 1].etaMin} mapsUrl={data.mapsUrl} /></div>
     </>
   );
 }

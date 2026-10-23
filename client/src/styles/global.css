@@ -519,3 +519,14 @@ table { max-width: 100%; }
    so a screen that loads quickly goes straight from the old page to the new one. */
 [aria-busy="true"][aria-label="Loading"], .page-loading { animation: lateIn 0.25s ease 0.15s both; }
 @keyframes lateIn { from { opacity: 0; } }
+
+/* Ordered route (lab home collections, rider jobs) */
+.route-stops { display: grid; gap: 12px; }
+.route-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.route-stop { display: flex; gap: 10px; align-items: flex-start; }
+.route-num { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 0.8rem; font-weight: 700; background: var(--green-soft); color: var(--green-ink); }
+.route-num.clay { background: var(--clay-soft); color: #9a4b1c; }
+.task-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--line); }
+.task-row:first-child { border-top: 0; }
+.task-row .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; margin-top: 7px; background: var(--ink-3); }
+.task-row.urgent .dot { background: var(--rose); }

@@ -6,6 +6,7 @@ import { Card, Button, Empty, Loading, Pills, StatusBadge, fmtMoney, fmtNum, fmt
 import { useLive } from '../../live';
 import { api } from '../../api';
 import ExpiryMatches from './ExpiryMatches';
+import RefillForecast from './RefillForecast';
 
 // Purchase list for the distributor when a request can't go through the network (or for the paper file).
 function downloadCsv(rows, store) {
@@ -36,6 +37,7 @@ export default function Insights({ home, reload }) {
     <div className="ph-insights">
       <PageHeader title="Stock insights" subtitle="What's about to expire, what's below safety stock, what sells fastest — and what to reorder, worked out from the last 30 days of sales." />
 
+      <RefillForecast />
       <ExpiryMatches />
 
       <div className="ph-kpis">

@@ -230,7 +230,7 @@ function ExtractedView({ rec }) {
           </div>
           <p className="tiny muted mb-0">Read automatically — a health worker double-checks before doctors rely on it.</p>
         </>
-      ) : <div className="callout sky"><Check /><span>{rec.summary || 'Saved. A health worker will verify the details.'}</span></div>}
+      ) : <div className="callout sky"><Check /><span style={{ whiteSpace: 'pre-line' }}>{rec.summary || 'Saved. A health worker will verify the details.'}</span></div>}
     </div>
   );
 }
