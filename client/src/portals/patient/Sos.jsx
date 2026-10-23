@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Phone, MapPin, Hospital, BedDouble, Navigation, Share2, MessageCircle, Copy, ShieldCheck, Users, BellRing, X, Eye, RefreshCw } from 'lucide-react';
+import { Phone, MapPin, Hospital, BedDouble, Navigation, Share2, MessageCircle, Copy, ShieldCheck, Users, BellRing, X, Eye, RefreshCw, Siren } from 'lucide-react';
 import { api } from '../../api';
 import { Button, Card, cx, timeAgo, useToast } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
@@ -107,8 +107,9 @@ function Countdown({ onCancel, onSend }) {
   );
 }
 
-// The floating SOS button on every patient screen.
-export function SosButton() {
+// The SOS button on every patient screen — never floating over the page: a full-width button in the sidebar
+// (computers) or a compact one in the top bar (phones). Press and hold either one.
+export function SosButton({ variant = 'side' }) {
   const { patient } = usePatient();
   const [counting, setCounting] = useState(false);
   const navigate = useNavigate();
@@ -121,9 +122,16 @@ export function SosButton() {
   if (!patient) return null;
   return (
     <>
-      <HoldButton className="sos-fab" onDone={() => setCounting(true)} label="SOS — press and hold for an emergency">
-        <span className="sos-fab-text">SOS</span>
-      </HoldButton>
+      {variant === 'top' ? (
+        <HoldButton className="sos-top" onDone={() => setCounting(true)} label="SOS — press and hold for an emergency">
+          <span className="sos-top-text">SOS</span>
+        </HoldButton>
+      ) : (
+        <HoldButton className="sos-side" onDone={() => setCounting(true)} label="SOS — press and hold for an emergency">
+          <Siren size={18} />
+          <span className="sos-side-text"><strong>SOS</strong> · press &amp; hold</span>
+        </HoldButton>
+      )}
       {counting && <Countdown onCancel={() => setCounting(false)} onSend={send} />}
     </>
   );

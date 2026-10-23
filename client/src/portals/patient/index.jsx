@@ -125,7 +125,8 @@ export default function PatientApp() {
 
   return (
     <PatientContext.Provider value={ctx}>
-      <PortalLayout portal="Patient App" nav={nav} tabs={tabs} headerExtra={<ProfileSwitcher />}>
+      <PortalLayout portal="Patient App" nav={nav} tabs={tabs} headerExtra={<ProfileSwitcher />}
+        headerEnd={<SosButton variant="top" />} sidebarExtra={<SosButton variant="side" />}>
         <div className="pt-root">
         <Suspense fallback={<PageSkeleton />}>
         <Routes>
@@ -158,7 +159,7 @@ export default function PatientApp() {
         </Suspense>
         </div>
         <CompleteProfilePrompt />
-        <SosButton />
+
         {/* After the "complete your profile" prompt, never on top of it. */}
         {home.data?.patient && !incomplete && <WelcomeTips name={firstName((home.data.profiles || []).find((x) => x.self)?.name || home.data.patient.name)} />}
       </PortalLayout>

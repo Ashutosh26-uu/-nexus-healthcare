@@ -20,7 +20,7 @@ const TwoStepModal = lazy(() => import('./TwoStep'));
  *   (the first item's `groupIcon` is the section's icon).
  * tabs: optional [{ to, label, icon, end, badge }] — on phones these become a bottom tab bar, plus "More" for the full menu.
  */
-export default function PortalLayout({ portal, nav, children, headerExtra, tabs }) {
+export default function PortalLayout({ portal, nav, children, headerExtra, headerEnd, sidebarExtra, tabs }) {
   const { user, facility, signOut } = useAuth();
   const support = useSupport();
   const [open, setOpen] = useState(false);
@@ -131,6 +131,7 @@ export default function PortalLayout({ portal, nav, children, headerExtra, tabs 
           })}
         </nav>
         <div className="sidebar-foot">
+          {sidebarExtra}
           {facility && (
             <div className="facility-chip">
               <span className={cx('dot', facility.status === 'offline' ? 'rose' : 'green')} />
@@ -149,6 +150,7 @@ export default function PortalLayout({ portal, nav, children, headerExtra, tabs 
         <header className="topbar">
           <button className={cx('icon-btn only-mobile', tabs?.length && 'hide-with-tabs')} onClick={() => setOpen(true)} aria-label="Open menu"><Menu /></button>
           <div className="grow topbar-extra">{headerExtra}</div>
+          {headerEnd}
           {['patient', 'caregiver'].includes(user?.role) && <LocationChip />}
           <LanguagePicker compact />
           <div className="pop-wrap" ref={bellRef}>

@@ -111,7 +111,7 @@
   .tab span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   .tab-badge { position: absolute; top: 4px; inset-inline-start: calc(50% + 8px); background: var(--clay); color: #fff; font-size: 0.6rem; font-weight: 700; min-width: 16px; height: 16px; border-radius: 99px; display: grid; place-items: center; padding: 0 4px; }
   body.has-tabbar .portal-content { padding-bottom: 150px; }
-  body.has-tabbar .chat-fab, body.has-tabbar .sos-fab { bottom: calc(76px + env(safe-area-inset-bottom)); }
+  body.has-tabbar .chat-fab { bottom: calc(76px + env(safe-area-inset-bottom)); }
   body.has-tabbar .chat-nudge { bottom: calc(140px + env(safe-area-inset-bottom)); }
   body.has-tabbar .toasts { bottom: calc(84px + env(safe-area-inset-bottom)); }
   /* Bigger targets for thumbs: menu rows and small buttons */
