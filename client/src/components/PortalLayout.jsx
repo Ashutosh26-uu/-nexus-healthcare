@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Bell, LogOut, Menu, X, ChevronDown, KeyRound, Cookie, MapPin, ShieldCheck, LayoutGrid, UserRound } from 'lucide-react';
+import { Bell, LogOut, Menu, X, ChevronDown, ChevronRight, KeyRound, Cookie, MapPin, ShieldCheck, LayoutGrid, UserRound } from 'lucide-react';
 import Logo from './Logo';
 import LanguagePicker from './LanguagePicker';
 import { LocationChip, openCookieSettings, openLocationSettings } from '../consent';
@@ -16,7 +16,8 @@ const TwoStepModal = lazy(() => import('./TwoStep'));
 
 /**
  * Shared shell for every portal.
- * nav: [{ to, label, icon, end, badge, group }] — an item with a new `group` starts a headed section.
+ * nav: [{ to, label, icon, end, badge, group, groupIcon }] — items sharing a `group` fold into one dropdown section
+ *   (the first item's `groupIcon` is the section's icon).
  * tabs: optional [{ to, label, icon, end, badge }] — on phones these become a bottom tab bar, plus "More" for the full menu.
  */
 export default function PortalLayout({ portal, nav, children, headerExtra, tabs }) {
@@ -46,6 +47,20 @@ export default function PortalLayout({ portal, nav, children, headerExtra, tabs 
   }, [tabs?.length]);
   // "More" is lit when the current page isn't one of the tabs.
   const onTab = tabs?.some((t) => (t.end ? location.pathname === t.to : location.pathname.startsWith(t.to)));
+
+  // Grouped menu: consecutive items with the same `group` form one section that opens like a dropdown.
+  const sections = [];
+  for (const item of nav) {
+    const last = sections[sections.length - 1];
+    if (last && last.group === (item.group || null)) last.items.push(item);
+    else sections.push({ group: item.group || null, items: [item] });
+  }
+  const isHere = (item) => (item.end ? location.pathname === item.to : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`));
+  const activeGroup = sections.find((s) => s.group && s.items.some(isHere))?.group || null;
+  const [openGroups, setOpenGroups] = useState(() => new Set(activeGroup ? [activeGroup] : []));
+  // Landing on a page opens its section, so the current page is never hidden.
+  useEffect(() => { if (activeGroup) setOpenGroups((s) => (s.has(activeGroup) ? s : new Set([...s, activeGroup]))); }, [activeGroup]);
+  const toggleGroup = (g) => setOpenGroups((s) => { const n = new Set(s); if (n.has(g)) n.delete(g); else n.add(g); return n; });
 
   // Popovers close on a tap anywhere else or Escape, like every other dropdown in the app.
   useEffect(() => {
@@ -88,16 +103,32 @@ export default function PortalLayout({ portal, nav, children, headerExtra, tabs 
           <button className="icon-btn only-mobile" onClick={() => setOpen(false)} aria-label="Close menu"><X /></button>
         </div>
         <nav className="side-nav">
-          {nav.map((item, i) => (
-            <div key={item.to} className="side-item">
-              {item.group && item.group !== nav[i - 1]?.group && <div className="side-group">{item.group}</div>}
-              <NavLink to={item.to} end={item.end} className={({ isActive }) => cx('side-link', isActive && 'active')}>
+          {sections.map((sec) => {
+            const links = sec.items.map((item) => (
+              <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => cx('side-link', sec.group && 'sub', isActive && 'active')}>
                 {item.icon && <item.icon />}
                 <span className="grow">{item.label}</span>
                 {item.badge ? <span className="side-badge">{item.badge}</span> : null}
               </NavLink>
-            </div>
-          ))}
+            ));
+            if (!sec.group) return <div key={sec.items[0].to} className="side-sec">{links}</div>;
+            const open = openGroups.has(sec.group);
+            const GroupIcon = sec.items.find((it) => it.groupIcon)?.groupIcon;
+            const id = `side-${sec.group.replace(/\W+/g, '-').toLowerCase()}`;
+            // A closed section still shows if something inside needs attention.
+            const waiting = sec.items.reduce((n, it) => n + (Number(it.badge) || 0), 0) || (sec.items.some((it) => it.badge && !Number(it.badge)) ? '!' : 0);
+            return (
+              <div key={sec.group} className={cx('side-sec', open && 'open')}>
+                <button type="button" className={cx('side-group-btn', !open && sec.items.some(isHere) && 'has-active')} onClick={() => toggleGroup(sec.group)} aria-expanded={open} aria-controls={id}>
+                  {GroupIcon && <GroupIcon />}
+                  <span className="grow">{sec.group}</span>
+                  {!open && waiting ? <span className="side-badge">{waiting}</span> : null}
+                  {open ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
+                </button>
+                {open && <div id={id} className="side-sub">{links}</div>}
+              </div>
+            );
+          })}
         </nav>
         <div className="sidebar-foot">
           {facility && (

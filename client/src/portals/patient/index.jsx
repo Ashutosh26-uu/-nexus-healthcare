@@ -1,7 +1,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Home as HomeIcon, HeartPulse, Video, FolderHeart, Pill, ShieldCheck, Users, IdCard, Settings as SettingsIcon, ChevronDown, Check, UserPlus, Activity, Coins, Dna, ScanLine, UserRoundPen, MapPin, Stethoscope, FileUp, FlaskConical, CalendarClock, Repeat, Gauge, Syringe } from 'lucide-react';
-import { Gift, Siren } from 'lucide-react'; // Invite & earn · SOS
+import { Gift, Siren, LayoutGrid } from 'lucide-react'; // Invite & earn · SOS · More
 import PortalLayout from '../../components/PortalLayout';
 import { pageLoader } from '../../prefetch';
 import { Avatar, Button, Modal, cx, useToast } from '../../components/ui';
@@ -94,21 +94,21 @@ export default function PatientApp() {
   const nav = [
     { to: '/patient', label: 'Home', icon: HomeIcon, end: true },
     ...(incomplete ? [{ to: '/patient/complete-profile', label: 'Finish my profile', icon: UserRoundPen, badge: '!' }] : []),
-    { to: '/patient/symptoms', label: 'I feel unwell', icon: HeartPulse, group: 'Get care' },
+    { to: '/patient/symptoms', label: 'I feel unwell', icon: HeartPulse, group: 'Get care', groupIcon: Stethoscope },
     { to: '/patient/consult', label: 'Talk to a doctor', icon: Video, group: 'Get care' },
     { to: '/patient/follow-ups', label: 'My appointments', icon: CalendarClock, badge: upcomingCount, group: 'Get care' },
     { to: '/patient/medicines', label: 'Medicines', icon: Pill, badge: medsBadge, group: 'Get care' },
     { to: '/patient/tests', label: 'Lab tests', icon: FlaskConical, group: 'Get care' },
-    { to: '/patient/records', label: 'My reports & records', icon: FolderHeart, group: 'My health' },
+    { to: '/patient/records', label: 'My reports & records', icon: FolderHeart, group: 'My health', groupIcon: Activity },
     { to: '/patient/tracker', label: 'BP, sugar & weight', icon: Gauge, group: 'My health' },
     { to: '/patient/vaccines', label: 'Vaccinations', icon: Syringe, group: 'My health' },
     { to: '/patient/twin', label: 'My health trends', icon: Activity, group: 'My health' },
-    { to: '/patient/family', label: 'Family members', icon: Users, group: 'Family' },
+    { to: '/patient/family', label: 'Family members', icon: Users, group: 'Family', groupIcon: Users },
     { to: '/patient/family-graph', label: 'Family health history', icon: Dna, group: 'Family' },
-    { to: '/patient/sos', label: 'SOS — emergency help', icon: Siren, group: 'Safety & privacy' },
+    { to: '/patient/sos', label: 'SOS — emergency help', icon: Siren, group: 'Safety & privacy', groupIcon: ShieldCheck },
     { to: '/patient/emergency', label: 'Emergency card', icon: IdCard, group: 'Safety & privacy' },
     { to: '/patient/consents', label: 'Who sees my data', icon: ShieldCheck, badge: pending || null, group: 'Safety & privacy' },
-    { to: '/patient/scan', label: 'Is my medicine genuine?', icon: ScanLine, group: 'More' },
+    { to: '/patient/scan', label: 'Is my medicine genuine?', icon: ScanLine, group: 'More', groupIcon: LayoutGrid },
     { to: '/patient/change-doctor', label: 'Change my doctor', icon: Repeat, group: 'More' },
     { to: '/patient/invite', label: 'Invite & earn', icon: Gift, group: 'More' },
     { to: '/patient/wallet', label: 'Share data for research', icon: Coins, group: 'More' },
