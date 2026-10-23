@@ -75,6 +75,17 @@ export default function OrderMedicines() {
   const [openShop, setOpenShop] = useState(null);
   const [fulfilment, setFulfilment] = useState('pickup');
   const [address, setAddress] = useState('');
+  const [locBusy, setLocBusy] = useState(false);
+  const [wantHere, setWantHere] = useState(false);
+  // "Deliver here": the street address for the phone's current position (they can still edit it).
+  const fillFromLoc = (loc) => {
+    setLocBusy(true);
+    api.get(`/geo/reverse?lat=${loc.lat}&lng=${loc.lng}&full=1`)
+      .then((r) => setAddress([r.address, r.district, r.state, r.pincode].filter(Boolean).join(', ')))
+      .catch(() => {}).finally(() => setLocBusy(false));
+  };
+  const deliverHere = () => { if (device.loc) fillFromLoc(device.loc); else { setWantHere(true); device.request(); } };
+  useEffect(() => { if (wantHere && device.loc) { setWantHere(false); fillFromLoc(device.loc); } }, [wantHere, device.loc]);
   const [result, setResult] = useState(null);
   const [paid, setPaid] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -336,6 +347,9 @@ export default function OrderMedicines() {
           {fulfilment === 'delivery' ? (
             <Field label="Deliver to" hint="Add a landmark so the rider finds you easily.">
               <textarea className="textarea" rows={2} value={address} onChange={(e) => setAddress(e.target.value)} placeholder="House no., street, landmark, village/town" />
+              <button type="button" className="link-btn tiny mt-1" onClick={deliverHere} disabled={locBusy}>
+                {locBusy ? 'Finding your address…' : device.loc ? 'Deliver to where I am now' : 'Use my current location'}
+              </button>
             </Field>
           ) : (
             <div className="callout green"><Store /><span>{open ? 'The chemist who accepts' : <strong translate="no">{shop?.name}</strong>} will pack it for you. You&apos;ll get a 4-digit pickup code — pay at the counter (cash or UPI).</span></div>

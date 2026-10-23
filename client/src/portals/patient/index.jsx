@@ -190,7 +190,8 @@ function ProfileSwitcher() {
     return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
   }, [open]);
 
-  if (!patient) return null;
+  // Only someone looking after family needs the switcher; with just their own profile it's noise in the top bar.
+  if (!patient || profiles.length < 2) return null;
   const active = profiles.find((p) => p.id === patient.id);
   const isSelf = active?.self;
 

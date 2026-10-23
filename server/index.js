@@ -1539,11 +1539,49 @@ app.put('/api/patient/profile/complete', auth, role('patient', 'caregiver'), (re
 });
 
 // "Use my location": match device coordinates to the nearest district on our own server.
-app.get('/api/geo/reverse', auth, (req, res) => {
+// Street address for a point, from OpenStreetMap's public geocoder — only when the person shared their location
+// and asked for it (?full=1). Only the coordinates go out (no name, no health data); results are cached and
+// requests are spaced ≥1 s apart (OSM's usage policy). Any failure falls back to our own district table.
+const addrCache = new Map();
+let osmNext = 0;
+async function streetAddress(lat, lng) {
+  const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+  if (addrCache.has(key)) return addrCache.get(key);
+  const wait = Math.max(0, osmNext - Date.now());
+  osmNext = Math.max(osmNext, Date.now()) + 1100;
+  if (wait > 5000) return null;
+  if (wait) await new Promise((r) => setTimeout(r, wait));
+  const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&zoom=18&accept-language=en&lat=${lat}&lon=${lng}`;
+  const r = await fetch(url, { headers: { 'User-Agent': `Sehatra/1.0 (${process.env.APP_URL || 'sehatra'})` }, signal: AbortSignal.timeout(5000) });
+  if (!r.ok) return null;
+  const a = (await r.json())?.address;
+  if (!a) return null;
+  const line = [[a.house_number, a.road].filter(Boolean).join(' '), a.neighbourhood || a.suburb || a.quarter || a.hamlet, a.village || a.town || a.city_district || a.city]
+    .filter(Boolean).filter((x, i, all) => all.indexOf(x) === i).join(', ');
+  const out = {
+    address: line || null,
+    district: String(a.state_district || a.county || a.city || '').replace(/\s+(district|division|tahsil|tehsil)$/i, '').trim() || null,
+    state: a.state || null,
+    pincode: /^\d{6}$/.test(String(a.postcode || '').replace(/\s/g, '')) ? String(a.postcode).replace(/\s/g, '') : null,
+  };
+  if (addrCache.size > 2000) addrCache.delete(addrCache.keys().next().value);
+  addrCache.set(key, out);
+  return out;
+}
+app.get('/api/geo/reverse', auth, async (req, res) => {
   const lat = Number(req.query.lat); const lng = Number(req.query.lng);
   if (!geo.validCoord(lat, lng)) return res.status(400).json({ error: 'Invalid location.' });
   const n = geo.nearestDistrict(lat, lng);
-  res.json({ district: n.district, state: n.state, pincode: n.pin, distanceKm: n.distanceKm, approximate: n.distanceKm > 40 });
+  const base = { district: n.district, state: n.state, pincode: n.pin, distanceKm: n.distanceKm, approximate: n.distanceKm > 40 };
+  if (req.query.full !== '1') return res.json(base);
+  const s = await streetAddress(lat, lng).catch(() => null);
+  if (!s) return res.json({ ...base, address: null });
+  // Our district list wins when the point is inside it (names match the rest of Sehatra); OSM fills the rest.
+  res.json({
+    ...base, address: s.address, pincode: s.pincode || base.pincode,
+    district: base.approximate ? (s.district || base.district) : base.district, state: base.approximate ? (s.state || base.state) : base.state,
+    approximate: base.approximate && !s.district,
+  });
 });
 
 // Best doctors for these symptoms, nearest first — specialty from the triage engine, distance from the

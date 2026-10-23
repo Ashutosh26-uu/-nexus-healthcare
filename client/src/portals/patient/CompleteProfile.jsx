@@ -102,16 +102,21 @@ export default function CompleteProfile() {
   }, [patient, form]);
   useEffect(() => { api.get('/public/join/options').then((o) => setDepartments(o.specialties || [])).catch(() => {}); }, []);
 
-  // When the device location arrives, fill district / state / pin from our server (no third-party lookup).
+  // When the person shares their location, fill the address, district, state and pin (only empty fields — never
+  // over what they typed). The street line comes from OpenStreetMap via our server; they can edit everything.
   // A remembered location can arrive before the form loads, so this also waits for `form` — once per location.
   const geoFor = useRef(null);
   const formReady = !!form;
   useEffect(() => {
     if (!device.loc || !form || form.country !== 'IN' || geoFor.current === device.loc) return;
     geoFor.current = device.loc;
-    api.get(`/geo/reverse?lat=${device.loc.lat}&lng=${device.loc.lng}`).then((r) => {
-      setForm((f) => ({ ...f, district: f.district || r.district, state: f.state || r.state, pincode: f.pincode || r.pincode }));
-      setLocNote(r.approximate ? `Nearest district we know: ${r.district} (~${r.distanceKm} km). Please check it.` : `Located near ${r.district}, ${r.state}.`);
+    api.get(`/geo/reverse?lat=${device.loc.lat}&lng=${device.loc.lng}&full=1`).then((r) => {
+      // No address yet → take the whole set from the location so street, district and pin agree with each other.
+      setForm((f) => (!f.address.trim() && r.address
+        ? { ...f, address: r.address, district: r.district, state: r.state, pincode: r.pincode || f.pincode }
+        : { ...f, district: f.district || r.district, state: f.state || r.state, pincode: f.pincode || r.pincode }));
+      setLocNote(r.approximate ? `Nearest district we know: ${r.district} (~${r.distanceKm} km). Please check it.`
+        : r.address ? 'Filled from your location — please add your house number and check the rest.' : `Located near ${r.district}, ${r.state}.`);
     }).catch(() => {});
   }, [device.loc, formReady]); // eslint-disable-line react-hooks/exhaustive-deps
 

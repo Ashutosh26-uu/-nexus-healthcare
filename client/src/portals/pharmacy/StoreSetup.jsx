@@ -55,7 +55,9 @@ export default function StoreSetup({ home, reload }) {
     navigator.geolocation.getCurrentPosition(async (pos) => {
       const lat = Math.round(pos.coords.latitude * 1000) / 1000; const lng = Math.round(pos.coords.longitude * 1000) / 1000;
       setForm((f) => ({ ...f, lat, lng })); setLocState('ok');
-      if (form.country === 'IN') api.get(`/geo/reverse?lat=${lat}&lng=${lng}`).then((r) => setForm((f) => ({ ...f, district: f.district || r.district, state: f.state || r.state, pincode: f.pincode || r.pincode }))).catch(() => {});
+      if (form.country === 'IN') api.get(`/geo/reverse?lat=${lat}&lng=${lng}&full=1`).then((r) => setForm((f) => (!f.address.trim() && r.address
+        ? { ...f, address: r.address, district: r.district, state: r.state, pincode: r.pincode || f.pincode }
+        : { ...f, district: f.district || r.district, state: f.state || r.state, pincode: f.pincode || r.pincode }))).catch(() => {});
     }, (e) => setLocState(e.code === 1 ? 'denied' : 'error'), { timeout: 12000 });
   };
   const checks = [form.address.trim().length >= 5, !!(form.district && form.state), form.licenceNo.trim().length >= 4, !!form.storePhotoFileId, !!form.licenceFileId, locState === 'ok' || !!form.lat];
