@@ -187,7 +187,7 @@ export default function KioskApp() {
   const onOperator = location.pathname.startsWith('/kiosk/operator');
   // Real connection (not the operator's "offline mode" flag): visits recorded without internet wait here and send themselves.
   const online = useNetwork();
-  const outbox = useOutboxSync(online);
+  const outbox = useOutboxSync(online, user?.facilityId);
   const [recording, setRecording] = useState(false);
 
   const value = { home, kiosk, offline, online, outbox, flow, setFlow, goto, reset, lang, setLang, t, say, voiceOn, user };

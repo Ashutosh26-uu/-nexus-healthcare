@@ -76,9 +76,13 @@ const loginIpLimiter = security.rateLimit({ windowMs: 15 * 60000, max: 100, mess
 // regardless of ip: 30 per hour, then that account's password sign-in pauses (OTP / email-code reset still work).
 const LOGIN_FAIL_MAX = 30;
 const LOGIN_FAIL_WINDOW_MS = 60 * 60000;
-const loginFails = new Map(); // identifier → failure timestamps (ms)
+// A per-account lock alone lets anyone lock any doctor or admin out with 30 wrong guesses. So once an account
+// is "hot", only networks that have already guessed wrong for it are blocked; the owner signing in from their
+// usual network (with no wrong guesses) still gets in, and each new network gets at most LOGIN_FAIL_PER_IP tries.
+const LOGIN_FAIL_PER_IP = 5;
+const loginFails = new Map(); // identifier → [{ t: ms, ip }]
 const loginFailKey = (id) => String(id || '').slice(0, 160).toLowerCase();
-const recentFails = (k) => (loginFails.get(k) || []).filter((t) => Date.now() - t < LOGIN_FAIL_WINDOW_MS);
+const recentFails = (k) => (loginFails.get(k) || []).filter((f) => Date.now() - f.t < LOGIN_FAIL_WINDOW_MS);
 setInterval(() => { for (const k of loginFails.keys()) { const r = recentFails(k); if (r.length) loginFails.set(k, r); else loginFails.delete(k); } }, 10 * 60000).unref();
 // Unauthenticated, computed-per-call public endpoints (landing stats) — live numbers, but not a free CPU tap.
 const publicLimiter = security.rateLimit({ windowMs: 60000, max: 120, message: 'Too many requests. Please wait a moment.' });
@@ -96,7 +100,12 @@ const ageOf = (dob) => (dob ? Math.floor((Date.now() - new Date(dob)) / (365.25 
 // The two-step login secret and backup-code hashes never leave the server — screens only learn whether it's on.
 // Roles that can see many people's data must use two-step login; the client forces setup when this is true.
 const MFA_REQUIRED_ROLES = new Set(['super_admin', 'official', 'hospital_admin']);
-const publicUser = ({ passwordHash: _h, tokenVersion: _tv, aadhaarRefHash: _ar, mfa: m, e2e: k, ...u }) => ({ ...u, mfaEnabled: Boolean(m?.enabledAt), e2eReady: Boolean(k?.publicKey), mfaSetupRequired: MFA_REQUIRED_ROLES.has(u.role) && !m?.enabledAt });
+// Enforced by the server (not just a banner): until two-step login is on, these accounts can only reach sign-in
+// and two-step setup. Always on in production; MFA_ENFORCE=true turns it on elsewhere for testing.
+const MFA_ENFORCED = process.env.NODE_ENV === 'production' || process.env.MFA_ENFORCE === 'true';
+const MFA_SETUP_PATHS = ['/api/auth/', '/api/events', '/api/notifications', '/api/i18n'];
+const mfaMissing = (user) => MFA_ENFORCED && MFA_REQUIRED_ROLES.has(user.role) && !user.mfa?.enabledAt;
+const publicUser = ({ passwordHash: _h, tokenVersion: _tv, aadhaarRefHash: _ar, mfa: m, e2e: k, ...u }) => ({ ...u, mfaEnabled: Boolean(m?.enabledAt), e2eReady: Boolean(k?.publicKey), mfaSetupRequired: MFA_ENFORCED && MFA_REQUIRED_ROLES.has(u.role) && !m?.enabledAt });
 
 function sign(user) {
   return jwt.sign({ sub: user.id, role: user.role, tv: user.tokenVersion || 0 }, JWT_SECRET, { algorithm: 'HS256', expiresIn: '7d' });
@@ -148,6 +157,9 @@ function auth(req, res, next) {
     req.user = user;
     const ctx = requestCtx.getStore();
     if (ctx) ctx.userId = user.id;
+    if (mfaMissing(user) && !MFA_SETUP_PATHS.some((p) => req.path.startsWith(p))) {
+      return res.status(403).json({ error: 'Turn on two-step login to continue — your role can see many people\'s health data.', code: 'mfa_required' });
+    }
     // A doctor who signed up but isn't verified yet can finish onboarding — nothing clinical.
     // A staff account whose doctor / facility record is missing can't use its portal (avoids crashes).
     const needsFacility = ['pharmacist', 'kiosk_operator', 'lab_tech', 'hospital_admin', 'distributor'].includes(user.role);
@@ -787,6 +799,9 @@ app.post('/api/dev/run-deletions', auth, role('super_admin'), async (req, res) =
 
 // ---------- auth ----------
 const findUserByPhone = (phone) => db().users.find((u) => u.phone && samePhone(u.phone, phone));
+// For anything that hands out someone else's data by phone number (SOS, critical-result alerts to family): only
+// accounts that proved the number. A typed number proves nothing — anyone could sign up with a relative's number.
+const findVerifiedUserByPhone = (phone) => db().users.find((u) => u.phone && u.phoneVerifiedAt && samePhone(u.phone, phone));
 const findUserByEmail = (email) => db().users.find((u) => u.email && u.email.toLowerCase() === String(email).toLowerCase());
 
 const DUMMY_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
@@ -797,8 +812,9 @@ app.post('/api/auth/login', loginIpLimiter, loginLimiter, async (req, res) => {
   if (!id.includes('@')) return res.status(400).json({ error: 'Please sign in with your email address. Mobile numbers can’t be used to sign in.' });
   const fk = loginFailKey(id);
   const fails = recentFails(fk);
-  if (fails.length >= LOGIN_FAIL_MAX) {
-    const retry = Math.ceil((LOGIN_FAIL_WINDOW_MS - (Date.now() - fails[0])) / 1000);
+  const fromHere = fails.filter((f) => f.ip === req.ip);
+  if (fromHere.length >= LOGIN_FAIL_PER_IP || (fails.length >= LOGIN_FAIL_MAX && fromHere.length > 0)) {
+    const retry = Math.ceil((LOGIN_FAIL_WINDOW_MS - (Date.now() - (fromHere[0] || fails[0]).t)) / 1000);
     res.setHeader('Retry-After', String(retry));
     return res.status(429).json({ error: 'Too many wrong passwords for this account. Please wait, or reset your password with an email code.', retryAfter: retry });
   }
@@ -806,7 +822,7 @@ app.post('/api/auth/login', loginIpLimiter, loginLimiter, async (req, res) => {
   // A bcrypt compare runs even for an unknown email, so response time doesn't reveal which emails have accounts.
   const passOk = typeof password === 'string' && (await bcrypt.compare(password.slice(0, 200), user?.passwordHash || DUMMY_HASH));
   if (!user || !user.passwordHash || !passOk) {
-    loginFails.delete(fk); loginFails.set(fk, [...fails, Date.now()]); // re-insert = newest last
+    loginFails.delete(fk); loginFails.set(fk, [...fails, { t: Date.now(), ip: req.ip }].slice(-200)); // re-insert = newest last
     if (loginFails.size > 50000) loginFails.delete(loginFails.keys().next().value); // bounded memory under a spray
     return res.status(401).json({ error: 'That email and password don\'t match. Please try again.' });
   }
@@ -926,6 +942,7 @@ app.post('/api/auth/register/quick', registerLimiter, async (req, res) => {
   if (!EMAIL_RE.test(loginEmail)) return res.status(400).json({ error: 'Please enter a valid email address.' });
   if (!loginPhone || String(loginPhone).replace(/\D/g, '').length < 7) return res.status(400).json({ error: 'Please enter a valid mobile number.' });
   if (findUserByEmail(loginEmail)) return res.status(409).json({ error: 'This email is already registered. Please sign in.' });
+  if (findUserByPhone(loginPhone)) return res.status(409).json({ error: 'This mobile number is already linked to another Sehatra account. Please sign in, or use your own number.' });
   const d = db();
   // Invite code: only here, only once (referredBy is never written anywhere else). Own code / own phone or
   // email is ignored rather than refused — the account still gets made, just with no reward attached.
@@ -1051,7 +1068,19 @@ app.post('/api/auth/mfa', mfaLimiter, (req, res) => {
 
 app.get('/api/auth/mfa', auth, (req, res) => {
   const m = req.user.mfa || {};
-  res.json({ enabled: Boolean(m.enabledAt), enabledAt: m.enabledAt || null, backupCodesLeft: m.enabledAt ? (m.recovery || []).length : 0, recommended: MFA_REQUIRED_ROLES.has(req.user.role), required: MFA_REQUIRED_ROLES.has(req.user.role), needsPassword: Boolean(req.user.passwordHash) });
+  res.json({ enabled: Boolean(m.enabledAt), enabledAt: m.enabledAt || null, backupCodesLeft: m.enabledAt ? (m.recovery || []).length : 0, recommended: MFA_REQUIRED_ROLES.has(req.user.role), required: MFA_REQUIRED_ROLES.has(req.user.role), needsPassword: Boolean(req.user.passwordHash), needsEmailCode: mfaMissing(req.user) });
+});
+
+// Staff setting up required two-step login: a code to their email first (see the check in /setup).
+app.post('/api/auth/mfa/setup-code', auth, otpLimiter, async (req, res) => {
+  if (req.user.mfa?.enabledAt) return res.status(409).json({ error: 'Two-step login is already on.' });
+  try {
+    const sent = await otp.sendCode({ email: req.user.email, channel: 'email', ip: req.ip, purpose: 'mfa' });
+    res.json({ ok: true, masked: sent.masked, devCode: sent.devCode });
+  } catch (e) {
+    if (e instanceof OtpError) return res.status(e.status).json({ error: e.message, retryAfter: e.retryAfter });
+    throw e;
+  }
 });
 
 // Step 1: a fresh secret (held as "pending" until a code from the app proves it was scanned correctly).
@@ -1062,6 +1091,16 @@ app.post('/api/auth/mfa/setup', auth, passwordChangeLimiter, async (req, res) =>
   if (req.user.passwordHash) {
     const pw = typeof req.body?.password === 'string' ? req.body.password.slice(0, 200) : '';
     if (!pw || !(await bcrypt.compare(pw, req.user.passwordHash))) return res.status(400).json({ error: 'Enter your current password to turn on two-step login.', needPassword: true });
+  }
+  // Staff who must use two-step login also prove they own the inbox — otherwise someone holding a stolen
+  // password could enrol their own authenticator first and lock the real person out.
+  if (mfaMissing(req.user)) {
+    if (!/^\d{6}$/.test(String(req.body?.emailCode || ''))) return res.status(400).json({ error: 'First get a code by email, then enter it here.', needEmailCode: true });
+    try {
+      await otp.verifyCode({ target: req.user.email, code: String(req.body?.emailCode || ''), purpose: 'mfa' });
+    } catch (e) {
+      return res.status(e instanceof OtpError ? e.status : 400).json({ error: e instanceof OtpError ? e.message : 'Enter the code we emailed you.', needEmailCode: true });
+    }
   }
   const secret = mfa.newSecret();
   req.user.mfa = { pending: mfa.seal(secret), pendingAt: nowIso() };
@@ -1149,7 +1188,9 @@ app.post('/api/auth/password-reset/confirm', resetVerifyLimiter, async (req, res
     try {
       await otp.verifyCode({ target: email, code: String(code || ''), purpose: 'reset' });
     } catch (e) {
-      if (e instanceof OtpError) return res.status(e.status).json({ error: e.message });
+      // One answer whether or not the email has an account (no code is stored for an unknown email, and a
+      // different message there would reveal who uses Sehatra). Only "too many tries" keeps its own reply.
+      if (e instanceof OtpError) return res.status(e.status === 429 ? 429 : 400).json({ error: e.status === 429 ? e.message : 'That code isn\'t right or has expired. Check it, or request a new code.' });
       throw e;
     }
     user = findUserByEmail(email);
@@ -1548,8 +1589,8 @@ async function streetAddress(lat, lng) {
   const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
   if (addrCache.has(key)) return addrCache.get(key);
   const wait = Math.max(0, osmNext - Date.now());
+  if (wait > 5000) return null; // queue full: answer without a street line (don't push the queue further out)
   osmNext = Math.max(osmNext, Date.now()) + 1100;
-  if (wait > 5000) return null;
   if (wait) await new Promise((r) => setTimeout(r, wait));
   const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&zoom=18&accept-language=en&lat=${lat}&lon=${lng}`;
   const r = await fetch(url, { headers: { 'User-Agent': `Sehatra/1.0 (${process.env.APP_URL || 'sehatra'})` }, signal: AbortSignal.timeout(5000) });
@@ -1568,7 +1609,9 @@ async function streetAddress(lat, lng) {
   addrCache.set(key, out);
   return out;
 }
-app.get('/api/geo/reverse', auth, async (req, res) => {
+// Street lookups are per person and few (a form, a delivery address): 20 an hour each.
+const streetLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 20, key: (r) => r.user?.id || r.ip, message: 'Too many address look-ups. Please type your address.' });
+app.get('/api/geo/reverse', auth, (req, res, next) => (req.query.full === '1' ? streetLimiter(req, res, next) : next()), async (req, res) => {
   const lat = Number(req.query.lat); const lng = Number(req.query.lng);
   if (!geo.validCoord(lat, lng)) return res.status(400).json({ error: 'Invalid location.' });
   const n = geo.nearestDistrict(lat, lng);
@@ -1780,6 +1823,9 @@ app.post('/api/consults', auth, role('kiosk_operator'), (req, res) => {
   const doctorId = b.doctorId;
 
   let doctor = doctorId && d.doctors.find((x) => x.id === doctorId && x.verified);
+  // A doctor picked by hand for "now" must actually be available now (the kiosk lists only those) — a request
+  // can't hand the patient's records to an arbitrary doctor who isn't taking consults.
+  if (doctor && type === 'instant' && !availabilityOf(doctor, { facilities: d.facilities }).available) return res.status(409).json({ error: `${doctor.name} isn't available right now. Please choose another doctor or book a slot.` });
   let routing = null;
   if (!doctor) {
     const ranked = engines.routeDoctor(d, { specialty: triage?.specialty || 'General Medicine', language: p.language, district: p.district, state: p.state, urgency: triage?.level });
@@ -5440,7 +5486,15 @@ app.post('/api/kiosk/identify', auth, role('kiosk_operator'), identifyLimiter, a
   if (!p) return res.status(404).json({ error: 'No Health Passport found. You can register this patient now.' });
   // A typed passport number (not a scanned card) now needs the emailed code too, like the mobile-number path.
   const email = p.privacy?.kioskOtp === false ? null : kioskEmailOf(p);
-  if (!email) return kioskOpen(req, res, p, p.privacy?.kioskOtp === false ? 'typed lookup (patient turned the code off)' : 'typed lookup (no email on the passport for a code)');
+  if (!email) {
+    // No code is possible: only this kiosk's own patients (registered or seen here before) open by a typed
+    // number or phone. Anyone else must show their Health Passport card — otherwise any operator anywhere
+    // could open any phone-only patient's record by typing their number.
+    const kiosk = db().facilities.find((f) => f.id === req.user.facilityId);
+    const ours = p.registeredAt === kiosk?.name || p.kioskSeen?.kioskId === kiosk?.id || db().consults.some((c) => c.patientId === p.id && c.kioskId === kiosk?.id);
+    if (!ours) return res.status(403).json({ error: 'This patient wasn\'t registered at this E-Clinic. Please scan their Health Passport card (QR) to open it.', code: 'card_needed' });
+    return kioskOpen(req, res, p, p.privacy?.kioskOtp === false ? 'typed lookup (patient turned the code off)' : 'typed lookup (no email on the passport for a code)');
+  }
   try {
     const sent = await otp.sendCode({ channel: 'email', email, lang: 'en', ip: req.ip, purpose: 'kiosk' });
     audit(req.user, 'kiosk_code_sent', p.id, 'passport', 'Check-in code emailed');
@@ -5590,7 +5644,12 @@ app.get('/api/hospital/reception/lookup', auth, role('hospital_admin'), receptio
   const visited = q.length >= 3 && !asPhone ? new Set(d.consults.filter((c) => c.location?.facilityId === fid).map((c) => c.patientId)) : new Set();
   const found = d.patients.filter((p) => p.id.toLowerCase() === q || (asPhone && samePhone(patientPhone(d, p), asPhone)) || (visited.has(p.id) && p.name.toLowerCase().includes(q))).slice(0, 8);
   const at = nowIso();
-  found.forEach((p) => { p.receptionSeen = { facilityId: fid, at }; });
+  // "Trusted" = this facility's own patient (registered here or seen here before). Only then does a walk-in
+  // token also give the doctor access; for anyone else found by a typed number, the doctor asks the patient
+  // for their approval code as usual.
+  const f = d.facilities.find((x) => x.id === fid);
+  const ownPatients = new Set(d.consults.filter((c) => c.location?.facilityId === fid).map((c) => c.patientId));
+  found.forEach((p) => { p.receptionSeen = { facilityId: fid, at, trusted: ownPatients.has(p.id) || (!!f && p.registeredAt === f.name) }; });
   if (found.length) { audit(req.user, 'reception_lookup', found.length === 1 ? found[0].id : null, 'passport', `Reception search · ${found.length} match(es)`); store.save(); }
   res.json(found.map((p) => deskPatient(d, p)));
 });
@@ -5612,7 +5671,7 @@ app.post('/api/hospital/reception/patients', auth, role('hospital_admin'), (req,
     gender: ['Female', 'Male', 'Other'].includes(b.gender) ? b.gender : 'Prefer not to say', language: clean(b.language, 40) || 'Hindi', bloodGroup: 'Unknown',
     allergies: [], conditions: [], currentMeds: [], emergencyContacts: phone ? [{ name, relation: 'Mobile', phone }] : [],
     abha: '', pincode: f.pincode || '', district: f.district || '', state: f.state || '', vaccinations: [], createdAt: nowIso(), registeredAt: f.name, createdBy: `${f.name} reception`,
-    receptionSeen: { facilityId: f.id, at: nowIso() },
+    receptionSeen: { facilityId: f.id, at: nowIso(), trusted: true },
   };
   d.patients.push(p);
   audit(req.user, 'registered_patient', p.id, 'passport', `Walk-in at ${f.name} reception`);
@@ -5721,15 +5780,17 @@ app.post('/api/hospital/reception/visits', auth, role('hospital_admin'), (req, r
   };
   assignToken(d, c);
   d.consults.push(c);
-  // The patient is standing at the desk asking to see this doctor: same short consent a booking implies.
-  d.consents.push({ id: store.id('cst'), patientId: p.id, granteeType: 'doctor', granteeId: doc.id, granteeName: doc.name, scope: ['history', 'prescriptions', 'labs', 'allergies'], purpose: `Walk-in visit at ${f.name}`, start: nowIso(), expiry: new Date(Date.now() + 24 * 3600000).toISOString(), status: 'active' });
+  // The patient is standing at the desk asking to see this doctor: same short consent a booking implies — but
+  // only for this facility's own patients. A passport found by a typed number elsewhere needs the patient's code.
+  const autoConsent = p.receptionSeen?.trusted === true;
+  if (autoConsent) d.consents.push({ id: store.id('cst'), patientId: p.id, granteeType: 'doctor', granteeId: doc.id, granteeName: doc.name, scope: ['history', 'prescriptions', 'labs', 'allergies'], purpose: `Walk-in visit at ${f.name}`, start: nowIso(), expiry: new Date(Date.now() + 24 * 3600000).toISOString(), status: 'active' });
   doctorInbox(d, doc).forEach((uid) => notify(uid, 'Walk-in in your queue', `Token ${c.token} · ${p.name}`));
   patientOwnerUserIds(p).forEach((u) => notify(u, `Your token: ${c.token}`, `${doc.name} at ${f.name}. Please wait — we'll call your number.`));
   audit(req.user, 'reception_walkin', p.id, 'consult', `${c.id} · token ${c.token} · ${doc.name}${fee ? ` · ₹${fee} at desk` : ''}`);
   store.save();
   broadcast('consults', 'queue');
   const board = tokenBoard(d, doc.id);
-  res.json({ consultId: c.id, token: c.token, day, doctorName: doc.name, specialty: doc.specialty, room: (f.rooms || {})[doc.id] || '', facilityName: f.name, patientName: p.name, at: c.checkedInAt, ahead: board.waiting.filter((x) => x.token < c.token).length, feeCollected: fee });
+  res.json({ consultId: c.id, token: c.token, needsApproval: !autoConsent, day, doctorName: doc.name, specialty: doc.specialty, room: (f.rooms || {})[doc.id] || '', facilityName: f.name, patientName: p.name, at: c.checkedInAt, ahead: board.waiting.filter((x) => x.token < c.token).length, feeCollected: fee });
 });
 
 // For doctors without a login (or a doctor who calls patients in by voice): the desk moves "now seeing" on.
@@ -7537,7 +7598,9 @@ app.put('/api/advisories/:id', auth, role('official', 'super_admin'), (req, res)
   if (!a) return res.status(404).json({ error: 'Advisory not found.' });
   if (req.user.role === 'official') {
     const sc = govScope(req.user);
-    const mine = a.createdBy === req.user.id || (sc.level !== 'national' && [sc.district, sc.state].includes(a.region)) || sc.level === 'national';
+    // A district officer edits only their district's advisories (a state-wide one belongs to the state team).
+    const mine = a.createdBy === req.user.id || sc.level === 'national'
+      || (sc.level === 'state' && a.region === sc.state) || (sc.level === 'district' && a.region === sc.district);
     if (!mine) return res.status(403).json({ error: 'You can only change advisories for your own area.' });
   }
   const b = req.body || {};
@@ -8083,7 +8146,7 @@ app.post('/api/admin/automation/test', auth, role('super_admin'), async (req, re
 
 // One-tap SOS (sos.js). Helpers defined further down are passed as arrows — they're only read per request.
 require('./sos')(app, {
-  auth, role, activePatient, db, store, notify, touch, touchFacility, broadcast, audit, nowIso, clean, findUserByPhone,
+  auth, role, activePatient, db, store, notify, touch, touchFacility, broadcast, audit, nowIso, clean, findUserByPhone: findVerifiedUserByPhone,
   patientOwnerUserIds, patientPoint, geo, otp, publicLimiter, userById, ageOf, DEMO_EMAIL,
   appUrl: () => APP_URL(), emailsOn: () => reminderEmailsOn(), escHtml: (s) => escHtml(s),
 });
@@ -8100,7 +8163,7 @@ require('./ayushman')(app, { auth, role, activePatient, db, store, audit, touchF
 // Critical-value escalation (escalation.js): unacknowledged critical results climb doctor → lab → family → admin.
 const escalation = require('./escalation')(app, {
   auth, role, db, store, notify, audit, broadcast, touch, nowIso, doctorFor, handledDoctorIds, patientOwnerUserIds,
-  findUserByPhone, labStaffIds, facilityName, userById,
+  findUserByPhone: findVerifiedUserByPhone, labStaffIds, facilityName, userById,
 });
 if (process.env.NODE_ENV !== 'production') app.post('/api/dev/escalation-sweep', auth, role('super_admin'), (_req, res) => { escalation.sweep(); res.json({ ok: true }); });
 
@@ -8115,6 +8178,7 @@ require('./ops')(app, { auth, role, db, store, notify, audit, broadcast, touch, 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.' }));
 
 app.use((err, _req, res, _next) => {
+  if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid request.' }); // before `expose`: no parser internals
   if (err?.expose && err.status) return res.status(err.status).json({ error: err.message });
   if (err?.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'That file is too big. Please keep uploads under 10 MB.' });
   if (typeof err?.code === 'string' && err.code.startsWith('LIMIT_')) return res.status(400).json({ error: 'Please attach one PDF or photo.' });

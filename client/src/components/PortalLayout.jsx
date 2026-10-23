@@ -206,7 +206,14 @@ export default function PortalLayout({ portal, nav, children, headerExtra, heade
             <button type="button" className="btn sm" onClick={() => setMfaOpen(true)}>Set up now</button>
           </div>
         )}
-        <main className="portal-content" key={location.pathname}>{children}</main>
+        {/* The server refuses every other request until two-step login is on, so show only the way forward. */}
+        <main className="portal-content" key={location.pathname}>{mustMfa ? (
+          <div className="card stack" style={{ maxWidth: 520, margin: '24px auto' }}>
+            <h2 className="row mb-0" style={{ gap: 8 }}><ShieldCheck size={22} /> One more step</h2>
+            <p className="small mb-0">Before you can open this portal, turn on two-step login. You&apos;ll need a free authenticator app on your phone (Google Authenticator, Microsoft Authenticator or similar) and access to your email.</p>
+            <button type="button" className="btn" onClick={() => setMfaOpen(true)}>Set up two-step login</button>
+          </div>
+        ) : children}</main>
       </div>
       {tabs?.length > 0 && (
         <nav className="tabbar" aria-label="Main">

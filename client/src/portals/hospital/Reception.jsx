@@ -305,6 +305,7 @@ function SlipModal({ slip, onClose }) {
         <div className="small"><strong translate="no">{slip.doctorName}</strong>{slip.room ? ` · ${slip.room}` : ''}</div>
         <div className="small muted"><span translate="no">{slip.patientName}</span> · {fmtTime(slip.at)}{slip.ahead != null ? ` · ${slip.ahead} ahead` : ''}</div>
       </div>
+      {slip.needsApproval && <p className="callout sky small mt-2 mb-0">First visit here: the doctor will ask the patient for their Sehatra approval code before opening their past records.</p>}
       <div className="row mt-2" style={{ justifyContent: 'flex-end' }}>
         <Button variant="ghost" onClick={onClose}>Done</Button>
         <Button icon={Printer} onClick={() => { if (!printSlip(slip)) toast('Allow pop-ups for this site to print the slip', 'error'); }}>Print slip</Button>

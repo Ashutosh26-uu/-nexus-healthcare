@@ -3,6 +3,7 @@ import { Phone, Save, X, WifiOff, CheckCircle2 } from 'lucide-react';
 import { cx } from '../../components/ui';
 import { KButton, KError } from './KUi';
 import { addToOutbox, dangerFrom } from './offline';
+import { useAuth } from '../../auth';
 
 const SIGNS = ['Chest pain', 'Trouble breathing', 'Unconscious or fainting', 'Fits / seizure', 'Heavy bleeding', 'Weakness on one side of the body', 'Poisoning or snake bite'];
 const VITALS = [
@@ -17,6 +18,7 @@ const VITALS = [
 // Record a visit with no internet. It waits on this kiosk and is sent the moment the connection is back;
 // the operator then finishes the visit with everything pre-filled. Danger signs are checked right here.
 export default function OfflineVisit({ onClose }) {
+  const { user } = useAuth();
   const [f, setF] = useState({ name: '', age: '', gender: '', phone: '', symptoms: '' });
   const [vitals, setVitals] = useState({});
   const [signs, setSigns] = useState([]);
@@ -29,7 +31,7 @@ export default function OfflineVisit({ onClose }) {
     if (f.name.trim().length < 2) { setErr('Please enter the patient’s name.'); return; }
     if (!f.age && !f.phone) { setErr('Please enter the age, or a mobile number.'); return; }
     const clean = Object.fromEntries(Object.entries(vitals).filter(([, v]) => String(v).trim()));
-    setSaved(addToOutbox({ patient: { ...f, name: f.name.trim() }, vitals: clean, symptoms: f.symptoms.trim(), danger }));
+    setSaved(addToOutbox({ patient: { ...f, name: f.name.trim() }, vitals: clean, symptoms: f.symptoms.trim(), danger }, user?.facilityId));
   };
 
   return (

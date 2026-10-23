@@ -36,6 +36,13 @@ function add(d, actor, userId, amount, reason, refId, extra = {}) {
   const row = { id: store.id('cr'), userId, amount: r2(amount), reason, refId: refId || null, at, ...(amount > 0 ? { expiresAt: new Date(Date.now() + CREDIT_DAYS * 86400000).toISOString() } : {}), ...extra };
   d.credits.push(row);
   log(d, actor, userId, row);
+  // A referral reward taken back while the balance was already spent leaves a debt: new credit pays it off first.
+  const u = amount > 0 ? d.users.find((x) => x.id === userId) : null;
+  if (u?.creditDebt > 0) {
+    const pay = r2(Math.min(u.creditDebt, row.amount));
+    u.creditDebt = r2(u.creditDebt - pay);
+    add(d, SYSTEM, userId, -pay, 'reversed', row.id, { note: 'Earlier referral reward taken back' });
+  }
   return row;
 }
 
@@ -143,15 +150,24 @@ function rewardReferral(d, pay) {
 }
 
 // Undo a referral reward whose qualifying payment was refunded (book → pay → cancel for a full refund would
-// otherwise mint ₹100 per fake account). Takes back at most what's left — a balance never goes below 0.
+// otherwise mint ₹100 per fake account). The balance never shows below 0: whatever was already spent is kept
+// as a debt that the next credit pays off. And an invite is rewarded once, ever — a refunded one never
+// qualifies again (resetting it let "pay → spend credit → refund → repeat" mint credit without end).
 function reverseReferral(d, pay) {
   const u = d.users.find((x) => x.id === pay.userId);
   pay.referralReversed = nowIso();
   if (!u || u.referralPaymentId !== pay.id) return;
-  const takeBack = (userId, refId) => { const amt = Math.min(REFERRAL_AMOUNT, balance(d, userId)); if (amt > 0) add(d, SYSTEM, userId, -amt, 'reversed', refId); };
+  const takeBack = (userId, refId) => {
+    const have = balance(d, userId);
+    const amt = Math.min(REFERRAL_AMOUNT, have);
+    if (amt > 0) add(d, SYSTEM, userId, -amt, 'reversed', refId);
+    const short = r2(REFERRAL_AMOUNT - amt);
+    const who = d.users.find((x) => x.id === userId);
+    if (short > 0 && who) who.creditDebt = r2((who.creditDebt || 0) + short);
+  };
   takeBack(u.id, pay.id);
   if (u.referrerCredited && u.referredBy) takeBack(u.referredBy, u.id);
-  u.referralRewarded = null; u.referrerCredited = false; u.referralPaymentId = null; // the next real paid visit qualifies again
+  u.referralForfeited = nowIso(); // keeps referralRewarded / referrerCredited set: no second reward for this invite
 }
 
 // Settle credit tied to payments that didn't go through. Cheap single pass; safe to call often.

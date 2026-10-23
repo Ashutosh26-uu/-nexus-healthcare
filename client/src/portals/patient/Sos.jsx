@@ -180,7 +180,7 @@ export default function SosPage() {
           <ol className="sos-steps">
             <li><strong>5-second countdown</strong> — tap Cancel if it was a mistake.</li>
             <li>Your phone opens <strong>108</strong> to call an ambulance.</li>
-            <li>Family on Sehatra get an alert at once, with your location. You can also send the alert to anyone by WhatsApp or SMS.</li>
+            <li>Family linked to your account (on the Family page) get an alert at once, with your location. You can also send the alert to anyone by WhatsApp or SMS.</li>
             <li>You see the nearest hospitals with an emergency department, and free beds where the hospital shares them.</li>
           </ol>
           {sos?.status === 'safe' && <p className="small muted">Your last SOS ended {timeAgo(sos.resolvedAt)} — marked safe.</p>}

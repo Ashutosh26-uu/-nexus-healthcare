@@ -19,6 +19,11 @@ function checkSecrets() {
     console.error('FATAL: DATA_MODE=demo is not allowed in production (demo accounts use a public password). Use DATA_MODE=live, or set ALLOW_DEMO_IN_PRODUCTION=true for a private investor demo.');
     process.exit(1);
   }
+  // Links in emails, share pages and the sitemap must not follow whatever Host header a request carries.
+  if (isProd() && !/^https:\/\//.test(process.env.APP_URL || process.env.PUBLIC_URL || '')) {
+    console.error('FATAL: set APP_URL to the site\'s https:// address in production.');
+    process.exit(1);
+  }
   if (isProd() && process.env.OTP_DEV_MODE === 'true') {
     console.error('FATAL: OTP_DEV_MODE must not be true in production (it reveals codes).');
     process.exit(1);

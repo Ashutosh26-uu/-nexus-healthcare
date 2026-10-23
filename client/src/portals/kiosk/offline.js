@@ -19,8 +19,10 @@ function writeOutbox(list) {
   try { localStorage.setItem(KEY, JSON.stringify(list)); } catch { /* storage full or blocked */ }
   window.dispatchEvent(new Event(EVT));
 }
-export function addToOutbox(visit) {
-  const v = { ...visit, localId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`, recordedAt: new Date().toISOString() };
+// Each visit remembers which E-Clinic recorded it: only that E-Clinic's sign-in sends it (a different
+// account on this browser never files someone else's visits under its own clinic).
+export function addToOutbox(visit, facilityId) {
+  const v = { ...visit, facilityId: facilityId || null, localId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`, recordedAt: new Date().toISOString() };
   writeOutbox([...readOutbox(), v]);
   return v;
 }
@@ -40,12 +42,13 @@ export function useNetwork() {
 
 // Sends waiting visits whenever there's a connection: at once when it comes back, and every 30 s to be sure.
 // Each visit has its own id, so a retry after a dropped reply never creates it twice.
-export function useOutboxSync(online) {
-  const [waiting, setWaiting] = useState(() => readOutbox().length);
+export function useOutboxSync(online, facilityId) {
+  const mine = useCallback(() => readOutbox().filter((v) => !v.facilityId || v.facilityId === facilityId), [facilityId]);
+  const [waiting, setWaiting] = useState(() => mine().length);
   const [sending, setSending] = useState(false);
   const [lastSent, setLastSent] = useState(0);
   const sync = useCallback(async () => {
-    const list = readOutbox();
+    const list = mine();
     setWaiting(list.length);
     if (!list.length || !navigator.onLine) return;
     setSending(true);
@@ -58,14 +61,15 @@ export function useOutboxSync(online) {
       } catch { break; } // still offline or the server is busy — try again later, in order
     }
     setSending(false);
-    setWaiting(readOutbox().length);
+    setWaiting(mine().length);
     if (sent) setLastSent(sent);
-  }, []);
+  }, [mine]);
   useEffect(() => {
-    const onChange = () => setWaiting(readOutbox().length);
+    const onChange = () => setWaiting(mine().length);
+    onChange();
     window.addEventListener(EVT, onChange);
     return () => window.removeEventListener(EVT, onChange);
-  }, []);
+  }, [mine]);
   useEffect(() => {
     if (online) sync();
     const t = setInterval(() => { if (navigator.onLine) sync(); }, 30000);

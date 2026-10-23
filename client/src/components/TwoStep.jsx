@@ -17,6 +17,8 @@ export default function TwoStepModal({ open, onClose }) {
   const [setup, setSetup] = useState(null);
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
+  const [emailCode, setEmailCode] = useState('');
+  const [codeSentTo, setCodeSentTo] = useState('');
   const [backupCodes, setBackupCodes] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -31,8 +33,14 @@ export default function TwoStepModal({ open, onClose }) {
   const run = async (fn) => { setBusy(true); setErr(''); try { await fn(); } catch (e) { setErr(e.message); setCode(''); } finally { setBusy(false); } };
   const start = () => run(async () => {
     if (status?.needsPassword && !password) { setErr('Enter your current password to turn on two-step login.'); return; }
-    setSetup(await api.post('/auth/mfa/setup', status?.needsPassword ? { password } : {}));
-    setPassword(''); setCode(''); setStage('scan');
+    if (status?.needsEmailCode && emailCode.length !== 6) { setErr('Enter the 6-digit code we emailed you.'); return; }
+    setSetup(await api.post('/auth/mfa/setup', { ...(status?.needsPassword ? { password } : {}), ...(status?.needsEmailCode ? { emailCode } : {}) }));
+    setPassword(''); setEmailCode(''); setCode(''); setStage('scan');
+  });
+  const sendEmailCode = () => run(async () => {
+    const r = await api.post('/auth/mfa/setup-code');
+    setCodeSentTo(r.masked || 'your email');
+    if (r.devCode) setEmailCode(r.devCode);
   });
   const enable = () => run(async () => {
     const r = await api.post('/auth/mfa/enable', { code });
@@ -62,7 +70,10 @@ export default function TwoStepModal({ open, onClose }) {
           {status.required ? <div className="badge rose" style={{ alignSelf: 'flex-start' }}>Required for your role</div> : status.recommended && <div className="badge sun" style={{ alignSelf: 'flex-start' }}>Recommended for your role</div>}
           <p className="small mb-0">You&apos;ll need a free authenticator app on your phone — Google Authenticator, Microsoft Authenticator, Authy or similar. Each time you sign in, the app shows a new 6-digit code. Codes work even without internet on the phone.</p>
           {status.needsPassword && <Field label="Confirm your current password" hint="So only you can turn this on."><input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} /></Field>}
-          <Button icon={ShieldCheck} onClick={start} loading={busy}>Set up two-step login</Button>
+          {status.needsEmailCode && (codeSentTo
+            ? <Field label={`Code sent to ${codeSentTo}`} hint="Proves this is really your inbox."><input className="input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={emailCode} onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, ''))} /></Field>
+            : <Button variant="secondary" onClick={sendEmailCode} loading={busy}>Email me a code first</Button>)}
+          <Button icon={ShieldCheck} onClick={start} loading={busy} disabled={status.needsEmailCode && !codeSentTo}>Set up two-step login</Button>
         </div>
       )}
 

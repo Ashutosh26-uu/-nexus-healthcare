@@ -106,13 +106,15 @@ const messageFor = (code, lang, purpose = 'login') => (purpose === 'consent'
   ? `${code} is your Sehatra approval code. Share it only with the doctor in front of you to let them see your records and write a prescription. It cannot be used to sign in. Valid ${Math.round(TTL / 60000)} min.`
   : purpose === 'kiosk'
     ? `${code} is your Sehatra kiosk check-in code. Tell it to the kiosk operator only if you are at the kiosk right now — it opens your Health Passport there. Valid ${Math.round(TTL / 60000)} min. Not you? Ignore this email; nothing is shared without the code.`
+  : purpose === 'mfa'
+    ? `${code} is your Sehatra code to turn on two-step login. If you didn't ask for this, someone may know your password — change it now.`
   : purpose === 'reset'
     ? `${code} is your Sehatra code to set a new password. It expires in ${Math.round(TTL / 60000)} minutes. If you didn't ask to change your password, ignore this email — your password stays the same.`
     : (MESSAGES[String(lang || 'en').split('-')[0]] || MESSAGES.en)(code, Math.round(TTL / 60000)));
-const SUBJECTS = { kiosk: (c) => `${c} — check in at the kiosk (Sehatra)`, consent: (c) => `${c} — approve your doctor (Sehatra)`, reset: (c) => `${c} — set a new password (Sehatra)`, login: (c) => `${c} — your Sehatra code` };
+const SUBJECTS = { mfa: (c) => `${c} — turn on two-step login (Sehatra)`, kiosk: (c) => `${c} — check in at the kiosk (Sehatra)`, consent: (c) => `${c} — approve your doctor (Sehatra)`, reset: (c) => `${c} — set a new password (Sehatra)`, login: (c) => `${c} — your Sehatra code` };
 // Codes are stored per purpose, so a code sent for one thing (e.g. a patient approving a doctor, or
 // changing a password) can never be redeemed for another (e.g. signing in as that patient).
-const PURPOSES = new Set(['login', 'consent', 'reset', 'kiosk']);
+const PURPOSES = new Set(['login', 'consent', 'reset', 'kiosk', 'mfa']);
 // Addresses that are not real inboxes: demo accounts (and phone-only patients' "…@patient.omnicare.in")
 // plus the reserved example/test domains. A real mail server must never send codes there.
 const DEMO_EMAIL = /@(([a-z0-9-]+\.)*omnicare\.in|example\.(com|org|net)|[a-z0-9.-]+\.(test|invalid|example|localhost))$/i;
