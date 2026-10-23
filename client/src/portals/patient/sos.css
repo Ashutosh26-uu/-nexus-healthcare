@@ -11,15 +11,15 @@
 .sos-pill {
   display: inline-flex; align-items: center; gap: 6px; flex: none; height: 38px; padding: 0 14px 0 11px; border-radius: 99px;
   border: 1.5px solid #e3a49e; color: #b0362d; font: 800 0.8rem var(--sans); letter-spacing: 0.06em; cursor: pointer; overflow: hidden;
-  background: linear-gradient(90deg, #c4483f calc(var(--p, 0) * 100%), #fff4f2 calc(var(--p, 0) * 100%));
+  background: linear-gradient(90deg, #f2aaa2 calc(var(--p, 0) * 100%), #fff4f2 calc(var(--p, 0) * 100%));
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .sos-pill:hover { border-color: #c4483f; box-shadow: 0 0 0 3px rgba(196, 72, 63, 0.12); }
 .sos-pill:focus-visible { outline: 3px solid #1d2b2a; outline-offset: 2px; }
 .sos-pill svg { flex: none; }
 .sos-pill .sos-ring { display: none; }
-/* While held, the text turns white over the red fill. */
-.sos-pill.holding { color: #fff; border-color: #c4483f; }
+/* While held, the fill is a lighter red so the dark-red SOS and icon stay readable the whole way. */
+.sos-pill.holding { border-color: #c4483f; color: #8f241d; }
 @media (max-width: 400px) { .sos-pill { padding: 0 11px 0 9px; } }
 @media print { .sos-pill, .sos-overlay { display: none !important; } }
 
