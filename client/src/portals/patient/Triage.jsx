@@ -3,10 +3,10 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Mic, MicOff, Phone, Ambulance, IdCard, Video, CalendarClock, HeartPulse, RefreshCw, Info, Check, Search } from 'lucide-react';
 import { api } from '../../api';
 import NearbyDoctors from './NearbyDoctors';
-import { Avatar, Button, Field, TriageBadge, cx, useToast } from '../../components/ui';
+import { Avatar, Button, Field, TriageBadge, cx } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, firstName, relationOf, SPEECH_LANG } from './shared';
-import { joinResults } from '../../components/speech';
+import { useDictation } from '../../components/speech';
 
 const QUICK_SYMPTOMS = ['Fever', 'Cough', 'Headache', 'Body ache', 'Sore throat', 'Cold / runny nose', 'Vomiting', 'Loose motions', 'Stomach pain', 'Dizziness', 'Rash or itching', 'Burning urine', 'Tiredness', 'Acidity'];
 const DANGER_SIGNS = [
@@ -28,7 +28,6 @@ const DURATIONS = [
 const SEVERITY_WORDS = ['', 'Barely there', 'Mild', 'Mild', 'Uncomfortable', 'Uncomfortable', 'Hard to ignore', 'Hard to ignore', 'Very bad', 'Very bad', 'Worst ever'];
 const STEP_NAMES = ['Who', 'Symptoms', 'A few questions', 'Result'];
 
-const SpeechRecognition = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
 
 export default function Triage() {
   const { patient, profiles, switchProfile } = usePatient();
@@ -175,41 +174,29 @@ export default function Triage() {
 
 /* ---------- voice + text input ---------- */
 function SymptomInput({ value, onChange, language }) {
-  const [listening, setListening] = useState(false);
-  const recRef = useRef(null);
-  const baseRef = useRef('');
-  const toast = useToast();
-
-  useEffect(() => () => recRef.current?.abort?.(), []);
-
-  const toggle = () => {
-    if (listening) { recRef.current?.stop(); return; }
-    const rec = new SpeechRecognition();
-    rec.lang = SPEECH_LANG[language] || 'hi-IN';
-    rec.interimResults = true;
-    rec.continuous = true;
-    baseRef.current = value ? `${value.trim()} ` : '';
-    rec.onresult = (e) => onChange(baseRef.current + joinResults(e.results));
-    rec.onerror = (e) => {
-      if (e.error === 'not-allowed') toast('Microphone permission was blocked. You can type instead.', 'error');
-      setListening(false);
-    };
-    rec.onend = () => setListening(false);
-    recRef.current = rec;
-    try { rec.start(); setListening(true); } catch { setListening(false); }
-  };
+  // The shared mic engine: keeps listening until tapped, each finished phrase is added once, and the words
+  // being spoken show in the box as you talk (Android used to write every version of the sentence).
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const mic = useDictation({
+    lang: SPEECH_LANG[language] || 'hi-IN',
+    onPhrase: (t) => onChange([valueRef.current.trim(), t].filter(Boolean).join(' ')),
+  });
+  const shown = mic.listening && mic.interim ? [value.trim(), mic.interim].filter(Boolean).join(' ') : value;
 
   return (
     <div className="pt-voice-wrap">
       <label htmlFor="symptom-text" className="sr-only">Describe the symptoms</label>
-      <textarea id="symptom-text" className="textarea pt-symptom-text" rows={4} value={value} onChange={(e) => onChange(e.target.value)}
-        placeholder="e.g. Bukhar hai 2 din se, sar mein dard aur thakaan. Fever since 2 days with headache." />
-      {SpeechRecognition && (
-        <button type="button" className={cx('pt-mic', listening && 'on')} onClick={toggle} aria-label={listening ? 'Stop listening' : 'Speak your symptoms'} aria-pressed={listening}>
-          {listening ? <MicOff size={18} /> : <Mic size={18} />}
-          <span className="small">{listening ? 'Listening… tap to stop' : 'Speak'}</span>
+      <textarea id="symptom-text" className="textarea pt-symptom-text" rows={4} value={shown} readOnly={mic.listening} onChange={(e) => onChange(e.target.value)}
+        placeholder={mic.listening ? 'Listening… speak now' : 'e.g. Bukhar hai 2 din se, sar mein dard aur thakaan. Fever since 2 days with headache.'} />
+      {mic.supported && (
+        <button type="button" className={cx('pt-mic', mic.listening && 'on')} onClick={mic.toggle} aria-label={mic.listening ? 'Stop listening' : 'Speak your symptoms'} aria-pressed={mic.listening}>
+          {mic.listening ? <MicOff size={18} /> : <Mic size={18} />}
+          <span className="small">{mic.listening ? 'Listening… tap to stop' : 'Speak'}</span>
         </button>
       )}
+      {mic.error && <p className="tiny voice-err mt-1">{mic.error}</p>}
+      {!mic.error && mic.note && !mic.listening && <p className="tiny muted mt-1">{mic.note}</p>}
     </div>
   );
 }

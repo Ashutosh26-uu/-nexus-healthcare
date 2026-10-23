@@ -1,9 +1,21 @@
 // Talking Saathi: speech in (dictation) and speech out (read aloud). Both use the browser's own speech
 // services — nothing extra is installed or paid for, and the buttons hide where the browser lacks them.
+import { useEffect, useRef, useState } from 'react';
 
 const INDIAN = new Set(['hi', 'bn', 'ta', 'te', 'mr', 'gu', 'kn', 'ml', 'pa', 'or', 'as', 'ur']);
-// Speech language from an app language code (hi → hi-IN, ta → ta-IN …).
-export const speechLang = (code) => (!code || code === 'en' ? (typeof navigator !== 'undefined' && navigator.language) || 'en-IN' : INDIAN.has(code) ? `${code}-IN` : code);
+// Speech language from an app language code (hi → hi-IN, ta → ta-IN …). English is Indian English: it
+// understands Hinglish, Indian names and medicine names far better than the phone's default en-US.
+export const speechLang = (code) => (!code || code === 'en' ? 'en-IN' : INDIAN.has(code) ? `${code}-IN` : code);
+
+// What went wrong, in words a patient can act on. null = nothing to tell (silence, or we stopped it).
+export function micErrorText(code) {
+  if (code === 'no-speech' || code === 'aborted') return null;
+  if (code === 'not-allowed' || code === 'service-not-allowed') return 'The microphone is blocked. Allow it for this site (tap the lock icon next to the address), then try again.';
+  if (code === 'audio-capture') return 'No microphone found — or another app is using it. Close that app and try again.';
+  if (code === 'network') return 'Speech needs an internet connection. Check your connection, or type instead.';
+  if (code === 'language-not-supported') return "Your phone can't recognise speech in this language yet. Try English or Hindi, or type instead.";
+  return 'The microphone stopped. Tap it to try again.';
+}
 
 export const Recognition = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
 
@@ -138,17 +150,97 @@ export function listenOnce({ lang, onInterim, onEnd, onError }) {
   r.continuous = false;
   r.maxAlternatives = 1;
   let finalText = '';
+  let heard = '';
   let failed = false;
   r.onresult = (e) => {
-    finalText = joinResults(e.results, { finalOnly: true });
-    onInterim?.(joinResults(e.results));
+    finalText = joinResults(e.results, { finalOnly: true }) || finalText;
+    heard = joinResults(e.results) || heard;
+    onInterim?.(heard);
   };
   r.onerror = (e) => {
-    if (e.error === 'no-speech' || e.error === 'aborted') return;
+    const msg = micErrorText(e.error);
+    if (!msg) return;
     failed = true;
-    onError?.(e.error === 'not-allowed' || e.error === 'service-not-allowed' ? 'Allow the microphone for this site to talk to Saathi.' : "Couldn't hear that — tap the mic to try again.");
+    onError?.(msg);
   };
-  r.onend = () => { if (!failed) onEnd?.(finalText.trim()); };
+  // Tapping "done" mid-sentence can end the session before the phone marks the words final — keep them anyway.
+  r.onend = () => { if (!failed) onEnd?.((finalText || heard).trim()); };
   r.start();
   return { stop: () => r.stop(), abort: () => { failed = true; r.abort(); } };
+}
+
+/**
+ * Dictation that keeps going until stopped — the one mic engine behind every "Speak" button.
+ * Phones end recognition at each pause, so every phrase is its own short session: its words show live
+ * (`interim`), the finished phrase goes to onPhrase once, and the next session starts quietly. Two silent
+ * sessions in a row stop it (no endless beeping), with a note saying why.
+ */
+export function useDictation({ lang, onPhrase }) {
+  const [listening, setListening] = useState(false);
+  const [interim, setInterim] = useState('');
+  const [error, setError] = useState('');
+  const [note, setNote] = useState('');
+  const rec = useRef(null);
+  const wantOn = useRef(false);
+  const quiet = useRef(0);
+  const timer = useRef(null);
+  const phraseRef = useRef(onPhrase);
+  phraseRef.current = onPhrase;
+  const langRef = useRef(lang);
+  langRef.current = lang;
+
+  const end = (why = '') => {
+    wantOn.current = false;
+    clearTimeout(timer.current);
+    setListening(false);
+    setInterim('');
+    if (why) setNote(why);
+  };
+
+  const session = () => {
+    const r = new Recognition();
+    r.lang = langRef.current;
+    r.continuous = false;
+    r.interimResults = true;
+    r.maxAlternatives = 1;
+    let finalText = '';
+    let heard = '';
+    r.onresult = (e) => {
+      finalText = joinResults(e.results, { finalOnly: true }) || finalText;
+      heard = joinResults(e.results) || heard;
+      setInterim(heard);
+    };
+    r.onerror = (e) => {
+      const msg = micErrorText(e.error);
+      if (msg) { setError(msg); end(); }
+    };
+    r.onend = () => {
+      const said = (finalText || heard).trim();
+      setInterim('');
+      if (said) { quiet.current = 0; phraseRef.current?.(said); } else quiet.current += 1;
+      if (!wantOn.current) { setListening(false); return; }
+      if (quiet.current >= 2) { end("Stopped listening — I didn't hear anything. Tap the mic to speak again."); return; }
+      // A short gap: Android throws if a new session starts the instant the last one ends.
+      timer.current = setTimeout(() => {
+        if (!wantOn.current) return;
+        try { session(); } catch { end('The microphone stopped. Tap it to try again.'); }
+      }, 250);
+    };
+    rec.current = r;
+    r.start();
+  };
+
+  const start = () => {
+    if (!Recognition || wantOn.current) return;
+    setError(''); setNote(''); setInterim('');
+    quiet.current = 0;
+    wantOn.current = true;
+    try { session(); setListening(true); } catch { end('The microphone could not start. Tap it to try again.'); }
+  };
+  // Stop keeps what was being said: the session ends normally and delivers its phrase.
+  const stop = () => { wantOn.current = false; clearTimeout(timer.current); try { rec.current?.stop(); } catch { /* already ended */ } setListening(false); };
+
+  useEffect(() => () => { wantOn.current = false; clearTimeout(timer.current); try { rec.current?.abort(); } catch { /* ignore */ } }, []);
+
+  return { supported: Boolean(Recognition), listening, interim, error, note, start, stop, toggle: () => (wantOn.current ? stop() : start()) };
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Thermometer, Wind, Speech, HeartPulse, Soup, Brain, Bandage, Hand, Baby, CircleHelp, Mic, Sparkles, Siren, Ambulance, Video, CalendarCheck, Printer, ArrowRight, Hospital, Phone, Check, Home } from 'lucide-react';
 import { api } from '../../api';
 import { cx } from '../../components/ui';
@@ -7,7 +7,7 @@ import { KButton, KError, StepFrame } from './KUi';
 import Slip from './Slip';
 import { langOf } from './i18n';
 import { getLocale } from '../../i18n';
-import { joinResults } from '../../components/speech';
+import { useDictation } from '../../components/speech';
 
 const SYMPTOMS = [
   { id: 'fever', icon: Thermometer, text: 'fever' },
@@ -43,26 +43,9 @@ function nextSlots() {
 }
 const slotLabel = (d) => `${d.toDateString() === new Date().toDateString() ? 'Today' : 'Tomorrow'} · ${d.toLocaleTimeString(getLocale(), { hour: 'numeric', minute: '2-digit' })}`;
 
+// The shared mic engine (keeps listening until tapped again, each phrase added once, live words shown).
 function useSpeechInput(lang, onText) {
-  const [listening, setListening] = useState(false);
-  const recRef = useRef(null);
-  const SR = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
-  const start = () => {
-    if (!SR || listening) return; // a second tap while listening would spawn a parallel recogniser
-    try {
-      const rec = new SR();
-      rec.lang = lang;
-      rec.interimResults = false;
-      rec.onresult = (e) => onText(joinResults(e.results)); // Android repeats the growing sentence — keep it once
-      rec.onend = () => setListening(false);
-      rec.onerror = () => setListening(false);
-      recRef.current = rec;
-      rec.start();
-      setListening(true);
-    } catch { setListening(false); }
-  };
-  useEffect(() => () => { try { recRef.current?.abort(); } catch { /* ignore */ } }, []);
-  return { supported: Boolean(SR), listening, start };
+  return useDictation({ lang, onPhrase: onText });
 }
 
 function Outcome({ result, onConnect, connecting, onBook, booking, booked, onFinish, kiosk, patient, vitals, t }) {
@@ -286,9 +269,11 @@ export default function StepTriage() {
       <div className="k-words">
         <input className="k-input big" value={text} onChange={(e) => setText(e.target.value)} placeholder={t('own_words')} />
         {speech.supported && (
-          <button type="button" className={cx('k-mic', speech.listening && 'on')} onClick={speech.start} aria-label="Speak your symptoms"><Mic /></button>
+          <button type="button" className={cx('k-mic', speech.listening && 'on')} onClick={speech.toggle} aria-pressed={speech.listening} aria-label={speech.listening ? 'Stop listening' : 'Speak your symptoms'}><Mic /></button>
         )}
       </div>
+      {speech.listening && <p className="tiny voice-live" aria-live="polite">{speech.interim ? `“${speech.interim}”` : '…'}</p>}
+      {speech.error && <p className="tiny voice-err">{speech.error}</p>}
 
       <div className="k-qrow">
         <div>

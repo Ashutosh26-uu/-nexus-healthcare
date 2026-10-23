@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Sparkles, Mic, Square, FileText, Check, Trash2, ShieldCheck } from 'lucide-react';
 import { api } from '../../api';
 import { Button, useAction, cx } from '../../components/ui';
-import { joinResults } from '../../components/speech';
+import { joinResults, micErrorText } from '../../components/speech';
 
 // Ambient scribe: listen to the consultation (with the patient's consent), keep an editable transcript, then
 // draft a SOAP note, codes and medicines the doctor reviews and drops into the prescription. Sehatra stores
@@ -44,25 +44,40 @@ export default function AmbientScribe({ consultId, onUse }) {
     r.continuous = false;
     r.interimResults = true;
     let said = '';
+    let heard = '';
+    // Stopping mid-sentence can end the session before the words are marked final — keep them anyway.
     const commit = () => {
-      if (said) setTranscript((x) => `${x}${x && !x.endsWith(' ') ? ' ' : ''}${said}${/[.!?।]$/.test(said) ? '' : '.'} `);
-      said = '';
+      const text = (said || heard).trim();
+      if (text) setTranscript((x) => `${x}${x && !x.endsWith(' ') ? ' ' : ''}${text}${/[.!?।]$/.test(text) ? '' : '.'} `);
+      said = ''; heard = '';
     };
     r.onresult = (e) => {
       said = joinResults(e.results, { finalOnly: true }) || said;
+      heard = joinResults(e.results) || heard;
       restarts.current = 0;
-      setInterim(joinResults(e.results));
+      setInterim(heard);
     };
     r.onerror = (e) => {
-      if (e.error === 'no-speech' || e.error === 'aborted' || e.error === 'network') return;
+      if (e.error === 'network') return; // a dropped session; onend starts the next and counts it
+      const msg = micErrorText(e.error);
+      if (!msg) return;
       wantOn.current = false;
-      setMicError(e.error === 'not-allowed' ? 'Allow the microphone for this site to record.' : 'The microphone stopped. Tap Listen to carry on.');
+      setMicError(msg);
     };
-    // Browsers end recognition after a pause; keep going until the doctor taps Stop.
+    // Browsers end recognition after a pause; keep going until the doctor taps Stop. Silence is normal in a
+    // consult, so it never stops on its own — only after many failed starts in a row (mic taken, offline).
     r.onend = () => {
       commit();
       setInterim('');
-      if (wantOn.current && restarts.current < 50) { restarts.current += 1; try { startRec(); return; } catch { /* fall through */ } }
+      if (wantOn.current && restarts.current < 50) {
+        restarts.current += 1;
+        // A short gap: Android throws if a new session starts the instant the last one ends.
+        setTimeout(() => {
+          if (!wantOn.current) return;
+          try { startRec(); } catch { wantOn.current = false; setListening(false); setMicError('The microphone stopped. Tap Listen to carry on.'); }
+        }, 250);
+        return;
+      }
       if (wantOn.current) { wantOn.current = false; setMicError('The microphone keeps stopping — check your connection, then tap Listen again.'); }
       setListening(false);
     };
