@@ -2910,6 +2910,9 @@ app.post('/api/bookings', auth, role('patient', 'caregiver'), async (req, res) =
   d.consults.push(consult);
   d.payments.push(pay);
   store.save();
+  // The family's other phones show the pending booking at once (the doctor sees it once it's paid).
+  touch(patientOwnerUserIds(p));
+  broadcast('consults', 'payments');
   res.json({ consult: enrichConsult(consult), payment: payments.publicPayment(pay, { dataMode: DATA_MODE }), emergency: t.level === 'emergency' ? t.advice : null });
 });
 
@@ -3556,6 +3559,7 @@ app.post('/api/consults/:id/ack', auth, role('doctor'), (req, res) => {
   if (!c || !handledDoctorIds(req.user).includes(c.doctorId)) return res.status(404).json({ error: 'Consult not found.' });
   c.doctorSeenAt = nowIso();
   store.save();
+  broadcast('consults');
   res.json({ ok: true });
 });
 
@@ -6836,6 +6840,7 @@ app.post('/api/kiosk/upi', auth, role('kiosk_operator'), (req, res) => {
   if (!upi) return res.status(501).json({ error: 'UPI isn’t set up on this network yet — the admin needs to add the UPI ID (UPI_VPA). Take cash for now.' });
   d.payments.push(pay);
   store.save();
+  broadcast('kiosks', 'payments');
   res.json({ id: pay.id, amount, upi, note });
 });
 app.post('/api/kiosk/upi/:id/confirm', auth, role('kiosk_operator'), (req, res) => {
@@ -6845,6 +6850,7 @@ app.post('/api/kiosk/upi/:id/confirm', auth, role('kiosk_operator'), (req, res) 
   Object.assign(pay, { status: 'operator_confirmed', paidAt: nowIso(), confirmedBy: req.user.id });
   audit(req.user, 'kiosk_upi_confirmed', null, 'payment', `${pay.id} · ₹${pay.amount}`);
   store.save();
+  broadcast('kiosks', 'payments');
   res.json({ id: pay.id, status: pay.status, paidAt: pay.paidAt });
 });
 
