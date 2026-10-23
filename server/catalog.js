@@ -157,7 +157,71 @@ const ADVICE = [
   { re: /widal|typhoid/i, positive: 'The typhoid test is positive. Take the antibiotics exactly as prescribed, drink boiled water and eat light, freshly cooked food.' },
   { re: /creatinine|urea/i, high: 'Kidney markers are raised. Drink water as advised and avoid painkillers without asking your doctor — they will review this.' },
   { re: /tsh|thyroid/i, high: 'TSH is high (thyroid may be underactive). Your doctor may start or adjust thyroid medicine.', low: 'TSH is low (thyroid may be overactive). Your doctor will review this with you.' },
+  // More of the everyday tests, in the same plain words.
+  { re: /\bhdl\b/i, low: 'HDL ("good" cholesterol) is low. Regular walking or exercise and less fried food help raise it. Your doctor will look at it with your other cholesterol values.' },
+  { re: /uric acid/i, high: 'Uric acid is high. It can cause gout (painful swollen joints) or kidney stones. Drink more water, cut down red meat, alcohol and sugary drinks, and ask your doctor if you need medicine.' },
+  { re: /sgpt|sgot|\balt\b|\bast\b|alkaline phosphatase|\balp\b|ggt/i, high: 'A liver enzyme is high — the liver may be under strain (fatty liver, an infection, alcohol or some medicines). Avoid alcohol and self-medication until your doctor reviews it.' },
+  { re: /bilirubin/i, high: 'Bilirubin is high — this can show up as yellow eyes or skin (jaundice). Your doctor will check the liver and may repeat the test. See a doctor soon if you have fever or dark urine.' },
+  { re: /vitamin d|25.?oh/i, low: 'Vitamin D is low — very common in India. It can cause tiredness and weak bones. 15–20 minutes of morning sun helps; your doctor may prescribe a supplement.' },
+  { re: /b.?12|cobalamin/i, low: 'Vitamin B12 is low. It can cause tiredness, tingling in hands and feet, or memory trouble. It is common in vegetarians; your doctor may prescribe tablets or injections.' },
+  { re: /ferritin|\biron\b|tibc/i, low: 'Iron stores are low — a common cause of anaemia and tiredness. Eat iron-rich food (green leafy vegetables, jaggery, dals, eggs or meat) with lemon; your doctor may prescribe iron.' },
+  { re: /\besr\b|\bcrp\b|c.?reactive/i, high: 'This shows inflammation or an infection somewhere in the body. It doesn’t say where — your doctor will read it with your symptoms and other tests.' },
+  { re: /potassium/i, high: 'Potassium is high — this can affect the heart rhythm. Your doctor should see this soon, especially if you take BP or kidney medicines.', low: 'Potassium is low — it can cause weakness or cramps, often after loose motions or with some BP medicines. Your doctor will advise.' },
+  { re: /sodium/i, high: 'Sodium is high — often from not drinking enough water. Your doctor will check why.', low: 'Sodium is low — it can cause tiredness, confusion or headache. Don’t drink very large amounts of water; your doctor will check the cause and your medicines.' },
+  { re: /calcium/i, low: 'Calcium is low. Your doctor may check vitamin D too and suggest calcium-rich food (milk, curd, paneer, ragi) or a supplement.', high: 'Calcium is high. Your doctor will look for the cause — don’t take calcium tablets until then.' },
+  { re: /\bt3\b|\bt4\b|thyroxine/i, high: 'A thyroid hormone is high (thyroid may be overactive). Your doctor will read it with your TSH.', low: 'A thyroid hormone is low (thyroid may be underactive). Your doctor will read it with your TSH.' },
+  { re: /urine.*(protein|albumin)|albumin.*urine|microalbumin/i, high: 'There is protein in the urine — an early sign the kidneys need care, common with diabetes or high BP. Your doctor will repeat the test and may adjust treatment.', positive: 'Protein was found in the urine — an early sign the kidneys need care. Your doctor will repeat the test and check BP and sugar.' },
+  { re: /urine.*(sugar|glucose)/i, positive: 'Sugar was found in the urine — usually a sign of high blood sugar. Your doctor will check your blood sugar or HbA1c.' },
 ];
+
+// What each common test measures, in one line — shown for every result, normal ones too.
+const ABOUT = [
+  [/hba1c/i, 'Your average blood sugar over the last 3 months.'],
+  [/fasting|fbs/i, 'Blood sugar after not eating for 8–10 hours.'],
+  [/ppbs|post.?prandial|after (meal|food)/i, 'Blood sugar 2 hours after a meal.'],
+  [/glucose|sugar/i, 'The amount of sugar in your blood.'],
+  [/\bldl\b/i, '“Bad” cholesterol — the kind that can clog blood vessels.'],
+  [/\bhdl\b/i, '“Good” cholesterol — it helps protect the heart.'],
+  [/triglycer/i, 'A type of fat in the blood, linked to diet, sugar and alcohol.'],
+  [/cholesterol/i, 'The total fat-like substance in your blood that affects heart health.'],
+  [/h(a)?emoglobin|\bhb\b/i, 'The part of your blood that carries oxygen. Low means anaemia.'],
+  [/platelet/i, 'Blood cells that help stop bleeding. They can drop in dengue.'],
+  [/wbc|white blood|leucocyte|tlc/i, 'White blood cells, which fight infection.'],
+  [/rbc|red blood/i, 'Red blood cells, which carry oxygen.'],
+  [/pcv|haematocrit|hematocrit/i, 'How much of your blood is red cells.'],
+  [/\besr\b|\bcrp\b|c.?reactive/i, 'A sign of inflammation or infection in the body.'],
+  [/creatinine/i, 'A waste product that shows how well your kidneys filter blood.'],
+  [/urea|bun/i, 'A waste product cleared by the kidneys.'],
+  [/egfr/i, 'An estimate of how well your kidneys are working.'],
+  [/uric acid/i, 'A waste product; high levels can cause gout or kidney stones.'],
+  [/sgpt|sgot|\balt\b|\bast\b|alkaline phosphatase|\balp\b|ggt/i, 'An enzyme that shows how healthy your liver is.'],
+  [/bilirubin/i, 'A yellow pigment processed by the liver; high levels cause jaundice.'],
+  [/albumin|total protein/i, 'Proteins made by the liver; they show nutrition and liver health.'],
+  [/tsh/i, 'The signal that controls your thyroid gland.'],
+  [/\bt3\b|\bt4\b|thyroxine/i, 'A thyroid hormone that controls your body’s energy use.'],
+  [/vitamin d|25.?oh/i, 'Vitamin D, needed for strong bones and muscles.'],
+  [/b.?12|cobalamin/i, 'Vitamin B12, needed for nerves and blood.'],
+  [/ferritin|\biron\b|tibc/i, 'Your body’s iron stores, needed to make blood.'],
+  [/sodium|potassium|chloride/i, 'A body salt that keeps nerves, muscles and the heart working.'],
+  [/calcium/i, 'A mineral for bones, muscles and nerves.'],
+  [/dengue|ns1/i, 'A test for dengue fever.'],
+  [/malaria/i, 'A test for malaria.'],
+  [/widal|typhoid/i, 'A test for typhoid.'],
+  [/urine/i, 'A urine check for infection, sugar, protein or kidney problems.'],
+];
+const about = (name) => ABOUT.find(([re]) => re.test(name || ''))?.[1] || null;
+
+// Two or three questions worth asking the doctor about this report.
+function questions(results = []) {
+  const off = results.filter((r) => r.flag && !['normal', 'negative'].includes(String(r.flag).toLowerCase()));
+  if (!off.length) return results.length ? ['Do I need to repeat any of these tests, and when?'] : [];
+  const out = [`What could be causing my ${off.slice(0, 2).map((r) => r.name).join(' and ')} to be ${off.length === 1 && String(off[0].flag).toLowerCase() === 'low' ? 'low' : 'out of range'}?`];
+  out.push(off.some((r) => /sugar|glucose|hba1c|cholesterol|ldl|triglycer|uric|liver|sgpt|sgot|bilirubin/i.test(r.name))
+    ? 'What should I change in my food or daily routine?'
+    : 'Do I need any medicine for this, or will it settle on its own?');
+  out.push('When should I repeat the test to check it is improving?');
+  return out;
+}
 
 function interpret(results = []) {
   const out = [];
@@ -267,4 +331,4 @@ const ADULT_VACCINES = {
   tetanus: { name: 'Tetanus / Td booster', everyYears: 10, match: /tetanus|\btd\b|\btt\b|tdap/i },
 };
 
-module.exports = { DRUG_PRICES, TESTS, unitsFor, priceOf, nameOfTest, round, interpret, nextSteps, substitutesFor, sameSalt, genericKeyOf, gstOf, UIP_SCHEDULE, UIP_NOTE, UIP_SOURCE, IAP_OPTIONAL, ADULT_VACCINES };
+module.exports = { DRUG_PRICES, TESTS, unitsFor, priceOf, nameOfTest, round, interpret, nextSteps, about, questions, substitutesFor, sameSalt, genericKeyOf, gstOf, UIP_SCHEDULE, UIP_NOTE, UIP_SOURCE, IAP_OPTIONAL, ADULT_VACCINES };

@@ -61,6 +61,12 @@ export default function Queue() {
         </div>
       )}
 
+      {/* Up next: the first minute of the next consult on one card, with one button. */}
+      {!inProgress && waitingList[0] && (
+        <UpNext c={waitingList[0]} info={home.data.upNext?.consultId === waitingList[0].id ? home.data.upNext : null}
+          busy={busy === `start-${waitingList[0].id}`} onStart={() => start(waitingList[0])} more={waitingList.length - 1} />
+      )}
+
       <div className="grid four">
         <Stat label="Waiting now" value={stats.waiting} icon={Users} sub={inProgress ? '1 consult in progress' : 'in your live queue'} />
         <Stat label="Seen today" value={stats.today} icon={Clock} sub={`max ${doctor.maxPerHour} per hour`} />
@@ -178,6 +184,36 @@ export default function Queue() {
 
 /* ---------- what the doctor needs at a glance on a card ---------- */
 const MODES = { video: [Video, 'Video'], audio: [Phone, 'Audio call'], chat: [MessageSquare, 'Chat'], in_person: [Building2, 'In person'] };
+function UpNext({ c, info, busy, onStart, more }) {
+  const list = (items, empty) => (items == null ? <span className="muted">Not shared</span> : items.length ? items.join(', ') : <span className="muted">{empty}</span>);
+  return (
+    <section className={cx('card dr-upnext fade-in', `lvl-${c.triage?.level}`)} aria-label="Next patient">
+      <div className="dr-upnext-head">
+        <span className="eyebrow mb-0">Up next{more > 0 ? ` · ${more} more waiting` : ''}</span>
+        <TriageBadge level={c.triage?.level} />
+      </div>
+      <div className="row wrap" style={{ gap: 10 }}>
+        <Avatar name={c.patientName} />
+        <div className="grow" style={{ minWidth: 0 }}>
+          <div className="dr-upnext-name" translate="no">{c.patientName}</div>
+          <div className="small muted">{[c.patientAge != null ? `${c.patientAge} y` : null, c.patientGender, c.patientLanguage && `speaks ${c.patientLanguage}`, info && (info.visitsBefore ? `seen ${info.visitsBefore}× before` : 'first visit with you')].filter(Boolean).join(' · ')}</div>
+        </div>
+      </div>
+      {c.triage?.symptoms && <p className="dr-upnext-sym">“{c.triage.symptoms}”{sinceLabel(c) ? <span className="tiny muted"> · {sinceLabel(c)}</span> : null}</p>}
+      <VitalsChips vitals={c.vitals} compact />
+      {info && (
+        <dl className="dr-upnext-facts">
+          <div className={cx(info.allergies?.length && 'warn')}><dt>Allergies</dt><dd>{list(info.allergies, 'None known')}</dd></div>
+          <div><dt>Conditions</dt><dd>{list(info.conditions, 'None recorded')}</dd></div>
+          <div><dt>Current medicines</dt><dd>{list(info.currentMeds, 'None')}</dd></div>
+          {info.bloodGroup && <div><dt>Blood group</dt><dd>{info.bloodGroup}</dd></div>}
+        </dl>
+      )}
+      <Button className="dr-upnext-go" icon={Play} loading={busy} onClick={onStart}>Start consult</Button>
+    </section>
+  );
+}
+
 function ModeTag({ c }) {
   const [Icon, label] = MODES[c.mode] || MODES.video;
   return <span className="row" style={{ gap: 4 }}><Icon size={13} />{label}</span>;

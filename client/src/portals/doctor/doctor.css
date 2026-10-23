@@ -419,3 +419,21 @@
 .dr-mon-row:hover { border-color: var(--green-2); }
 .dr-mon-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 @media (max-width: 480px) { .dr-mon-row .grow { flex-basis: 100%; } }
+
+/* Up next: the next patient's first minute, on one card */
+.dr-upnext { display: grid; gap: 12px; padding: 18px 20px; border: 1.5px solid var(--green-2); border-inline-start-width: 6px; }
+.dr-upnext.lvl-emergency { border-color: var(--rose); }
+.dr-upnext.lvl-doctor_now { border-color: var(--clay); }
+.dr-upnext-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.dr-upnext-name { font-family: var(--serif); font-size: 1.35rem; font-weight: 600; line-height: 1.2; }
+.dr-upnext-sym { margin: 0; font-size: 1rem; font-style: italic; color: var(--ink); }
+.dr-upnext-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin: 0; }
+.dr-upnext-facts > div { padding: 8px 12px; border-radius: 10px; background: var(--paper); }
+.dr-upnext-facts > div.warn { background: var(--rose-soft); color: #9b2c24; }
+.dr-upnext-facts dt { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3); }
+.dr-upnext-facts > div.warn dt { color: #9b2c24; }
+.dr-upnext-facts dd { margin: 2px 0 0; font-size: 0.9rem; }
+.dr-upnext-go { justify-self: start; min-height: 48px; padding: 0 28px; font-size: 1rem; }
+@media (max-width: 640px) { .dr-upnext-go { justify-self: stretch; justify-content: center; } }
+/* Speak-to-prescribe */
+.dr-speakmeds { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; margin: 8px 0 4px; }

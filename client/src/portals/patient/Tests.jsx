@@ -6,7 +6,8 @@ import { PageHeader } from '../../components/PortalLayout';
 import { api } from '../../api';
 import { useTopicTick } from '../../live';
 import { Button, Card, Empty, Field, Modal, Switch, fmtDate, fmtDateTime, fmtMoney, useAction, cx } from '../../components/ui';
-import { usePatient, usePatientLive, firstName, localISO, PageSkeleton, isAbnormal } from './shared';
+import { usePatient, usePatientLive, firstName, localISO, PageSkeleton } from './shared';
+import ReportGuide from './ReportGuide';
 import { useDeviceLocation } from './NearbyDoctors';
 import PaymentStep from './Payment';
 import ShareButton from '../../components/ShareButton';
@@ -315,24 +316,8 @@ export default function Tests() {
             <span className="badge green"><Smartphone size={12} /> In My records</span>
           </div>
           {o.signedBy && <div className="tiny muted pt-signed"><Stamp size={12} /> Approved by <strong translate="no">{o.signedBy.name}</strong> (Reg {o.signedBy.regNo})</div>}
-          {o.results?.length > 0 && (
-            <table className="pt-wtb-table small mt-1">
-              <tbody>
-                {o.results.map((r) => (
-                  <tr key={r.name} className={cx(isAbnormal(r) && 'flag')}>
-                    <td>{r.name}</td><td><strong>{r.value}</strong> {r.unit}</td><td className="muted">{r.range}</td><td className="right">{isAbnormal(r) ? <span className="badge rose">{r.flag}</span> : <span className="badge green">normal</span>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          {o.insights?.length > 0 && (
-            <div className="pt-insights">
-              <span className="tiny strong">What this means</span>
-              {o.insights.map((x, i) => <div key={i} className={cx('pt-insight', x.level)}>{x.test && <strong className="small">{x.test}: </strong>}<span className="small">{x.text}</span></div>)}
-              <span className="tiny muted">General guidance, not a diagnosis — your doctor will advise what&apos;s right for you.</span>
-            </div>
-          )}
+
+          {o.results?.length > 0 && <ReportGuide results={o.results} insights={o.insights || []} questions={o.questions || []} />}
           {o.nextSteps?.length > 0 && (
             <div className="pt-next">
               <span className="tiny strong">What to do next</span>

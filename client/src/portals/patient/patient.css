@@ -780,3 +780,30 @@ button.pt-wtb-head { cursor: pointer; }
 /* First-visit welcome tips */
 .pt-welcome { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
 .pt-welcome li { display: flex; gap: 12px; align-items: flex-start; font-size: 0.92rem; line-height: 1.5; }
+
+/* Read my report */
+.pt-rg { display: grid; gap: 10px; padding: 14px 16px; border-radius: 16px; background: var(--paper); border: 1px solid var(--line-2); margin-top: 8px; }
+.pt-rg-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pt-rg-ok { color: var(--green-ink); font-weight: 600; }
+.pt-rg-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.pt-rg-list > li { padding: 10px 12px; border-radius: 12px; background: #fff; border: 1px solid var(--line-2); display: grid; gap: 3px; }
+.pt-rg-list > li.off { border-color: #f1c7c2; background: #fffaf9; }
+.pt-rg-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.pt-rg-line .badge { margin-inline-start: auto; }
+.pt-rg-meaning { color: #7f2a23; line-height: 1.45; }
+.pt-rg-q { padding: 10px 12px; border-radius: 12px; background: var(--sky-soft); }
+.pt-rg-q ol { margin: 6px 0 0; padding-inline-start: 20px; display: grid; gap: 4px; }
+
+/* Ayushman Bharat helper */
+.ay-card-form { display: grid; gap: 8px; }
+.ay-qs { display: grid; gap: 10px; }
+.ay-q { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 12px; border-radius: 12px; background: var(--paper); }
+.ay-q > span { flex: 1 1 260px; }
+.ay-yn { display: flex; gap: 6px; }
+.ay-yn button { min-width: 64px; min-height: 40px; border-radius: 99px; border: 1px solid var(--line); background: #fff; font: 600 0.88rem var(--sans); color: var(--ink-2); cursor: pointer; }
+.ay-yn button.on { border-color: var(--green-2); background: var(--green-soft); color: var(--green-ink); }
+.ay-result { margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: var(--sun-soft); font-size: 0.92rem; }
+.ay-result.likely { background: var(--green-soft); color: var(--green-ink); }
+.ay-list { margin: 0 0 10px; padding-inline-start: 20px; display: grid; gap: 4px; }
+.ay-hosp { display: grid; gap: 8px; }
+.ay-h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }

@@ -4,6 +4,7 @@ import { api } from '../../api';
 import { Button, Card, Empty, Field, Modal, StatusBadge, cx, fmtDate, fmtDateTime, safeUrl, useAction, useToast } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, usePatientLive, firstName, localISO, Skeleton, isAbnormal } from './shared';
+import ReportGuide from './ReportGuide';
 import { getLocale } from '../../i18n';
 
 const KINDS = {
@@ -164,25 +165,10 @@ function RecordModal({ item, onClose }) {
         <div className="stack">
           <div className="row wrap small muted"><span translate="no">{d.labName}</span>·<span>Ordered by <span translate="no">{d.doctorName}</span></span><StatusBadge status={d.status} /></div>
           {d.results?.length ? (
-            <div className="table-wrap">
-              <table className="table">
-                <thead><tr><th>Test</th><th>Result</th><th>Normal range</th><th /></tr></thead>
-                <tbody>
-                  {d.results.map((r) => (
-                    <tr key={r.name} className={cx(isAbnormal(r) && 'pt-flag-row')}>
-                      <td className="strong">{r.name}</td>
-                      <td translate="no" dir="ltr"><strong>{r.value}</strong> <span className="muted small">{r.unit}</span></td>
-                      <td className="muted small" translate="no" dir="ltr">{r.range}</td>
-                      <td>{!isAbnormal(r) ? <span className="badge green">{r.flag === 'negative' ? 'Negative' : 'Normal'}</span> : <span className={cx('badge', r.flag === 'critical' ? 'solid-rose' : 'clay')}>{r.flag === 'low' ? 'Low' : r.flag === 'critical' ? 'Critical' : 'High'}</span>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ReportGuide results={d.results} insights={d.insights || []} questions={d.questions || []} />
           ) : (
             <div className="callout sky"><FlaskConical /><span>Your sample is with the lab. We&apos;ll notify you the moment results are ready.</span></div>
           )}
-          {d.results?.some(isAbnormal) && <p className="small muted mb-0">Some values are outside the usual range. Don&apos;t worry on your own — share this with your doctor at your next consult.</p>}
         </div>
       )}
       {item.kind === 'upload' && <ExtractedView rec={d} />}

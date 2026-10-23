@@ -1,9 +1,27 @@
 import { useState } from 'react';
-import { BadgeCheck, MapPin, Phone, PencilLine, Building2, Wrench, Stethoscope, BedDouble } from 'lucide-react';
+import { BadgeCheck, MapPin, Phone, PencilLine, Building2, Wrench, Stethoscope, BedDouble, BadgeIndianRupee } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
-import { Card, Button, Modal, Field, useToast } from '../../components/ui';
+import { Card, Button, Modal, Field, Switch, useToast } from '../../components/ui';
+import { api } from '../../api';
 import { bedLabel, HmisCard } from './shared';
 import { useSupport } from '../../config';
+
+// Ayushman Bharat (PM-JAY): patients looking for free treatment see this hospital only if it says it accepts it.
+function SchemesCard({ facility: f, onSaved }) {
+  const toast = useToast();
+  const [on, setOn] = useState((f.schemes || []).includes('PM-JAY'));
+  const [busy, setBusy] = useState(false);
+  const save = async (v) => {
+    setBusy(true);
+    try { await api.put('/hospital/schemes', { pmjay: v }); setOn(v); toast(v ? 'Patients will now see that you accept Ayushman Bharat' : 'Removed from the Ayushman Bharat list'); onSaved?.(); } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+  };
+  return (
+    <Card title={<h3 className="row" style={{ gap: 8 }}><BadgeIndianRupee size={18} /> Government schemes</h3>}>
+      <Switch checked={on} onChange={busy ? () => {} : save} label="We accept Ayushman Bharat (PM-JAY) patients" />
+      <p className="tiny muted mt-1 mb-0">Turn this on only if your hospital is empanelled under PM-JAY. Patients searching for free treatment near them will see your hospital.</p>
+    </Card>
+  );
+}
 
 export default function Profile({ home }) {
   const toast = useToast();
@@ -45,6 +63,8 @@ Facility: ${f.name} (${f.id})`)}`;
               </div>
             </div>
           </div>
+
+          {f.type === 'hospital' && <SchemesCard facility={f} onSaved={() => home.reload?.()} />}
 
           <Card title={<h3 className="row" style={{ gap: 8 }}><Stethoscope size={18} /> Departments & specialties</h3>}>
             <div className="chip-select">

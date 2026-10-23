@@ -6,6 +6,7 @@ import { TimingPicker, freqText, parseFreq } from './medTiming';
 import { MedicineForm, blankMed } from './Medicines';
 import DosDonts from './DosDonts';
 import RxTemplateTools from './RxTemplates';
+import SpeakMeds from './SpeakMeds';
 import AmbientScribe from './AmbientScribe';
 import { rowsFrom, mergeList, mergeText } from './rxTemplateUtils';
 import { useDebounced, LAB_TESTS } from './shared';
@@ -298,6 +299,8 @@ export default function RxComposer({ consult, record, override, done, onDone, on
           {!checking && rows.some((r) => r.drug) && !warnings.length && <span className="badge green"><ShieldCheck />No allergy or interaction found</span>}
         </div>
         <DrugSearch onPick={addDrug} onAddNew={(name) => setNewMed(blankMed(name))} />
+        {/* Speak-to-prescribe: each spoken sentence becomes a row (checked by the doctor, and by the allergy check). */}
+        <SpeakMeds onAdd={(row) => setRows((rs) => [...rs, { ...emptyRow(), ...row }])} />
         <RxTemplateTools form={tplForm} onApply={applyRxTemplate} onAddItems={addItems} />
 
         {allergyHits.map((w) => (

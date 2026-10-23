@@ -383,6 +383,13 @@ function enrichLab(o) {
   const p = patientById(o.patientId) || {};
   const d = doctorById(o.doctorId) || {};
   const { draftReport, ...rest } = o; // unsigned results stay inside the lab (see labView)
+  // "Read my report": what each test measures, what an out-of-range value means, and what to ask the doctor.
+  const reported = o.status === 'reported' && (o.results || []).length > 0;
+  if (reported) {
+    rest.results = o.results.map((r) => ({ ...r, about: catalog.about(r.name) }));
+    rest.insights = o.insights || catalog.interpret(o.results);
+    rest.questions = catalog.questions(o.results);
+  }
   return { ...rest, patientName: p.name, patientAge: ageOf(p.dob), patientGender: p.gender, doctorName: d.name, labName: facilityName(o.labId), reportFileId: o.reportFileId || null, reportFileUrl: o.reportFileId ? `/api/files/${o.reportFileId}` : null };
 }
 
@@ -4254,6 +4261,18 @@ app.get('/api/doctor/home', auth, role('doctor'), (req, res) => {
   const order = { emergency: 0, doctor_now: 1, routine: 2, self_care: 3 };
   const queue = mine.filter((c) => c.status === 'queued' || c.status === 'in_progress').map(consultCard)
     .sort((a, b) => (a.status === 'in_progress' ? -1 : b.status === 'in_progress' ? 1 : 0) || order[a.triage.level] - order[b.triage.level] || ((a.checkedInAt || a.createdAt) < (b.checkedInAt || b.createdAt) ? -1 : 1));
+  // "Up next": what the doctor needs in the first minute for the next waiting patient. Allergies and history
+  // come only with this doctor's consent for those parts of the record (null = not shared).
+  const nextC = queue.find((c) => c.status === 'queued');
+  const nextP = nextC && patientById(nextC.patientId);
+  const upNext = nextP ? {
+    consultId: nextC.id,
+    allergies: hasConsent(nextP.id, handled, 'allergies') ? nextP.allergies || [] : null,
+    conditions: hasConsent(nextP.id, handled, 'history') ? nextP.conditions || [] : null,
+    currentMeds: hasConsent(nextP.id, handled, 'history') ? nextP.currentMeds || [] : null,
+    bloodGroup: hasConsent(nextP.id, handled, 'history') ? nextP.bloodGroup || null : null,
+    visitsBefore: d.consults.filter((c) => c.patientId === nextP.id && handled.includes(c.doctorId) && c.status === 'completed').length,
+  } : null;
   const today = istDay(nowIso());
   // The "new patient" pop-ups: their history is gathered in ONE pass per collection for just these patients,
   // instead of four full scans (consults, prescriptions, records, lab orders) per pending booking.
@@ -4270,6 +4289,7 @@ app.get('/api/doctor/home', auth, role('doctor'), (req, res) => {
     doctor: withAvail(doc),
     eClinics: isEClinicDoctor(doc) ? d.facilities.filter((f) => f.type === 'kiosk' && f.verified && (!(doc.eClinicIds || []).length || doc.eClinicIds.includes(f.id))).map((f) => ({ id: f.id, name: f.name, district: f.district, status: f.status })) : [],
     queue,
+    upNext,
     scheduled: mine.filter((c) => c.status === 'scheduled').map(consultCard).sort((a, b) => (a.scheduledAt < b.scheduledAt ? -1 : 1)),
     reportsToReview: d.labOrders.filter((o) => o.doctorId === doc.id && o.status === 'reported' && !o.doctorNote && Date.now() - Date.parse(o.reportedAt) < 30 * 86400000)
       .map((o) => ({ ...enrichLab(o), insights: o.insights || catalog.interpret(o.results || []) })).slice(0, 8),
@@ -7977,6 +7997,9 @@ require('./recovery')(app, {
   auth, role, activePatient, db, store, notify, touch, broadcast, audit, nowIso, clean, istDay, doctorFor, handledDoctorIds,
   patientOwnerUserIds, patientById, doctorById,
 });
+
+// Ayushman Bharat helper (ayushman.js): guide to the official check, card on file, hospitals that accept PM-JAY.
+require('./ayushman')(app, { auth, role, activePatient, db, store, audit, touchFacility, broadcast, patientPoint, geo, ageOf });
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.' }));
 
