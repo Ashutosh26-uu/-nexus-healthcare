@@ -69,7 +69,7 @@ function HoldButton({ onDone, className, children, label = 'Hold for SOS' }) {
   useEffect(() => () => clearInterval(timer.current), []);
   return (
     <button
-      type="button" className={cx('sos-hold', className)} aria-label={label}
+      type="button" className={cx('sos-hold', className, p > 0.5 && 'holding')} aria-label={label}
       onPointerDown={down} onPointerUp={() => stop(false)} onPointerLeave={() => timer.current && stop(false)} onPointerCancel={() => stop(false)}
       onContextMenu={(e) => e.preventDefault()}
       onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) onDone(); }}
@@ -107,9 +107,9 @@ function Countdown({ onCancel, onSend }) {
   );
 }
 
-// The SOS button on every patient screen — never floating over the page: a full-width button in the sidebar
-// (computers) or a compact one in the top bar (phones). Press and hold either one.
-export function SosButton({ variant = 'side' }) {
+// The SOS button on every patient screen: a small pill in the top bar, next to the bell, on every screen size.
+// Press and hold — it fills with red while held, then the 5-second countdown opens.
+export function SosButton() {
   const { patient } = usePatient();
   const [counting, setCounting] = useState(false);
   const navigate = useNavigate();
@@ -122,16 +122,10 @@ export function SosButton({ variant = 'side' }) {
   if (!patient) return null;
   return (
     <>
-      {variant === 'top' ? (
-        <HoldButton className="sos-top" onDone={() => setCounting(true)} label="SOS — press and hold for an emergency">
-          <span className="sos-top-text">SOS</span>
-        </HoldButton>
-      ) : (
-        <HoldButton className="sos-side" onDone={() => setCounting(true)} label="SOS — press and hold for an emergency">
-          <Siren size={18} />
-          <span className="sos-side-text"><strong>SOS</strong> · press &amp; hold</span>
-        </HoldButton>
-      )}
+      <HoldButton className="sos-pill" onDone={() => setCounting(true)} label="SOS — press and hold for an emergency">
+        <Siren size={16} />
+        <span className="sos-pill-text">SOS</span>
+      </HoldButton>
       {counting && <Countdown onCancel={() => setCounting(false)} onSend={send} />}
     </>
   );

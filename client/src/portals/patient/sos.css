@@ -7,28 +7,21 @@
   mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
 }
 
-/* Sidebar button (computers): a full-width red button above "Need a hand?". It fills left to right while held. */
-.sos-side {
-  display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 48px; padding: 0 14px; border-radius: 12px;
-  color: #fff; font: 600 0.92rem var(--sans); cursor: pointer; overflow: hidden;
-  background: linear-gradient(90deg, #8f241d calc(var(--p, 0) * 100%), #c4483f calc(var(--p, 0) * 100%));
-  box-shadow: 0 8px 20px -10px rgba(196, 72, 63, 0.8); transition: box-shadow 0.15s;
+/* The SOS pill in the top bar (every screen size): soft red at rest, fills solid red left to right while held. */
+.sos-pill {
+  display: inline-flex; align-items: center; gap: 6px; flex: none; height: 38px; padding: 0 14px 0 11px; border-radius: 99px;
+  border: 1.5px solid #e3a49e; color: #b0362d; font: 800 0.8rem var(--sans); letter-spacing: 0.06em; cursor: pointer; overflow: hidden;
+  background: linear-gradient(90deg, #c4483f calc(var(--p, 0) * 100%), #fff4f2 calc(var(--p, 0) * 100%));
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.sos-side:hover { box-shadow: 0 10px 24px -8px rgba(196, 72, 63, 0.9); }
-.sos-side:focus-visible { outline: 3px solid #1d2b2a; outline-offset: 2px; }
-.sos-side .sos-ring { display: none; }
-.sos-side-text strong { letter-spacing: 0.05em; }
-
-/* Top-bar button (phones and tablets): a compact red circle beside the bell, with a ring that fills while held. */
-.sos-top {
-  display: none; width: 40px; height: 40px; flex: none; border-radius: 50%; background: #c4483f; color: #fff;
-  place-items: center; box-shadow: 0 0 0 3px rgba(196, 72, 63, 0.16);
-}
-.sos-top-text { font: 800 0.72rem var(--sans); letter-spacing: 0.04em; }
-.sos-top .sos-ring { inset: -4px; background: conic-gradient(#c4483f calc(var(--p, 0) * 360deg), transparent 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px)); mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px)); }
-.sos-top:focus-visible { outline: 3px solid #1d2b2a; outline-offset: 3px; }
-@media (max-width: 960px) { .sos-top { display: inline-grid; } }
-@media print { .sos-side, .sos-top, .sos-overlay { display: none !important; } }
+.sos-pill:hover { border-color: #c4483f; box-shadow: 0 0 0 3px rgba(196, 72, 63, 0.12); }
+.sos-pill:focus-visible { outline: 3px solid #1d2b2a; outline-offset: 2px; }
+.sos-pill svg { flex: none; }
+.sos-pill .sos-ring { display: none; }
+/* While held, the text turns white over the red fill. */
+.sos-pill.holding { color: #fff; border-color: #c4483f; }
+@media (max-width: 400px) { .sos-pill { padding: 0 11px 0 9px; } }
+@media print { .sos-pill, .sos-overlay { display: none !important; } }
 
 /* Countdown */
 .sos-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(120, 22, 18, 0.94); display: grid; place-items: center; padding: 20px; animation: fade 0.2s ease; }

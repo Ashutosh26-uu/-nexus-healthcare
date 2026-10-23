@@ -126,7 +126,7 @@ export default function PatientApp() {
   return (
     <PatientContext.Provider value={ctx}>
       <PortalLayout portal="Patient App" nav={nav} tabs={tabs} headerExtra={<ProfileSwitcher />}
-        headerEnd={<SosButton variant="top" />} sidebarExtra={<SosButton variant="side" />}>
+        headerEnd={<SosButton />}>
         <div className="pt-root">
         <Suspense fallback={<PageSkeleton />}>
         <Routes>
