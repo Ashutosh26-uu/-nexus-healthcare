@@ -161,6 +161,7 @@ export function CookiePolicy() {
             <Row k="oc_patient_notifs · oc_pref_place · oc_relations" what="Notification settings, your usual place and the family relationships you use, so forms are pre-filled." />
             <Row k="oc_chat · oc_chat_nudged · oc_chat_voice · oc_install_snooze_until" what="Your Saathi help chat on this device, whether Saathi reads replies aloud, and whether you dismissed the ‘get the app’ prompt." />
             <Row k="oc_kiosk_lang · oc_kiosk_voice · oc_kiosk_flow" what="On an E-Clinic kiosk: the language, voice and the visit in progress." />
+            <Row k="oc_kiosk_outbox" what="On an E-Clinic kiosk with no internet: visits recorded offline (name, age, phone, symptoms, vitals), kept only until they reach Sehatra and then deleted — or removed after 72 hours if they never could be sent." />
             <Row k="oc_dr_draft_* · nx_lab_signer" what="For health workers: an unsent prescription draft and the reporting pathologist, so nothing is lost if the page closes." />
           </tbody>
         </table>

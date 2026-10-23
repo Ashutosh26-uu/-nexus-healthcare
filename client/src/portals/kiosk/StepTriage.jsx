@@ -213,6 +213,8 @@ export default function StepTriage() {
     try {
       const c = await api.post('/consults', { patientId: flow.patient.id, triage: result, vitals: vitalsClean(), mode: 'video' });
       setFlow({ consultId: c.id, step: 4 });
+      // A finished offline visit leaves the operator's "to finish" list.
+      if (flow.intakeId) api.post(`/kiosk/intakes/${flow.intakeId}/done`, { consultId: c.id }).catch(() => {});
     } catch (e) { setErr(e.message); } finally { setBusy(null); }
   };
 
@@ -224,6 +226,7 @@ export default function StepTriage() {
       const c = await api.post('/consults', { patientId: flow.patient.id, triage: result, vitals: vitalsClean(), mode: 'video', type: 'scheduled', scheduledAt: slot.toISOString() });
       setBooked(c);
       setFlow({ booking: c });
+      if (flow.intakeId) api.post(`/kiosk/intakes/${flow.intakeId}/done`, { consultId: c.id }).catch(() => {});
     } catch (e) { setErr(e.message); } finally { setBusy(null); }
   };
 

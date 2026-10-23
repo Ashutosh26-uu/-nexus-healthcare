@@ -59,8 +59,8 @@ function PatientConfirm({ p, onYes, onNo, t, fresh }) {
   );
 }
 
-function RegisterForm({ initialPhone, onDone, onCancel, t, lang }) {
-  const [f, setF] = useState({ name: '', dob: '', age: '', gender: '', phone: initialPhone || '', language: langOf(lang).name, bloodGroup: 'Unknown', allergies: '', conditions: '' });
+function RegisterForm({ initialPhone, prefill, onDone, onCancel, t, lang }) {
+  const [f, setF] = useState({ name: prefill?.name || '', dob: '', age: prefill?.age ? String(prefill.age) : '', gender: prefill?.gender || '', phone: initialPhone || prefill?.phone || '', language: langOf(lang).name, bloodGroup: 'Unknown', allergies: '', conditions: '' });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target ? e.target.value : e });
@@ -123,9 +123,10 @@ function RegisterForm({ initialPhone, onDone, onCancel, t, lang }) {
 
 export default function StepIdentify() {
   const { t, say, goto, setFlow, lang, flow } = useKiosk();
-  const [tab, setTab] = useState('qr');
+  // An offline visit being finished: look the person up by the mobile number they gave, or register with their details.
+  const [tab, setTab] = useState(flow.prefill?.phone ? 'mobile' : 'qr');
   const [qr, setQr] = useState('');
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState(flow.prefill?.phone || '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [found, setFound] = useState(flow.patient);
@@ -229,6 +230,7 @@ export default function StepIdentify() {
           t={t}
           lang={lang}
           initialPhone={tab === 'mobile' ? phone : ''}
+          prefill={flow.prefill}
           onCancel={() => setRegistering(false)}
           onDone={(p) => { setRegistering(false); setFound(p); setFresh(true); setNotFound(false); say('reg_done'); }}
         />

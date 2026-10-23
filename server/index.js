@@ -6828,6 +6828,23 @@ app.post('/api/transfers/:id/:action', auth, role('pharmacist', 'distributor'), 
   const t = d.transfers.find((x) => x.id === req.params.id);
   if (!t) return res.status(404).json({ error: 'Transfer not found.' });
   const { action } = req.params;
+  // Near-expiry stock offered to this store (expiry.js): the receiving store accepts or declines it; the offering
+  // store can withdraw. Once accepted it is an ordinary transfer — the source dispatches as usual.
+  if (t.status === 'offered') {
+    const mine = t.toId === req.user.facilityId;
+    const source = t.fromId === req.user.facilityId;
+    if (!((mine && ['accept', 'decline'].includes(action)) || (source && action === 'decline'))) return res.status(403).json({ error: 'Only the store this was offered to can accept it.' });
+    t.status = action === 'accept' ? 'accepted' : 'declined';
+    t.updatedAt = nowIso();
+    const by = facilityName(req.user.facilityId);
+    facilityUsers(d, mine ? t.fromId : t.toId).forEach((u) => notify(u, action === 'accept' ? 'Offer accepted' : mine ? 'Offer declined' : 'Offer withdrawn',
+      action === 'accept' ? `${by} accepted ${t.qty} × ${t.drug}. Dispatch it under Transfers.` : `${by} ${mine ? 'declined' : 'withdrew'} the offer of ${t.qty} × ${t.drug}.`));
+    audit(req.user, `expiry_offer_${action}`, null, 'supply', t.id);
+    touchFacility(t.fromId, t.toId);
+    store.save();
+    broadcast('supply', 'pharmacy');
+    return res.json(t);
+  }
   if (t.fromId !== req.user.facilityId && action !== 'receive') return res.status(403).json({ error: 'Only the source facility can act on this.' });
   const FROM = { accept: ['requested'], decline: ['requested', 'accepted'], dispatch: ['accepted'], receive: ['dispatched', 'in_transit', 'delivered'] };
   if (!own(FROM, action)) return res.status(400).json({ error: 'Unknown action.' });
@@ -6836,9 +6853,10 @@ app.post('/api/transfers/:id/:action', auth, role('pharmacist', 'distributor'), 
   else if (action === 'decline') t.status = 'declined';
   else if (action === 'dispatch') {
     // Nothing ships that isn't on the shelf: without a stock line the receiver would gain units from nowhere.
-    const inv = d.inventory.find((i) => i.facilityId === t.fromId && sameDrug(i.drug, t.drug));
+    // An offered near-expiry batch ships from that exact batch (FEFO); its safety stock doesn't apply — it would expire anyway.
+    const inv = (t.inventoryId && d.inventory.find((i) => i.id === t.inventoryId && i.facilityId === t.fromId)) || d.inventory.find((i) => i.facilityId === t.fromId && sameDrug(i.drug, t.drug));
     if (!inv) return res.status(400).json({ error: `${t.drug} isn't on your shelf on Sehatra. Add it to your stock first, or decline this request.` });
-    if (inv.qty - t.qty < (inv.safetyStock || 0)) return res.status(400).json({ error: 'This would take you below safety stock. Reduce the quantity or decline.' });
+    if (t.kind === 'expiry' ? inv.qty < t.qty : inv.qty - t.qty < (inv.safetyStock || 0)) return res.status(400).json({ error: t.kind === 'expiry' ? `Only ${inv.qty} left in this batch.` : 'This would take you below safety stock. Reduce the quantity or decline.' });
     inv.qty -= t.qty; inv.updatedAt = nowIso();
     t.batch = inv.batch || null; t.expiry = inv.expiry || null; // what was actually sent, for the receiving shelf
     t.status = 'dispatched';
@@ -8000,6 +8018,19 @@ require('./recovery')(app, {
 
 // Ayushman Bharat helper (ayushman.js): guide to the official check, card on file, hospitals that accept PM-JAY.
 require('./ayushman')(app, { auth, role, activePatient, db, store, audit, touchFacility, broadcast, patientPoint, geo, ageOf });
+
+// Critical-value escalation (escalation.js): unacknowledged critical results climb doctor → lab → family → admin.
+const escalation = require('./escalation')(app, {
+  auth, role, db, store, notify, audit, broadcast, touch, nowIso, doctorFor, handledDoctorIds, patientOwnerUserIds,
+  findUserByPhone, labStaffIds, facilityName, userById,
+});
+if (process.env.NODE_ENV !== 'production') app.post('/api/dev/escalation-sweep', auth, role('super_admin'), (_req, res) => { escalation.sweep(); res.json({ ok: true }); });
+
+// Offline E-Clinic visits (intakes.js): recorded without internet, sent when the kiosk is back online.
+require('./intakes')(app, { auth, role, db, store, notify, audit, broadcast, touchFacility, nowIso, clean, engines });
+
+// Near-expiry stock → nearby stores that will sell it before it expires (expiry.js).
+require('./expiry')(app, { auth, role, db, store, notify, audit, broadcast, touchFacility, nowIso, istDay, geo, catalog, normDrug, facilityName });
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.' }));
 

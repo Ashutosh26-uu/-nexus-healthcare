@@ -6,6 +6,7 @@ import { Button, Tabs, Empty, StatusBadge, Avatar, timeAgo, useAction } from '..
 import { api } from '../../api';
 import { NEXT, ORDER, STATUS_LABEL, TestChips, genderShort, canSign, openLabel } from './shared';
 import Collection from './Collection';
+import CriticalWatch from './CriticalWatch';
 import { getLocale } from '../../i18n';
 
 const TABS = ['all', ...ORDER];
@@ -40,6 +41,8 @@ export default function Orders({ home, orders, reload, onReport }) {
           <input className="input" placeholder="Search patient, ID or test" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
       </PageHeader>
+
+      <CriticalWatch />
 
       <Tabs value={tab} onChange={setTab} tabs={TABS.map((s) => ({ value: s, label: s === 'all' ? 'All' : STATUS_LABEL[s], count: count(s) }))} />
 

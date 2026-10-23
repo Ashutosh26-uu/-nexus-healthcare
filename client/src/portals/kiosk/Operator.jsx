@@ -6,6 +6,7 @@ import { usePublicConfig } from '../../config';
 import { useKiosk } from './context';
 import { KButton } from './KUi';
 import { AvailBadge, AvailLine, availClass } from '../../components/Availability';
+import OfflineIntakes from './OfflineIntakes';
 
 const DEVICE_META = {
   bp: { label: 'BP monitor', icon: Gauge },
@@ -58,6 +59,8 @@ export default function Operator() {
           </div>
         </div>
       )}
+
+      <OfflineIntakes />
 
       <div className="k-op-stats">
         <div className="k-op-stat"><Users /><small>Teleconsults today</small><strong>{queue.length}</strong></div>

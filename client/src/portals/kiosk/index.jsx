@@ -10,6 +10,8 @@ import { KioskCtx, FLOW_KEY, initialFlow, loadFlow, saveFlow, speak, stopSpeakin
 import { LANGS, langOf, makeT, hasFullCopy } from './i18n';
 import Flow from './Flow';
 import Operator from './Operator';
+import OfflineVisit from './OfflineVisit';
+import { useNetwork, useOutboxSync } from './offline';
 import './kiosk.css';
 import { getLocale, useI18n, tr } from '../../i18n';
 
@@ -183,8 +185,12 @@ export default function KioskApp() {
   const kiosk = home.data?.kiosk || facility;
   const offline = kiosk?.status === 'offline';
   const onOperator = location.pathname.startsWith('/kiosk/operator');
+  // Real connection (not the operator's "offline mode" flag): visits recorded without internet wait here and send themselves.
+  const online = useNetwork();
+  const outbox = useOutboxSync(online);
+  const [recording, setRecording] = useState(false);
 
-  const value = { home, kiosk, offline, flow, setFlow, goto, reset, lang, setLang, t, say, voiceOn, user };
+  const value = { home, kiosk, offline, online, outbox, flow, setFlow, goto, reset, lang, setLang, t, say, voiceOn, user };
 
   return (
     <KioskCtx.Provider value={value}>
@@ -197,8 +203,8 @@ export default function KioskApp() {
               <span>Sehatra E-Clinic · {kiosk?.district || ''}</span>
             </div>
           </div>
-          <span className={cx('k-status', offline ? 'off' : 'on')}>
-            {offline ? <WifiOff /> : <Wifi />}{offline ? 'Offline' : 'Online'}
+          <span className={cx('k-status', offline || !online ? 'off' : 'on')}>
+            {offline || !online ? <WifiOff /> : <Wifi />}{!online ? 'No internet' : offline ? 'Offline' : 'Online'}
           </span>
           <div className="k-top-right">
             <span className="k-operator"><UserRound />{user?.name?.replace(' (ASHA)', '')}<small>ASHA operator</small></span>
@@ -213,7 +219,15 @@ export default function KioskApp() {
             <button className="k-topbtn icon" onClick={() => { stopSpeaking(); try { sessionStorage.removeItem(FLOW_KEY); } catch { /* ignore */ } reset(); signOut(); navigate('/'); }} aria-label="Sign out" title="Sign out"><LogOut /></button>
           </div>
         </header>
-        {offline && <div className="k-offline">{t('offline')}</div>}
+        {!online ? (
+          <div className="k-netbar" role="status">
+            <span>No internet. You can still record visits — they are sent when the connection is back{outbox.waiting ? ` (${outbox.waiting} waiting)` : ''}.</span>
+            <button type="button" className="k-btn primary" onClick={() => setRecording(true)}>Record a visit offline</button>
+          </div>
+        ) : outbox.waiting > 0 ? (
+          <div className="k-netbar sync" role="status">{outbox.sending ? `Sending ${outbox.waiting} offline visit${outbox.waiting > 1 ? 's' : ''}…` : `${outbox.waiting} offline visit${outbox.waiting > 1 ? 's' : ''} waiting to send`}</div>
+        ) : offline && <div className="k-offline">{t('offline')}</div>}
+        {recording && <OfflineVisit onClose={() => setRecording(false)} />}
         <DoctorHerePopup doctors={home.data?.doctors} />
         <IdleReset
           armed={!onOperator && flow.step >= 2 && !(flow.step === 4 && flow.consultId)}

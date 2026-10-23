@@ -324,6 +324,9 @@ function ReportsToReview({ home }) {
               <div className="row between wrap" style={{ gap: 8 }}>
                 <div><strong className="small" translate="no">{o.patientName}</strong> <span className="tiny muted">· {o.tests.map((t) => t.name).join(', ')} · {o.labName}</span></div>
                 <div className="row" style={{ gap: 6 }}>
+                  {/* Critical value: one tap stops the escalation (lab → patient & family → Sehatra team). */}
+                  {o.critical && !o.criticalAckAt && <Button size="sm" variant="clay" icon={AlertTriangle} loading={busy === `ack-${o.id}`} onClick={() => run(`ack-${o.id}`, async () => { await api.post(`/doctor/labs/${o.id}/ack-critical`); home.setData((d) => (d ? { ...d, reportsToReview: (d.reportsToReview || []).map((x) => (x.id === o.id ? { ...x, criticalAckAt: new Date().toISOString() } : x)) } : d)); }, "Acknowledged — the lab has been told")}>I've seen it</Button>}
+                  {o.critical && o.criticalAckAt && <span className="badge green tiny">Critical · seen</span>}
                   <button type="button" className="icon-btn" title="Open report" onClick={() => window.open(`/lab-report/${o.id}`, '_blank', 'noopener')}><FileText size={15} /></button>
                   <Button size="sm" variant={open === o.id ? 'ghost' : 'secondary'} onClick={() => { setOpen(open === o.id ? null : o.id); setText(''); setFu(0); }}>{open === o.id ? 'Close' : 'Add advice'}</Button>
                 </div>

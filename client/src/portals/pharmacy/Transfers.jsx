@@ -7,7 +7,9 @@ import { TransferProgress, SourceActions } from './transfer';
 import { isColdChain } from './stock';
 
 export default function Transfers({ home, reload }) {
-  const [tab, setTab] = useState(() => (home.transfersOut.some((t) => ['requested', 'accepted'].includes(t.status)) ? 'to-us' : 'ours'));
+  const [tab, setTab] = useState(() => (home.transfersOut.some((t) => ['requested', 'accepted'].includes(t.status)) && !home.transfersIn.some((t) => t.status === 'offered') ? 'to-us' : 'ours'));
+  const [run, busy] = useAction();
+  const withdraw = async (t) => { if (await run(`wd-${t.id}`, () => api.post(`/transfers/${t.id}/decline`), 'Offer withdrawn')) reload(); };
   const sortT = (l) => [...l].sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
   const ours = sortT(home.transfersIn);
   const toUs = sortT(home.transfersOut);
@@ -16,8 +18,8 @@ export default function Transfers({ home, reload }) {
     <>
       <PageHeader title="Transfers" subtitle="Medicines moving between stores and warehouses. When a nearby patient can't find something, the supply engine may ask you to share — never below your own safety stock." />
       <Tabs value={tab} onChange={setTab} tabs={[
-        { value: 'ours', label: 'Our requests', icon: ArrowDownToLine, count: ours.filter((t) => !['delivered', 'declined'].includes(t.status)).length },
-        { value: 'to-us', label: 'Requests to us', icon: ArrowUpFromLine, count: toUs.filter((t) => ['requested', 'accepted'].includes(t.status)).length },
+        { value: 'ours', label: 'Coming to us', icon: ArrowDownToLine, count: ours.filter((t) => !['delivered', 'declined'].includes(t.status)).length },
+        { value: 'to-us', label: 'Going from us', icon: ArrowUpFromLine, count: toUs.filter((t) => ['requested', 'accepted', 'offered'].includes(t.status)).length },
       ]} />
 
       {tab === 'ours' ? (
@@ -43,7 +45,12 @@ export default function Transfers({ home, reload }) {
                 </div>
                 <TransferProgress status={t.status} />
               </div>
-              <SourceActions t={t} inv={home.inventory.find((i) => i.drug === t.drug)} reload={reload} />
+              {t.status === 'offered' ? (
+                <div className="tr-source row wrap" style={{ justifyContent: 'space-between', gap: 10 }}>
+                  <span className="small muted">You offered this near-expiry batch. Once they accept, dispatch it from here.</span>
+                  <Button size="sm" variant="ghost" loading={busy === `wd-${t.id}`} onClick={() => withdraw(t)}>Withdraw offer</Button>
+                </div>
+              ) : <SourceActions t={t} inv={home.inventory.find((i) => (t.inventoryId ? i.id === t.inventoryId : i.drug === t.drug))} reload={reload} />}
             </article>
           ))}
         </div>
@@ -56,6 +63,10 @@ function IncomingRow({ t, reload }) {
   const [run, busy] = useAction();
   const receive = async () => {
     const ok = await run('recv', () => api.post(`/transfers/${t.id}/receive`), `${t.qty} × ${t.drug} added to your stock`);
+    if (ok) reload();
+  };
+  const answer = async (action) => {
+    const ok = await run(action, () => api.post(`/transfers/${t.id}/${action}`), action === 'accept' ? 'Accepted — they will dispatch it to you' : 'Offer declined');
     if (ok) reload();
   };
   return (
@@ -71,6 +82,15 @@ function IncomingRow({ t, reload }) {
         </div>
         <TransferProgress status={t.status} />
       </div>
+      {t.status === 'offered' && (
+        <div className="tr-source row wrap" style={{ justifyContent: 'space-between', gap: 10 }}>
+          <span className="small muted">{t.expiry ? `Expires ${t.expiry}. ` : ''}Accept only if you expect to sell it before then.</span>
+          <span className="row" style={{ gap: 8 }}>
+            <Button size="sm" variant="ghost" loading={busy === 'decline'} onClick={() => answer('decline')}>Decline</Button>
+            <Button size="sm" loading={busy === 'accept'} onClick={() => answer('accept')}>Accept</Button>
+          </span>
+        </div>
+      )}
       {t.status === 'dispatched' && (
         <div className="tr-source row wrap" style={{ justifyContent: 'space-between', gap: 10 }}>
           <span className="small muted">Rider is on the way. Check the seal and count before confirming.</span>

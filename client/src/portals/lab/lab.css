@@ -140,3 +140,14 @@
   .page-header:has(.lab-search) { flex-wrap: wrap; }
   .page-header:has(.lab-search) > .grow, .page-header:has(.lab-search) .lab-search { flex-basis: 100%; width: 100%; }
 }
+
+/* Critical results watch */
+.lab-crit { display: grid; gap: 10px; margin-bottom: 14px; border: 1.5px solid var(--line); }
+.lab-crit.alert { border-color: var(--rose); background: #fffaf9; }
+.lab-crit-head { display: grid; gap: 2px; }
+.lab-crit.alert .lab-crit-head strong { color: #9b2c24; }
+.lab-crit-list { display: grid; gap: 6px; }
+.lab-crit-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border-radius: 10px; background: var(--paper); }
+.lab-crit-row.open { background: var(--rose-soft); }
+.lab-crit-val { color: #9b2c24; font-weight: 600; }
+.lab-crit-ok { color: var(--green-ink); display: inline-flex; align-items: center; gap: 3px; }

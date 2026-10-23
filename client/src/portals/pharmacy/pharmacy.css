@@ -98,3 +98,13 @@ div.ph-kpi { cursor: default; }
 @media (max-width: 720px) { .ph-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ph-insights .ph-reorder { flex-wrap: wrap; } .ph-insights .ph-reorder-act { width: 100%; justify-content: flex-end; } }
 /* Printing the purchase list: only the reorder card (scoped so other pages' print layouts are untouched). */
 @media print { body:has(.ph-insights) .sidebar, body:has(.ph-insights) .topbar, body:has(.ph-insights) .page-header, .ph-insights .ph-kpis, .ph-insights .grid.two, .ph-insights .no-print { display: none !important; } }
+
+/* Expiring soon → stores that will sell it */
+.ex-card { margin-bottom: 16px; }
+.ex-list { display: grid; gap: 12px; }
+.ex-item { display: grid; gap: 6px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); }
+.ex-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.ex-head .badge { margin-inline-start: auto; }
+.ex-match { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border-radius: 10px; background: var(--paper); }
+.ex-qty { width: 84px; }
+.ex-done { color: var(--green-ink); display: inline-flex; align-items: center; gap: 4px; }

@@ -9,7 +9,8 @@ const FLOW = ['requested', 'accepted', 'dispatched', 'delivered'];
 const FLOW_LABEL = { requested: 'Requested', accepted: 'Accepted', dispatched: 'On the way', delivered: 'Delivered' };
 
 export function TransferProgress({ status }) {
-  if (status === 'declined') return <div className="tr-progress declined"><X size={14} /> Declined by the source</div>;
+  if (status === 'declined') return <div className="tr-progress declined"><X size={14} /> Declined</div>;
+  if (status === 'offered') return <div className="tr-progress"><span className="badge sun">Offered · waiting for a reply</span></div>;
   const idx = FLOW.indexOf(status);
   return (
     <div className="tr-progress">
