@@ -3733,6 +3733,7 @@ async function erasePatient(p, { by = 'system' } = {}) {
   drop('consents', mine);
   drop('careTransfers', mine);
   drop('sosEvents', mine);
+  drop('recoveryChecks', mine);
   // Ratings a patient left: keep the star score so doctors' averages stay honest, but strip everything that
   // points back to the person (their partial name, the free-text note, and the passport/consult ids).
   for (const r of d.reviews || []) if (mine(r)) { delete r.name; delete r.text; delete r.consultId; r.patientId = null; }
@@ -7969,6 +7970,12 @@ require('./sos')(app, {
   auth, role, activePatient, db, store, notify, touch, touchFacility, broadcast, audit, nowIso, clean, findUserByPhone,
   patientOwnerUserIds, patientPoint, geo, otp, publicLimiter, userById, ageOf, DEMO_EMAIL,
   appUrl: () => APP_URL(), emailsOn: () => reminderEmailsOn(), escHtml: (s) => escHtml(s),
+});
+
+// Care Companion (recovery.js): daily "how are you feeling?" during short courses; worse → the doctor hears.
+require('./recovery')(app, {
+  auth, role, activePatient, db, store, notify, touch, broadcast, audit, nowIso, clean, istDay, doctorFor, handledDoctorIds,
+  patientOwnerUserIds, patientById, doctorById,
 });
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.' }));

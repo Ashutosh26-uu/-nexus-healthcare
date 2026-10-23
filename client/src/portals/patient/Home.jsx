@@ -9,6 +9,7 @@ import { getLocale } from '../../i18n';
 import { LateNotice, VisitChangeActions } from './VisitChange';
 import { useLive } from '../../live';
 import { HealthToday, FamilyInvite } from './HomeHealth';
+import RecoveryCheckIn from './RecoveryCheckIn';
 import InviteCard from './InviteCard';
 
 const MODE_ICON = { video: Video, audio: Phone, chat: MessageCircle };
@@ -55,6 +56,9 @@ export default function Home() {
         <QuickAction to="/patient/medicines" icon={Pill} title="Medicines" text="Order, track or pick up" tone="sun" />
         <QuickAction to="/patient/records" icon={FolderHeart} title="My reports" text="Reports, visits & prescriptions" tone="sky" />
       </div>
+
+      {/* Care Companion: today's two-tap check-in while a short course of medicines runs. */}
+      <RecoveryCheckIn />
 
       <WhatsNext home={home} p={p} isSelf={isSelf} activeRx={activeRx} />
 

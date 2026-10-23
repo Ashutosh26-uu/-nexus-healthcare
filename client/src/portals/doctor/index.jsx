@@ -1,6 +1,6 @@
 import { DoctorCtx } from './context';
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Activity, ClipboardCheck, ListChecks, Users, CalendarDays, Wallet, Award, Pill, UserRound, Clock, FilePen, Video, Building2, GraduationCap, MapPin, Camera } from 'lucide-react';
+import { Activity, ClipboardCheck, ListChecks, Users, CalendarDays, Wallet, Award, Pill, UserRound, Clock, FilePen, Video, Building2, GraduationCap, MapPin, Camera, HeartPulse, Stethoscope, Briefcase, LayoutGrid } from 'lucide-react';
 import { Suspense, useState } from 'react';
 import PortalLayout from '../../components/PortalLayout';
 import { pageLoader } from '../../prefetch';
@@ -25,6 +25,7 @@ const Profile = page(() => import('./Profile'));
 const Prescribe = page(() => import('./Prescribe'));
 const Monitoring = page(() => import('./Monitoring'));
 const CarePlans = page(() => import('./CarePlans'));
+const Recovery = page(() => import('./Recovery'));
 import './doctor.css';
 
 // Keyed by id so state from one consult never carries into the next.
@@ -99,18 +100,23 @@ export default function DoctorApp() {
   const waiting = home.data?.stats?.waiting || 0;
   const doctor = home.data?.doctor;
   const verified = doctor ? doctor.verified : true;
+  // Care Companion: patients who feel worse or show danger signs (badge on the menu).
+  const recovery = useLive(verified ? '/doctor/recovery' : null, ['recovery', 'prescriptions']);
+  const recoveryAlerts = recovery.data?.needsReview || null;
+  // Grouped by a doctor's day: today's work, ongoing patients, running the practice, account.
   const nav = verified ? [
     { to: '/doctor', label: 'Patient queue', icon: ListChecks, end: true, badge: waiting || null },
-    { to: '/doctor/prescribe', label: 'Write prescription', icon: FilePen },
-    { to: '/doctor/patients', label: 'Patients & records', icon: Users },
-    { to: '/doctor/monitoring', label: 'Remote monitoring', icon: Activity, badge: home.data?.monitoringOpen || null },
-    { to: '/doctor/care-plans', label: 'Care plans', icon: ClipboardCheck, badge: home.data?.carePlansDue || null },
-    { to: '/doctor/schedule', label: 'Schedule & availability', icon: CalendarDays },
-    { to: '/doctor/medicines', label: 'My medicines', icon: Pill },
-    { to: '/doctor/clinic', label: home.data?.clinic ? 'My clinic & doctors' : 'Add my clinic', icon: Building2 },
-    { to: '/doctor/earnings', label: 'Earnings & reports', icon: Wallet },
-    { to: '/doctor/score', label: 'My quality score', icon: Award },
-    { to: '/doctor/profile', label: 'My profile', icon: UserRound },
+    { to: '/doctor/prescribe', label: 'Write prescription', icon: FilePen, group: 'Today', groupIcon: Stethoscope },
+    { to: '/doctor/recovery', label: 'Recovery check-ins', icon: HeartPulse, badge: recoveryAlerts, group: 'Today' },
+    { to: '/doctor/patients', label: 'Patients & records', icon: Users, group: 'My patients', groupIcon: Users },
+    { to: '/doctor/monitoring', label: 'Remote monitoring', icon: Activity, badge: home.data?.monitoringOpen || null, group: 'My patients' },
+    { to: '/doctor/care-plans', label: 'Care plans (BP, diabetes)', icon: ClipboardCheck, badge: home.data?.carePlansDue || null, group: 'My patients' },
+    { to: '/doctor/schedule', label: 'Schedule & availability', icon: CalendarDays, group: 'My practice', groupIcon: Briefcase },
+    { to: '/doctor/clinic', label: home.data?.clinic ? 'My clinic & doctors' : 'Add my clinic', icon: Building2, group: 'My practice' },
+    { to: '/doctor/medicines', label: 'My medicines', icon: Pill, group: 'My practice' },
+    { to: '/doctor/earnings', label: 'Earnings & reports', icon: Wallet, group: 'My practice' },
+    { to: '/doctor/score', label: 'My quality score', icon: Award, group: 'Account', groupIcon: LayoutGrid },
+    { to: '/doctor/profile', label: 'My profile', icon: UserRound, group: 'Account' },
   ] : [
     { to: '/doctor', label: 'Home', icon: ListChecks, end: true },
     { to: '/doctor/profile', label: 'Complete profile', icon: UserRound, badge: doctor?.profileComplete ? null : '!' },
@@ -118,7 +124,13 @@ export default function DoctorApp() {
   ];
   return (
     <DoctorCtx.Provider value={home}>
-      <PortalLayout portal="Doctor Portal" nav={nav} headerExtra={<PresenceControl home={home} />}>
+      <PortalLayout portal="Doctor Portal" nav={nav} headerExtra={<PresenceControl home={home} />}
+        tabs={verified ? [
+          { to: '/doctor', label: 'Queue', icon: ListChecks, end: true, badge: waiting || null },
+          { to: '/doctor/prescribe', label: 'Write Rx', icon: FilePen },
+          { to: '/doctor/patients', label: 'Patients', icon: Users },
+          { to: '/doctor/recovery', label: 'Recovery', icon: HeartPulse, badge: recoveryAlerts },
+        ] : undefined}>
         <Suspense fallback={<Loading />}>
         <Routes>
           <Route index element={<Queue />} />
@@ -131,6 +143,7 @@ export default function DoctorApp() {
           {verified && <Route path="patients/:pid" element={<Patients />} />}
           {verified && <Route path="monitoring" element={<Monitoring />} />}
           {verified && <Route path="care-plans" element={<CarePlans />} />}
+          {verified && <Route path="recovery" element={<Recovery />} />}
           {verified && <Route path="schedule" element={<Schedule />} />}
           {verified && <Route path="earnings" element={<Earnings />} />}
           {verified && <Route path="score" element={<Score />} />}

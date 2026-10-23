@@ -1,0 +1,37 @@
+/* Care Companion: daily recovery check-in (patient) and the doctor's recovery list */
+.rc-stack { display: grid; gap: 12px; }
+.rc-card { display: grid; gap: 14px; padding: 16px; border-radius: 18px; background: #fff; border: 1.5px solid var(--green-2); box-shadow: var(--shadow-sm); }
+.rc-card.rc-done { border-color: var(--line); box-shadow: none; gap: 8px; }
+.rc-card.rc-done.warn { border-color: #e5b25c; background: var(--sun-soft); }
+.rc-card.rc-urgent { border-color: var(--rose); background: var(--rose-soft); color: #7f2a23; gap: 8px; }
+.rc-card.rc-urgent strong { display: inline-flex; align-items: center; gap: 8px; font-size: 1.05rem; }
+.rc-head { display: flex; align-items: center; gap: 12px; }
+.rc-dots { display: inline-flex; gap: 4px; flex-wrap: wrap; flex: none; }
+.rc-dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--paper-2); border: 1px solid var(--line); }
+.rc-dots i.better { background: var(--green-2); border-color: var(--green-2); }
+.rc-dots i.same { background: #e5b25c; border-color: #e5b25c; }
+.rc-dots i.worse { background: var(--rose); border-color: var(--rose); }
+.rc-feel { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.rc-feel-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; min-height: 84px; padding: 12px 6px; border-radius: 16px;
+  border: 1.5px solid var(--line); background: var(--paper); font: 600 0.92rem var(--sans); color: var(--ink-2); cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+}
+.rc-feel-btn:active { transform: scale(0.97); }
+.rc-feel-btn.better.on { border-color: var(--green-2); background: var(--green-soft); color: var(--green-ink); }
+.rc-feel-btn.same.on { border-color: #e5b25c; background: var(--sun-soft); color: #87590b; }
+.rc-feel-btn.worse.on { border-color: var(--rose); background: var(--rose-soft); color: #9b2c24; }
+.rc-q { display: grid; gap: 8px; }
+.rc-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.rc-pills button { min-height: 42px; padding: 0 16px; border-radius: 99px; border: 1px solid var(--line); background: #fff; font: 600 0.88rem var(--sans); color: var(--ink-2); cursor: pointer; }
+.rc-pills button.on { border-color: var(--green-2); background: var(--green-soft); color: var(--green-ink); }
+.rc-pills.danger button.on { border-color: var(--rose); background: var(--rose-soft); color: #9b2c24; }
+
+/* Doctor: who is recovering and who isn't */
+.rc-list { display: grid; gap: 10px; }
+.rc-row { display: grid; grid-template-columns: 1fr auto; gap: 8px 14px; align-items: center; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--line); background: #fff; }
+.rc-row.alert { border-color: var(--rose); background: #fff8f7; }
+.rc-row .rc-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 0.82rem; color: var(--ink-2); }
+.rc-row .rc-flags { grid-column: 1 / -1; color: #9b2c24; font-size: 0.84rem; }
+.rc-row .rc-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 640px) { .rc-row { grid-template-columns: 1fr; } .rc-row .rc-actions { justify-content: flex-start; } }

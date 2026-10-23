@@ -42,6 +42,7 @@ export function PrivacyPolicy() {
         <ul>
           <li>Symptoms and triage answers, consult notes, prescriptions, lab orders and reports, home readings (blood pressure, sugar, weight and the like), allergies, conditions and your emergency card.</li>
           <li>Family members you add to your Health Passport, with the same protections.</li>
+          <li>Your daily recovery check-ins (how you feel, whether you took your medicines, any danger signs) while a short course of medicines runs. They go only to the doctor who wrote that prescription, and stop when the course ends or you say you’ve recovered.</li>
           <li>When a doctor uses voice notes or the ambient scribe during a consult, the recording is turned into text by <strong>your browser’s own speech service</strong> (for example Google’s on Android/Chrome or Apple’s on iPhone) and only the text reaches Sehatra. The AI assistant that drafts notes from that text is <strong>off by default</strong> and is used only when the doctor turns it on and you agree during the consult.</li>
         </ul>
         <h3>Your location</h3>
