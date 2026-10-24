@@ -3914,7 +3914,7 @@ async function erasePatient(p, { by = 'system' } = {}) {
     if (!x) continue;
     const keep = { id: x.id, createdAt: x.createdAt, country: x.country || 'IN', deletionRequest: { ...(x.deletionRequest || {}), status: 'completed', completedAt: nowIso() } };
     for (const k of Object.keys(x)) delete x[k];
-    Object.assign(x, keep, { name: ERASED_NAME, userId: null, guardianUserId: null, dob: null, gender: 'Prefer not to say', language: 'English', bloodGroup: 'Unknown', allergies: [], conditions: [], currentMeds: [], emergencyContacts: [], vaccinations: [], abha: '', pincode: '', district: '', state: '', circle: [], circleInvites: [], erasedAt: nowIso() });
+    Object.assign(x, keep, { name: ERASED_NAME, userId: null, guardianUserId: null, dob: null, gender: 'Prefer not to say', language: 'English', bloodGroup: 'Unknown', allergies: [], conditions: [], currentMeds: [], emergencyContacts: [], vaccinations: [], abha: '', pincode: '', district: '', state: '', circle: [], circleInvites: [], doctorAlert: null, erasedAt: nowIso() });
   }
   // The login: only when this was the person's own passport — a caregiver deleting a parent's profile keeps their account.
   if (self) {
@@ -4939,7 +4939,7 @@ app.get('/api/doctor/patient/:id', auth, role('doctor'), lookupLimiter, (req, re
     return res.json({ emergency: true, expiresAt: new Date(new Date(bg.at).getTime() + 60 * 60000).toISOString(), patient: { id: p.id, name: p.name, age: ageOf(p.dob), gender: p.gender, bloodGroup: p.bloodGroup, allergies: p.allergies, conditions: p.conditions, currentMeds: p.currentMeds, emergencyContacts: p.emergencyContacts } });
   }
   // Account-level settings (privacy choices, deletion requests, kiosk session) are the patient's own — not part of the clinical record.
-  const { privacy: _priv, deletionRequest: _del, kioskSeen: _ks, aadhaarRefHash: _ar, vaxReminded: _vr, vaxPrefs: _vp, vitalsReminder: _vit, govIds: _gi, aadhaarLast4: _a4, aadhaarVerification: _av, lat: _lat, lng: _lng, receptionSeen: _rs, circle: _cc, circleInvites: _ci, ...clinical } = p;
+  const { privacy: _priv, deletionRequest: _del, kioskSeen: _ks, aadhaarRefHash: _ar, vaxReminded: _vr, vaxPrefs: _vp, vitalsReminder: _vit, govIds: _gi, aadhaarLast4: _a4, aadhaarVerification: _av, lat: _lat, lng: _lng, receptionSeen: _rs, circle: _cc, circleInvites: _ci, doctorAlert: _da, ...clinical } = p;
   // With consent, only the parts the patient approved (break-glass returned above). Allergies and conditions stay
   // in the header for prescribing safety — the same critical set an emergency view shows.
   const may = consented ? consentScopes(p.id, [doc.id]) : new Set(CONSENT_SCOPES);
@@ -7702,6 +7702,7 @@ app.post('/api/admin/verify/:kind/:id', auth, role('super_admin'), (req, res) =>
       listing.verificationNote = `Registration ${listing.regNo} checked on the official register by ${req.user.name} · claimed clinic listing`;
       notify(listing.userId, 'You\'re verified — welcome aboard 🎉', `Your account is linked to your listing at ${facilityName(listing.facilityId) || 'your clinic'}.`);
       audit(req.user, 'verified', null, 'doctor', `${listing.id} (claimed by ${doc.id})`);
+      doctorAlerts.doctorVerified(listing);
       store.save();
       broadcast('admin', 'doctors');
       return res.json({ ok: true, merged: listing.id });
@@ -7711,6 +7712,7 @@ app.post('/api/admin/verify/:kind/:id', auth, role('super_admin'), (req, res) =>
     // Self-signed-up doctors keep access so they can fix their profile and resubmit.
     if (u) { const next = approve || doc.selfApplied ? 'active' : 'suspended'; if (next !== 'active' && u.status === 'active') u.tokenVersion = (u.tokenVersion || 0) + 1; u.status = next; }
     Object.assign(doc, regCheck);
+    if (approve) doctorAlerts.doctorVerified(doc); // patients waiting for a doctor near them hear about it
     doc.verificationNote = approve ? `Registration ${doc.regNo} checked on the official register by ${req.user.name}` : clean(req.body?.note, 300) || 'Rejected';
     if (u) notify(u.id, approve ? 'You\'re verified — welcome aboard 🎉' : 'Application update', approve ? (doc.engagement === 'eclinic_partner' ? 'Your E-Clinic partner account is active. Go online whenever you\'re free to start taking consults.' : 'Your account is active.') : doc.verificationNote);
   } else {
@@ -8178,6 +8180,8 @@ const circle = require('./circle')(app, {
   auth, role, activePatient, db, store, notify, audit, broadcast, touch, nowIso, clean, patientOwnerUserIds, userById, publicLimiter,
   appUrl: () => APP_URL(),
 });
+// "Tell me when a doctor joins near me" (doctorAlerts.js) — the hook above runs when a doctor is verified.
+const doctorAlerts = require('./doctorAlerts')(app, { auth, role, activePatient, db, store, notify, nowIso, clean, patientOwnerUserIds });
 // Missed follow-ups (followups.js): who didn't come back when the doctor asked, with a one-tap nudge.
 require('./followups')(app, { auth, role, db, store, notify, audit, broadcast, touch, nowIso, handledDoctorIds, doctorById, patientById, patientOwnerUserIds, ageOf });
 // Pregnancy care (pregnancy.js): ANC schedule, Td, tablets, danger signs, check-up reminders.

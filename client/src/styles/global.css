@@ -555,3 +555,29 @@ html.easy .input, html.easy .select, html.easy .textarea { font-size: 1.05rem; m
 html.easy .tab, html.easy .nav-link { font-size: 1rem; }
 html.easy .page-title { font-size: 2rem; }
 .listen-btn { gap: 6px; }
+
+/* "No doctor yet" help */
+.nd-row { display: flex; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--ink); text-decoration: none; background: var(--card); }
+.nd-row:hover { border-color: var(--green); }
+.nd-row > svg:first-child { color: var(--green); flex: none; }
+.nd-row.danger > svg:first-child { color: var(--rose); }
+.block { display: block; }
+
+/* First-visit language chooser */
+.lang-strip { border: 1px solid var(--green-soft); background: var(--green-soft); color: var(--green-ink); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 18px; display: grid; gap: 10px; }
+.lang-strip-list { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.lang-strip-list .chip { font-size: 1rem; padding: 8px 14px; background: var(--card); }
+
+/* Getting started (new patients' Home) */
+.gs-bar { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; margin-bottom: 10px; }
+.gs-bar span { display: block; height: 100%; background: var(--green); border-radius: 99px; transition: width 0.4s var(--ease); }
+.gs-step { display: flex; gap: 10px; align-items: center; padding: 10px 6px; border-radius: var(--radius-sm); color: var(--ink); text-decoration: none; }
+.gs-step:hover { background: var(--green-soft); }
+.gs-step > svg:first-child { color: var(--ink-3); flex: none; }
+.gs-step.done > svg:first-child { color: var(--green); }
+.gs-step.done strong { text-decoration: line-through; color: var(--ink-3); }
+.lang-strip-list .chip.on { background: var(--green); color: #fff; border-color: var(--green); }
+@media (max-width: 560px) {
+  .lang-strip-list { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+  .lang-strip-list > * { flex: none; }
+}

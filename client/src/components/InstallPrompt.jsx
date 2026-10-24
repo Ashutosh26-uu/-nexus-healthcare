@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Download, X, Share, SquarePlus, MoreVertical, Smartphone, Zap, WifiOff, Bell } from 'lucide-react';
 import { LogoMark } from './Logo';
 import { useConsent } from '../consent';
+import { useAuth } from '../auth';
 
 const QR = lazy(() => import('./QR'));
 const SNOOZE_KEY = 'oc_install_snooze_until';
@@ -18,6 +19,7 @@ const snoozed = () => { try { return Date.now() < Number(localStorage.getItem(SN
 // Screen steps on iPhone, and a QR code on computers to open it on a phone. "Not now" snoozes for a week.
 export default function InstallPrompt() {
   const consentCtx = useConsent();
+  const { user } = useAuth();
   const [can, setCan] = useState(Boolean(window.__installPrompt));
   const [open, setOpen] = useState(false);
 
@@ -29,13 +31,15 @@ export default function InstallPrompt() {
     return () => { window.removeEventListener('oc:installable', on); window.removeEventListener('appinstalled', installed); };
   }, []);
 
-  // Open a moment after the cookie choice, once per snooze period, never inside the installed app.
+  // Only once someone has an account (a first-time visitor already has the cookie and language choices in front
+  // of them), a while after they arrive, once per snooze period, never inside the installed app.
   const decided = Boolean(consentCtx?.consent);
+  const signedIn = Boolean(user);
   useEffect(() => {
-    if (!decided || isStandalone() || snoozed()) return undefined;
-    const t = setTimeout(() => setOpen(true), 1200);
+    if (!decided || !signedIn || isStandalone() || snoozed()) return undefined;
+    const t = setTimeout(() => setOpen(true), 20000);
     return () => clearTimeout(t);
-  }, [decided]);
+  }, [decided, signedIn]);
 
   if (!open) return null;
   const close = () => { setOpen(false); try { localStorage.setItem(SNOOZE_KEY, String(Date.now() + SNOOZE_DAYS * 86400000)); } catch { /* ignore */ } };

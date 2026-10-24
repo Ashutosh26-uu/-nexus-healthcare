@@ -11,6 +11,7 @@ import { useLive } from '../../live';
 import { HealthToday, FamilyInvite } from './HomeHealth';
 import RecoveryCheckIn from './RecoveryCheckIn';
 import InviteCard from './InviteCard';
+import GettingStarted from './GettingStarted';
 
 const MODE_ICON = { video: Video, audio: Phone, chat: MessageCircle };
 const HIDDEN_ALERTS = 'oc_hidden_alerts';
@@ -32,6 +33,7 @@ export default function Home() {
   const rxList = home.prescriptions || [];
   const activeRx = rxList.filter((r) => !['delivered', 'collected'].includes(r.status));
   const pastRx = rxList.filter((r) => ['delivered', 'collected'].includes(r.status)).slice(0, 2);
+  const isNew = isSelf && !home.upcoming?.length && rxList.length === 0;
 
   const today = new Date().toLocaleDateString(getLocale(), { weekday: 'long', day: 'numeric', month: 'long' });
   const alerts = (home.alerts || []).filter((a) => !hidden.includes(a.id));
@@ -80,6 +82,8 @@ export default function Home() {
 
       <div className="grid side">
         <div className="stack lg">
+          {/* Someone new: one "get started" list instead of empty "Coming up" and "Medicines" cards. */}
+          {isNew ? <GettingStarted p={p} profiles={profiles} /> : <>
           <Card title="Coming up" action={<Link to="/patient/follow-ups" className="small">All follow-ups <ChevronRight size={14} className="inline-ic" /></Link>}>
             {!home.upcoming?.length ? (
               <Empty icon={CalendarClock} title="Nothing scheduled">
@@ -135,6 +139,7 @@ export default function Home() {
               </div>
             )}
           </Card>
+          </>}
         </div>
 
         <div className="stack lg">

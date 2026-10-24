@@ -254,7 +254,10 @@ function EasyCard() {
   const [easy, toggle] = useEasyMode();
   return (
     <Card title={<h3 className="row" style={{ gap: 8 }}><Languages size={18} /> Easier to read</h3>}>
-      <Switch checked={easy} onChange={toggle} label="Bigger text, bigger buttons, and a Listen button that reads each page aloud" />
+      <div className="row" style={{ gap: 10 }}>
+        <Switch checked={easy} onChange={toggle} label="Bigger text and read aloud" />
+        <span className="small grow">Bigger text, bigger buttons, and a <strong>Listen</strong> button that reads each page aloud. Only on this phone.</span>
+      </div>
     </Card>
   );
 }

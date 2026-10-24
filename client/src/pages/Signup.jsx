@@ -10,6 +10,7 @@ import LanguagePicker from '../components/LanguagePicker';
 import { useI18n, LANGUAGES as APP_LANGS } from '../i18n';
 import { COUNTRIES, guessCountry } from '../i18n/countries';
 import './auth.css';
+import LanguageStrip from '../components/LanguageStrip';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -96,6 +97,7 @@ export default function Signup() {
     <div className="auth">
       <div className="auth-form-side">
         <div className="auth-top"><Logo /><div className="row"><LanguagePicker /><Link to="/login" state={from ? { from } : undefined} className="small muted">Already have an account? <strong>Sign in</strong></Link></div></div>
+        <LanguageStrip />
         <div className="auth-card fade-in" key={sent ? 'code' : 'details'}>
           {!sent ? (
             <form className="stack" onSubmit={sendCode}>
@@ -133,7 +135,7 @@ export default function Signup() {
       <aside className="auth-side">
         <div className="auth-side-inner">
           <HeartHandshake size={34} color="#f3b89f" />
-          <h2 style={{ marginTop: 18 }}>“My mother-in-law&apos;s reports used to live in a plastic bag.”</h2>
+          <h2 style={{ marginTop: 18 }}>No more reports lost in a plastic bag.</h2>
           <p>With a Health Passport, every prescription, lab report and allergy lives in one place — and goes wherever you go.</p>
           <ul className="side-points">
             <li><Check size={16} /> Free, forever, for every family member</li>

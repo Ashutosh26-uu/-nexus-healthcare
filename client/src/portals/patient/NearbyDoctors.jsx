@@ -8,6 +8,7 @@ import VoiceInput from '../../components/VoiceInput';
 import DistancePicker, { useRadius } from '../../components/DistancePicker';
 import DoctorProfile from './DoctorProfile';
 import BookingFlow from './BookingFlow';
+import NoDoctorHelp from './NoDoctorHelp';
 
 
 // The person's location from the app-wide consent manager: live (while the app is open, after they
@@ -160,6 +161,7 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
           {scope === 'near' ? <>Our network is growing. Try a bigger distance, or <button type="button" className="link-btn" onClick={() => setScope('all')}>See doctors across {countryName}</button> — many consult by video.</> : 'Try another department, or a general physician.'}
         </Empty>
       )}
+      {data && data.doctors.length === 0 && <NoDoctorHelp district={place?.district || manualDistrict || undefined} state={place?.state || manualState || undefined} />}
       {data && data.doctors.length > 0 && specialists.length === 0 && !data.triage.byDepartment && q && (
         <p className="tiny muted mt-2 mb-0">No {data.triage.specialty.toLowerCase()} specialist {scope === 'near' ? `within ${radius} km` : 'on the network'} yet — these general physicians can examine you and refer you on.</p>
       )}

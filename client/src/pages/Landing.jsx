@@ -11,6 +11,7 @@ import { useAuth, ROLE_HOME } from '../auth';
 import { cx, fmtNum } from '../components/ui';
 import './landing.css';
 import { usePublicConfig, useSupport, telHref } from '../config';
+import LanguageStrip from '../components/LanguageStrip';
 
 const FAQS = [
   { q: 'I live in a village and don\'t have a smartphone. Can I still use Sehatra?', a: 'Yes. A family member can book for you from their phone, and you can speak your symptoms instead of typing. Sehatra E-Clinics — at your PHC, railway station or panchayat bhawan, with a health worker who checks your BP, sugar and oxygen — are coming soon.' },
@@ -176,6 +177,7 @@ export default function Landing() {
       <section className="l-hero">
         <div className="l-container l-hero-grid">
           <div className="l-hero-copy fade-in">
+            <LanguageStrip />
             <span className="l-kicker"><span className="dot green pulse" /> v0.1 is live in India</span>
             <h1>
               A good doctor shouldn&apos;t depend on your{' '}
@@ -238,16 +240,25 @@ export default function Landing() {
           </div>
         </div>
 
-        {stats !== false && (
-          <div className="l-container">
-            <div className="l-stats" aria-busy={!stats}>
-              <div><strong>{stats ? fmtNum(stats.passports) : '—'}</strong><span>Health Passports</span></div>
-              <div><strong>{stats ? fmtNum(stats.doctorsOnline) : '—'}</strong><span>doctors online now</span></div>
-              <div><strong>{stats ? fmtNum(stats.kiosks) : '—'}</strong><span>E-Clinics</span></div>
-              <div><strong>{stats ? fmtNum(stats.states) : '—'}</strong><span>states connected</span></div>
+        {/* Live numbers — only the ones that are already meaningful. A row of zeros on a young network says
+            "empty", not "honest"; tiles appear as each number grows. */}
+        {(() => {
+          if (!stats) return null;
+          const tiles = [
+            stats.passports >= 50 && [stats.passports, 'Health Passports'],
+            stats.doctorsOnline > 0 && [stats.doctorsOnline, stats.doctorsOnline === 1 ? 'doctor online now' : 'doctors online now'],
+            stats.kiosks > 0 && [stats.kiosks, stats.kiosks === 1 ? 'E-Clinic' : 'E-Clinics'],
+            stats.passports >= 50 && stats.states > 1 && [stats.states, 'states connected'],
+          ].filter(Boolean);
+          if (!tiles.length) return null;
+          return (
+            <div className="l-container">
+              <div className="l-stats">
+                {tiles.map(([n, label]) => <div key={label}><strong>{fmtNum(n)}</strong><span>{label}</span></div>)}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </section>
 
       {/* ---------- three things you can do right now (no sign-in) ---------- */}
