@@ -753,13 +753,26 @@ app.get('/api/files/:id', auth, async (req, res) => {
 });
 
 const chatLimiter = security.rateLimit({ windowMs: 10 * 60000, max: 40, message: 'You\'re sending messages very fast. Please wait a few minutes.' });
-const chatBudget = { day: '', used: 0 };
+const chatBudget = { day: '', used: 0, anon: 0, perUser: new Map() };
 const CHAT_AI_DAILY = Math.max(0, parseInt(process.env.CHAT_AI_DAILY_LIMIT || '1500', 10));
+// Visitors who aren't signed in share at most 40% of the day's AI answers, and one account gets at most 60 —
+// so a few scripts can't use up the allowance and leave every patient with the built-in replies.
+const CHAT_AI_ANON_SHARE = 0.4;
+const CHAT_AI_PER_USER = 60;
 app.post('/api/chat', chatLimiter, optionalAuth, (req, res) => {
   const today = istDay(nowIso());
-  if (chatBudget.day !== today) Object.assign(chatBudget, { day: today, used: 0 });
+  if (chatBudget.day !== today) Object.assign(chatBudget, { day: today, used: 0, anon: 0, perUser: new Map() });
   chatBudget.used += 1;
-  req.chatOffline = chatBudget.used > CHAT_AI_DAILY;
+  let over = chatBudget.used > CHAT_AI_DAILY;
+  if (req.user) {
+    const n = (chatBudget.perUser.get(req.user.id) || 0) + 1;
+    chatBudget.perUser.set(req.user.id, n);
+    over = over || n > CHAT_AI_PER_USER;
+  } else {
+    chatBudget.anon += 1;
+    over = over || chatBudget.anon > CHAT_AI_DAILY * CHAT_AI_ANON_SHARE;
+  }
+  req.chatOffline = over;
   const msgs = req.body?.messages;
   if (!Array.isArray(msgs) || !msgs.length) return res.status(400).json({ error: 'Please type a message.' });
   req.body.messages = msgs.slice(-12).map((m) => ({ role: m?.role === 'assistant' ? 'assistant' : 'user', content: String(m?.content ?? '').slice(0, 2000) }));
@@ -850,7 +863,7 @@ app.post('/api/auth/otp/request', otpLimiter, async (req, res) => {
 app.post('/api/auth/otp/verify', otpVerifyLimiter, async (req, res) => {
   const { target, code } = req.body || {};
   try {
-    const ok = await otp.verifyCode({ target, code });
+    const ok = await otp.verifyCode({ target, code, ip: req.ip });
     if (ok.channel !== 'email') return res.status(400).json({ error: 'Sign-in codes are sent by email only. Please use your email address.' });
     const user = findUserByEmail(ok.target);
     if (user) {
@@ -1022,10 +1035,16 @@ function readTicket(ticket, purpose) {
 const mfaFails = new Map();
 const MFA_FAIL_MAX = 8;
 const MFA_FAIL_WINDOW_MS = 15 * 60000;
+// And over a day: 24 wrong codes in 24 hours pauses two-step sign-in for the rest of that day and tells the
+// owner (someone has their password). Without this, 8 tries per 15 minutes would add up to ~770 a day.
+const MFA_DAY_MAX = 24;
+const mfaDayFails = new Map(); // user id → timestamps
 // Checks an authenticator code (refusing a code already used) or a one-time backup code. Saves on success.
 function checkMfa(user, code) {
   const fails = (mfaFails.get(user.id) || []).filter((t) => Date.now() - t < MFA_FAIL_WINDOW_MS);
   if (fails.length >= MFA_FAIL_MAX) return { status: 429, error: 'Too many wrong codes. Please wait 15 minutes and try again.' };
+  const dayFails = (mfaDayFails.get(user.id) || []).filter((t) => Date.now() - t < 86400000);
+  if (dayFails.length >= MFA_DAY_MAX) return { status: 429, error: 'Two-step sign-in is paused for today after too many wrong codes. Please try again tomorrow.' };
   const raw = clean(code, 20);
   let how = null;
   if (/^\d{6}$/.test(raw.replace(/\s/g, ''))) {
@@ -1043,6 +1062,12 @@ function checkMfa(user, code) {
   if (!how) {
     mfaFails.set(user.id, [...fails, Date.now()]);
     if (mfaFails.size > 50000) mfaFails.delete(mfaFails.keys().next().value);
+    mfaDayFails.set(user.id, [...dayFails, Date.now()]);
+    if (mfaDayFails.size > 50000) mfaDayFails.delete(mfaDayFails.keys().next().value);
+    if (dayFails.length + 1 === MFA_DAY_MAX) {
+      audit(user, 'mfa_locked_day', null, 'account', `${MFA_DAY_MAX} wrong two-step codes in 24 h`);
+      securityAlert(user, 'Someone is trying to sign in to your account', 'Your password was entered correctly, but the two-step code was wrong many times. Two-step sign-in is paused for today. If this wasn\'t you, change your password now.');
+    }
     return { status: 400, error: 'That code didn’t match. Check the 6-digit code in your authenticator app and try again.' };
   }
   mfaFails.delete(user.id);
@@ -1097,7 +1122,7 @@ app.post('/api/auth/mfa/setup', auth, passwordChangeLimiter, async (req, res) =>
   if (mfaMissing(req.user)) {
     if (!/^\d{6}$/.test(String(req.body?.emailCode || ''))) return res.status(400).json({ error: 'First get a code by email, then enter it here.', needEmailCode: true });
     try {
-      await otp.verifyCode({ target: req.user.email, code: String(req.body?.emailCode || ''), purpose: 'mfa' });
+      await otp.verifyCode({ target: req.user.email, code: String(req.body?.emailCode || ''), purpose: 'mfa', ip: req.ip });
     } catch (e) {
       return res.status(e instanceof OtpError ? e.status : 400).json({ error: e instanceof OtpError ? e.message : 'Enter the code we emailed you.', needEmailCode: true });
     }
@@ -1186,7 +1211,7 @@ app.post('/api/auth/password-reset/confirm', resetVerifyLimiter, async (req, res
     if (!user || (t.tv || 0) !== (user.tokenVersion || 0)) return res.status(400).json({ error: 'This reset expired. Please request a new code.' });
   } else {
     try {
-      await otp.verifyCode({ target: email, code: String(code || ''), purpose: 'reset' });
+      await otp.verifyCode({ target: email, code: String(code || ''), purpose: 'reset', ip: req.ip });
     } catch (e) {
       // One answer whether or not the email has an account (no code is stored for an unknown email, and a
       // different message there would reveal who uses Sehatra). Only "too many tries" keeps its own reply.
@@ -5084,7 +5109,7 @@ app.post('/api/doctor/patient-access/verify', auth, role('doctor'), otpVerifyLim
   const smsOk = Boolean(c.mobile) && consentSmsOk();
   const channel = wanted === 'email' && c.email ? 'email' : wanted === 'sms' && smsOk ? 'sms' : smsOk ? 'sms' : 'email';
   try {
-    const ok = await otp.verifyCode({ target: targetFor(c, channel), code: String(req.body?.code || ''), purpose: 'consent' });
+    const ok = await otp.verifyCode({ target: targetFor(c, channel), code: String(req.body?.code || ''), purpose: 'consent', ip: req.ip });
     if (!ok) throw new OtpError('That code is not right.', 400);
     accessChannels.delete(memoKey);
   } catch (e) {
@@ -5515,7 +5540,7 @@ app.post('/api/kiosk/identify/verify', auth, role('kiosk_operator'), identifyLim
   const email = p && !p.erasedAt ? kioskEmailOf(p) : null;
   if (!email) return res.status(400).json({ error: 'This check-in expired. Please search for the patient again.' });
   try {
-    await otp.verifyCode({ target: email, code: String(req.body?.code || ''), purpose: 'kiosk' });
+    await otp.verifyCode({ target: email, code: String(req.body?.code || ''), purpose: 'kiosk', ip: req.ip });
   } catch (e) {
     if (e instanceof OtpError) return res.status(e.status).json({ error: e.message });
     throw e;

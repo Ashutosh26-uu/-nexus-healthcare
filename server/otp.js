@@ -295,21 +295,22 @@ async function burn(adapter, target, row) {
 // (MAX_ATTEMPTS) plus the resend cap already bound an hour; this stops someone requesting code after code
 // all day to grind through the space (for a patient the code is the only factor). Resets on a correct code
 // and at the UTC day boundary; in memory, which is enough — a restart only makes it stricter.
+// Counted per (address, network) so a stranger guessing wrong can't lock the real person out for the day; a
+// much higher per-address ceiling still stops a spread-out grind (the resend cap keeps that slow anyway).
 const DAILY_FAIL_MAX = Number(process.env.OTP_DAILY_FAIL_MAX || 25);
-const dailyFails = new Map(); // plainTarget → { day, n }
+const DAILY_FAIL_MAX_ALL = Number(process.env.OTP_DAILY_FAIL_MAX_ALL || 150);
+const dailyFails = new Map(); // key → { day, n }
 const dayNow = () => Math.floor(Date.now() / 86400000);
-function dailyGuard(plainTarget) {
-  const e = dailyFails.get(plainTarget);
-  if (e && e.day === dayNow() && e.n >= DAILY_FAIL_MAX) throw new OtpError('Too many incorrect codes today. Please try again tomorrow, or contact support.', 429);
+const failsOn = (k) => { const e = dailyFails.get(k); return e && e.day === dayNow() ? e.n : 0; };
+function dailyGuard(plainTarget, ip) {
+  if (failsOn(`${plainTarget}|${ip || ''}`) >= DAILY_FAIL_MAX || failsOn(plainTarget) >= DAILY_FAIL_MAX_ALL) throw new OtpError('Too many incorrect codes today. Please try again tomorrow, or contact support.', 429);
 }
-function dailyFail(plainTarget) {
-  const d = dayNow();
-  const e = dailyFails.get(plainTarget);
-  dailyFails.set(plainTarget, e && e.day === d ? { day: d, n: e.n + 1 } : { day: d, n: 1 });
-  if (dailyFails.size > 50000) dailyFails.delete(dailyFails.keys().next().value);
+function dailyFail(plainTarget, ip) {
+  for (const k of [plainTarget, `${plainTarget}|${ip || ''}`]) dailyFails.set(k, { day: dayNow(), n: failsOn(k) + 1 });
+  while (dailyFails.size > 50000) dailyFails.delete(dailyFails.keys().next().value);
 }
 
-async function verifyCode({ target: given, code, purpose = 'login' }) {
+async function verifyCode({ target: given, code, purpose = 'login', ip }) {
   const adapter = store.adapter();
   if (!PURPOSES.has(purpose)) throw new OtpError('Invalid code purpose.');
   // Codes were stored under the normalised destination (lower-case email / E.164 phone) — look them up the
@@ -317,7 +318,7 @@ async function verifyCode({ target: given, code, purpose = 'login' }) {
   const raw = String(given || '').trim();
   const plainTarget = !raw ? '' : raw.includes('@') ? raw.toLowerCase() : (normalizePhone(raw) || raw);
   const target = plainTarget ? keyFor(purpose, plainTarget) : null;
-  if (plainTarget) dailyGuard(plainTarget);
+  if (plainTarget) dailyGuard(plainTarget, ip);
   const row = target ? await adapter.otpGet(target) : null;
   const clean = String(code || '').replace(/\D/g, '');
   if (!row) throw new OtpError('Please request a new code.');
@@ -340,11 +341,11 @@ async function verifyCode({ target: given, code, purpose = 'login' }) {
     ok = a.length === b.length && crypto.timingSafeEqual(a, b);
   }
   if (!ok) {
-    if (plainTarget) dailyFail(plainTarget);
+    if (plainTarget) dailyFail(plainTarget, ip);
     const left = MAX_ATTEMPTS - used;
     throw new OtpError(left > 0 ? `That code isn't right. ${left} attempt${left === 1 ? '' : 's'} left.` : 'Too many wrong attempts. Please request a new code.');
   }
-  dailyFails.delete(plainTarget);
+  dailyFails.delete(plainTarget); dailyFails.delete(`${plainTarget}|${ip || ''}`);
   await adapter.otpDelete(target);
   return { target: plainTarget, channel: row.channel };
 }
