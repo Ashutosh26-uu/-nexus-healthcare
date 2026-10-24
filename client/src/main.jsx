@@ -2,6 +2,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles/global.css';
 import App from './App';
+import { applyEasy } from './components/easyMode';
+applyEasy(); // bigger text from the first paint, before React renders
 
 // Remember whether a language was explicitly saved before the i18n provider writes its default,
 // so the patient portal can adopt the profile language on first login.

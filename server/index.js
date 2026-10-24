@@ -3888,6 +3888,9 @@ async function erasePatient(p, { by = 'system' } = {}) {
   drop('careTransfers', mine);
   drop('sosEvents', mine);
   drop('recoveryChecks', mine);
+  drop('pregnancies', mine);
+  // Leaving the network also takes this person out of other people's emergency circles.
+  for (const x of d.patients || []) if (x.circle?.length && self) x.circle = x.circle.filter((m) => m.userId !== self.id);
   // Ratings a patient left: keep the star score so doctors' averages stay honest, but strip everything that
   // points back to the person (their partial name, the free-text note, and the passport/consult ids).
   for (const r of d.reviews || []) if (mine(r)) { delete r.name; delete r.text; delete r.consultId; r.patientId = null; }
@@ -3911,7 +3914,7 @@ async function erasePatient(p, { by = 'system' } = {}) {
     if (!x) continue;
     const keep = { id: x.id, createdAt: x.createdAt, country: x.country || 'IN', deletionRequest: { ...(x.deletionRequest || {}), status: 'completed', completedAt: nowIso() } };
     for (const k of Object.keys(x)) delete x[k];
-    Object.assign(x, keep, { name: ERASED_NAME, userId: null, guardianUserId: null, dob: null, gender: 'Prefer not to say', language: 'English', bloodGroup: 'Unknown', allergies: [], conditions: [], currentMeds: [], emergencyContacts: [], vaccinations: [], abha: '', pincode: '', district: '', state: '', erasedAt: nowIso() });
+    Object.assign(x, keep, { name: ERASED_NAME, userId: null, guardianUserId: null, dob: null, gender: 'Prefer not to say', language: 'English', bloodGroup: 'Unknown', allergies: [], conditions: [], currentMeds: [], emergencyContacts: [], vaccinations: [], abha: '', pincode: '', district: '', state: '', circle: [], circleInvites: [], erasedAt: nowIso() });
   }
   // The login: only when this was the person's own passport — a caregiver deleting a parent's profile keeps their account.
   if (self) {
@@ -4936,7 +4939,7 @@ app.get('/api/doctor/patient/:id', auth, role('doctor'), lookupLimiter, (req, re
     return res.json({ emergency: true, expiresAt: new Date(new Date(bg.at).getTime() + 60 * 60000).toISOString(), patient: { id: p.id, name: p.name, age: ageOf(p.dob), gender: p.gender, bloodGroup: p.bloodGroup, allergies: p.allergies, conditions: p.conditions, currentMeds: p.currentMeds, emergencyContacts: p.emergencyContacts } });
   }
   // Account-level settings (privacy choices, deletion requests, kiosk session) are the patient's own — not part of the clinical record.
-  const { privacy: _priv, deletionRequest: _del, kioskSeen: _ks, aadhaarRefHash: _ar, vaxReminded: _vr, vaxPrefs: _vp, vitalsReminder: _vit, govIds: _gi, aadhaarLast4: _a4, aadhaarVerification: _av, lat: _lat, lng: _lng, receptionSeen: _rs, ...clinical } = p;
+  const { privacy: _priv, deletionRequest: _del, kioskSeen: _ks, aadhaarRefHash: _ar, vaxReminded: _vr, vaxPrefs: _vp, vitalsReminder: _vit, govIds: _gi, aadhaarLast4: _a4, aadhaarVerification: _av, lat: _lat, lng: _lng, receptionSeen: _rs, circle: _cc, circleInvites: _ci, ...clinical } = p;
   // With consent, only the parts the patient approved (break-glass returned above). Allergies and conditions stay
   // in the header for prescribing safety — the same critical set an emergency view shows.
   const may = consented ? consentScopes(p.id, [doc.id]) : new Set(CONSENT_SCOPES);
@@ -8170,7 +8173,20 @@ app.post('/api/admin/automation/test', auth, role('super_admin'), async (req, re
 });
 
 // One-tap SOS (sos.js). Helpers defined further down are passed as arrows — they're only read per request.
+// Emergency circle (circle.js): grown-up family with their own accounts join by an invite link, for SOS alerts.
+const circle = require('./circle')(app, {
+  auth, role, activePatient, db, store, notify, audit, broadcast, touch, nowIso, clean, patientOwnerUserIds, userById, publicLimiter,
+  appUrl: () => APP_URL(),
+});
+// Missed follow-ups (followups.js): who didn't come back when the doctor asked, with a one-tap nudge.
+require('./followups')(app, { auth, role, db, store, notify, audit, broadcast, touch, nowIso, handledDoctorIds, doctorById, patientById, patientOwnerUserIds, ageOf });
+// Pregnancy care (pregnancy.js): ANC schedule, Td, tablets, danger signs, check-up reminders.
+const pregnancy = require('./pregnancy')(app, {
+  auth, role, activePatient, db, store, notify, audit, broadcast, touch, nowIso, clean, istDay, patientOwnerUserIds, patientById,
+  ageOf, consentScopes, doctorFor,
+});
 require('./sos')(app, {
+  circleUserIds: circle.circleUserIds,
   auth, role, activePatient, db, store, notify, touch, touchFacility, broadcast, audit, nowIso, clean, findUserByPhone: findVerifiedUserByPhone,
   patientOwnerUserIds, patientPoint, geo, otp, publicLimiter, userById, ageOf, DEMO_EMAIL,
   appUrl: () => APP_URL(), emailsOn: () => reminderEmailsOn(), escHtml: (s) => escHtml(s),
@@ -8188,7 +8204,7 @@ require('./ayushman')(app, { auth, role, activePatient, db, store, audit, touchF
 // Critical-value escalation (escalation.js): unacknowledged critical results climb doctor → lab → family → admin.
 const escalation = require('./escalation')(app, {
   auth, role, db, store, notify, audit, broadcast, touch, nowIso, doctorFor, handledDoctorIds, patientOwnerUserIds,
-  findUserByPhone: findVerifiedUserByPhone, labStaffIds, facilityName, userById,
+  findUserByPhone: findVerifiedUserByPhone, labStaffIds, facilityName, userById, circleUserIds: circle.circleUserIds,
 });
 if (process.env.NODE_ENV !== 'production') app.post('/api/dev/escalation-sweep', auth, role('super_admin'), (_req, res) => { escalation.sweep(); res.json({ ok: true }); });
 
@@ -8198,7 +8214,7 @@ require('./intakes')(app, { auth, role, db, store, notify, audit, broadcast, tou
 // Near-expiry stock → nearby stores that will sell it before it expires (expiry.js).
 require('./expiry')(app, { auth, role, db, store, notify, audit, broadcast, touchFacility, nowIso, istDay, geo, catalog, normDrug, facilityName });
 require('./ops')(app, { auth, role, db, store, notify, audit, broadcast, touch, touchFacility, nowIso, istDay, clean, geo, catalog, normDrug,
-  patientById, patientPoint, facilityName, patientOwnerUserIds, govScope, wellness, planProgress, userById });
+  patientById, patientPoint, facilityName, patientOwnerUserIds, govScope, wellness, planProgress, userById, pregnancyPlan: pregnancy.plan, activePregnancy: pregnancy.activeFor });
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.' }));
 

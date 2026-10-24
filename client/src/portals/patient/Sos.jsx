@@ -5,6 +5,7 @@ import { api } from '../../api';
 import { Button, Card, cx, timeAgo, useToast } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, usePatientLive, firstName, PageSkeleton } from './shared';
+import EmergencyCircle from './EmergencyCircle';
 import './sos.css';
 
 const HOLD_MS = 1200; // a press this long opens the countdown — a brush of the thumb doesn't
@@ -180,11 +181,12 @@ export default function SosPage() {
           <ol className="sos-steps">
             <li><strong>5-second countdown</strong> — tap Cancel if it was a mistake.</li>
             <li>Your phone opens <strong>108</strong> to call an ambulance.</li>
-            <li>Family linked to your account (on the Family page) get an alert at once, with your location. You can also send the alert to anyone by WhatsApp or SMS.</li>
+            <li>Your family and your emergency circle (below) get an alert at once, with your location. You can also send the alert to anyone by WhatsApp or SMS.</li>
             <li>You see the nearest hospitals with an emergency department, and free beds where the hospital shares them.</li>
           </ol>
           {sos?.status === 'safe' && <p className="small muted">Your last SOS ended {timeAgo(sos.resolvedAt)} — marked safe.</p>}
         </Card>
+        <EmergencyCircle />
         {counting && <Countdown onCancel={() => setCounting(false)} onSend={send} />}
       </div>
     );

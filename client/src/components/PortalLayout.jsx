@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Bell, LogOut, Menu, X, ChevronDown, ChevronRight, KeyRound, Cookie, MapPin, ShieldCheck, LayoutGrid, UserRound } from 'lucide-react';
+import { Bell, LogOut, Menu, X, ChevronDown, ChevronRight, KeyRound, Cookie, MapPin, ShieldCheck, LayoutGrid, UserRound, Type } from 'lucide-react';
+import { useEasyMode } from './easyMode';
+import ListenButton from './ListenButton';
 import Logo from './Logo';
 import LanguagePicker from './LanguagePicker';
 import { LocationChip, openCookieSettings, openLocationSettings } from '../consent';
@@ -28,6 +30,7 @@ export default function PortalLayout({ portal, nav, children, headerExtra, heade
   const [menuOpen, setMenuOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
   const [mfaOpen, setMfaOpen] = useState(false);
+  const [easy, toggleEasy] = useEasyMode();
   // Admins and officials can see many people's data: until two-step login is on, the menu button carries a dot.
   const nudgeMfa = ['super_admin', 'official'].includes(user?.role) && user?.mfaEnabled === false;
   // Admins, officials and hospital admins must use two-step login: show a standing banner until it's on.
@@ -191,6 +194,7 @@ export default function PortalLayout({ portal, nav, children, headerExtra, heade
                 <button className="menu-item" onClick={() => { setPwOpen(true); setMenuOpen(false); }}><KeyRound size={16} /> Change password</button>
                 <button className="menu-item" onClick={() => { setMfaOpen(true); setMenuOpen(false); }}><ShieldCheck size={16} /> Two-step login <span className={cx('badge tiny', user?.mfaEnabled ? 'green' : nudgeMfa ? 'sun' : '')} style={{ marginInlineStart: 'auto' }}>{user?.mfaEnabled ? 'On' : 'Off'}</span></button>
                 {['patient', 'caregiver'].includes(user?.role) && <button className="menu-item" onClick={() => { openLocationSettings(); setMenuOpen(false); }}><MapPin size={16} /> My location</button>}
+                <button className="menu-item" onClick={toggleEasy} aria-pressed={easy}><Type size={16} /> Bigger text &amp; read aloud <span className={cx('badge tiny', easy ? 'green' : '')}>{easy ? 'On' : 'Off'}</span></button>
                 <button className="menu-item" onClick={() => { openCookieSettings(); setMenuOpen(false); }}><Cookie size={16} /> Cookie preferences</button>
                 <button className="menu-item" onClick={() => { signOut(); navigate('/'); }}><LogOut size={16} /> Sign out</button>
                 {/* Ends every session on every device at once — for a lost phone or a shared computer left signed in. */}
@@ -281,6 +285,7 @@ function PasswordModal({ open, onClose }) {
 }
 
 export function PageHeader({ title, subtitle, children, eyebrow }) {
+  const [easy] = useEasyMode();
   return (
     <div className="page-header">
       <div className="grow">
@@ -288,7 +293,7 @@ export function PageHeader({ title, subtitle, children, eyebrow }) {
         <h1 className="page-title">{title}</h1>
         {subtitle && <p className="muted mb-0">{subtitle}</p>}
       </div>
-      {children && <div className="row wrap page-actions">{children}</div>}
+      {(children || easy) && <div className="row wrap page-actions">{easy && <ListenButton />}{children}</div>}
     </div>
   );
 }

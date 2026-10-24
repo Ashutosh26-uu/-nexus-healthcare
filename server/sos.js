@@ -19,7 +19,7 @@ function distKm(a, b) {
 
 module.exports = function registerSos(app, x) {
   const { auth, role, activePatient, db, store, notify, touch, touchFacility, broadcast, audit, nowIso, clean, findUserByPhone,
-    patientOwnerUserIds, patientPoint, geo, otp, publicLimiter, userById, ageOf, appUrl, emailsOn, escHtml, DEMO_EMAIL } = x;
+    patientOwnerUserIds, patientPoint, geo, otp, publicLimiter, userById, ageOf, appUrl, emailsOn, escHtml, DEMO_EMAIL, circleUserIds = () => [] } = x;
 
   const events = () => { const d = db(); if (!d.sosEvents) d.sosEvents = []; return d.sosEvents; };
   const first = (name) => String(name || '').split(/\s+/)[0] || 'Someone';
@@ -51,7 +51,7 @@ module.exports = function registerSos(app, x) {
   // Everyone on Sehatra who should hear about it: the profile's other owner (guardian / the person themself) and
   // emergency contacts whose phone number has a Sehatra account. Never the person who pressed it.
   function familyUsers(p, presserId) {
-    const ids = new Set(patientOwnerUserIds(p));
+    const ids = new Set([...patientOwnerUserIds(p), ...circleUserIds(p)]); // + everyone who joined their emergency circle
     for (const c of p.emergencyContacts || []) {
       if (c.relation === 'Mobile' || !c.phone) continue;
       const u = findUserByPhone(c.phone);

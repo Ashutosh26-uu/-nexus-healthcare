@@ -530,3 +530,28 @@ table { max-width: 100%; }
 .task-row:first-child { border-top: 0; }
 .task-row .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; margin-top: 7px; background: var(--ink-3); }
 .task-row.urgent .dot { background: var(--rose); }
+
+/* Pregnancy care */
+.preg-week { width: 78px; height: 78px; border-radius: 50%; background: var(--clay-soft); color: #9a4b1c; display: grid; place-items: center; align-content: center; flex: none; }
+.preg-week strong { font-size: 1.7rem; line-height: 1; font-family: var(--serif); }
+.preg-week span { font-size: 0.72rem; }
+.preg-bar { height: 8px; border-radius: 99px; background: var(--line); margin-top: 8px; overflow: hidden; }
+.preg-bar span { display: block; height: 100%; background: var(--clay); border-radius: 99px; }
+.preg-step { display: flex; gap: 10px; align-items: flex-start; }
+.preg-step > svg { flex: none; margin-top: 2px; color: var(--ink-3); }
+.preg-step.done > svg { color: var(--green); }
+.preg-step.due > svg { color: var(--sun); }
+.preg-step.missed > svg { color: var(--rose); }
+
+/* Easy mode: bigger text and buttons, stronger contrast (account menu → "Bigger text & read aloud") */
+html.easy { font-size: 118%; }
+html.easy body { --ink-2: var(--ink); --ink-3: #4a5856; }
+html.easy .muted, html.easy .tiny { color: var(--ink-2); }
+html.easy .tiny { font-size: 0.86rem; }
+html.easy .small { font-size: 0.98rem; }
+html.easy .btn { min-height: 50px; font-size: 1.02rem; padding-left: 20px; padding-right: 20px; }
+html.easy .btn.sm { min-height: 44px; }
+html.easy .input, html.easy .select, html.easy .textarea { font-size: 1.05rem; min-height: 50px; }
+html.easy .tab, html.easy .nav-link { font-size: 1rem; }
+html.easy .page-title { font-size: 2rem; }
+.listen-btn { gap: 6px; }

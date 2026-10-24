@@ -33,7 +33,7 @@ const ESSENTIAL = ['Paracetamol', 'ORS', 'Amoxicillin', 'Azithromycin', 'Metform
 
 module.exports = function registerOps(app, x) {
   const { auth, role, db, store, notify, audit, broadcast, touch, touchFacility, nowIso, istDay, clean, geo, catalog, normDrug,
-    patientById, patientPoint, facilityName, patientOwnerUserIds, govScope, wellness, planProgress, userById } = x;
+    patientById, patientPoint, facilityName, patientOwnerUserIds, govScope, wellness, planProgress, userById, pregnancyPlan, activePregnancy } = x;
 
   const exact = (o) => (o && geo.validCoord(o.lat, o.lng) ? { lat: o.lat, lng: o.lng } : null);
   const patientExact = (p) => exact(p) || (p?.currentLocation && Date.now() - Date.parse(p.currentLocation.at) < 7 * 86400000 ? exact(p.currentLocation) : null);
@@ -205,6 +205,16 @@ module.exports = function registerOps(app, x) {
         const c = wellness.vaccineCounts(p, today);
         if (c && (c.overdue || c.due) && c.next) tasks.push({ kind: 'vaccine', urgent: Boolean(c.overdue), patientId: p.id, name: p.name, text: `${c.next.name} ${c.overdue ? 'is overdue' : 'is due'}${c.next.dueOn ? ` (due ${c.next.dueOn})` : ''}` });
       }
+    }
+    for (const p of ours) {
+      const pg = activePregnancy?.(p.id);
+      const pl = pg && pregnancyPlan(pg);
+      if (!pl) continue;
+      const missed = pl.anc.filter((a) => a.status === 'missed');
+      const due = pl.anc.find((a) => a.status === 'due');
+      if (due) tasks.push({ kind: 'pregnancy', urgent: Date.parse(due.dueBy) - Date.now() < 7 * 86400000, patientId: p.id, name: p.name, text: `Week ${pl.week} of pregnancy — ${due.label.toLowerCase()} due by ${due.dueBy}` });
+      else if (missed.length) tasks.push({ kind: 'pregnancy', urgent: true, patientId: p.id, name: p.name, text: `Week ${pl.week} of pregnancy — check-up ${missed.map((m) => m.n).join(', ')} was missed; please get her checked` });
+      if (pl.daysToEdd <= 14 && pl.daysToEdd >= -7) tasks.push({ kind: 'pregnancy', urgent: true, patientId: p.id, name: p.name, text: `Due date ${pl.edd} — confirm the hospital for delivery and that 102 is saved` });
     }
     for (const pl of d.carePlans || []) {
       if (pl.status !== 'active' || !ids.has(pl.patientId)) continue;

@@ -2,7 +2,7 @@ import { ClipboardList } from 'lucide-react';
 import { cx } from '../../components/ui';
 import { useLive } from '../../live';
 
-const KIND = { vaccine: 'Vaccine', readings: 'BP / sugar', recovery: 'Recovery' };
+const KIND = { vaccine: 'Vaccine', readings: 'BP / sugar', recovery: 'Recovery', pregnancy: 'Pregnancy' };
 
 // Today's to-do list for people this E-Clinic looks after: children due a vaccine, care-plan patients who
 // haven't sent readings, people mid-course who haven't checked in. Urgent ones first.

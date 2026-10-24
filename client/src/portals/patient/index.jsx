@@ -1,7 +1,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Home as HomeIcon, HeartPulse, Video, FolderHeart, Pill, ShieldCheck, Users, IdCard, Settings as SettingsIcon, ChevronDown, Check, UserPlus, Activity, Coins, Dna, ScanLine, UserRoundPen, MapPin, Stethoscope, FileUp, FlaskConical, CalendarClock, Repeat, Gauge, Syringe } from 'lucide-react';
-import { Gift, Siren, LayoutGrid, BadgeIndianRupee } from 'lucide-react'; // Invite & earn · SOS · More · Ayushman
+import { Gift, Siren, LayoutGrid, BadgeIndianRupee, Baby } from 'lucide-react'; // Invite & earn · SOS · More · Ayushman · Pregnancy
 import PortalLayout from '../../components/PortalLayout';
 import { pageLoader } from '../../prefetch';
 import { Avatar, Button, Modal, cx, useToast } from '../../components/ui';
@@ -40,6 +40,7 @@ const Tracker = page(() => import('./Tracker'));
 const Vaccines = page(() => import('./Vaccines'));
 const SosPage = page(() => import('./Sos'));
 const Ayushman = page(() => import('./Ayushman'));
+const Pregnancy = page(() => import('./Pregnancy'));
 
 // Keyed by id so state from one consult never carries into the next.
 function ConsultRoomById() {
@@ -49,6 +50,13 @@ function ConsultRoomById() {
 
 export default function PatientApp() {
   usePrefetch();
+  // Signed up or in from someone's emergency-circle link: take them back to it once.
+  const goTo = useNavigate();
+  useEffect(() => {
+    let t = null;
+    try { t = localStorage.getItem('oc_circle_invite'); localStorage.removeItem('oc_circle_invite'); } catch { /* storage blocked */ }
+    if (t && /^[A-Za-z0-9_-]{10,60}$/.test(t)) goTo(`/circle/${t}`);
+  }, [goTo]);
   const [profileKey, setProfileKey] = useState(() => session.profile || 'self');
   const home = useLive('/patient/home', HOME_TOPICS, [profileKey]);
   // Once Home is showing, quietly load the screens people open most, so even their first tap is instant.
@@ -112,6 +120,7 @@ export default function PatientApp() {
     { to: '/patient/records', label: 'My reports & records', icon: FolderHeart, group: 'My health', groupIcon: Activity },
     { to: '/patient/tracker', label: 'BP, sugar & weight', icon: Gauge, group: 'My health' },
     { to: '/patient/vaccines', label: 'Vaccinations', icon: Syringe, group: 'My health' },
+    ...(home.data?.patient && home.data.patient.gender !== 'Male' ? [{ to: '/patient/pregnancy', label: 'Pregnancy care', icon: Baby, group: 'My health' }] : []),
     { to: '/patient/twin', label: 'My health trends', icon: Activity, group: 'My health' },
     { to: '/patient/family', label: 'Family members', icon: Users, group: 'Family', groupIcon: Users },
     { to: '/patient/family-graph', label: 'Family health history', icon: Dna, group: 'Family' },
@@ -156,6 +165,7 @@ export default function PatientApp() {
           <Route path="emergency" element={<EmergencyCard />} />
           <Route path="sos" element={<SosPage />} />
           <Route path="ayushman" element={<Ayushman />} />
+          <Route path="pregnancy" element={<Pregnancy />} />
           <Route path="settings" element={<Settings />} />
           <Route path="complete-profile" element={<CompleteProfile />} />
           <Route path="tests" element={<Tests />} />

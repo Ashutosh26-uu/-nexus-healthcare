@@ -8,6 +8,7 @@ import { PageHeader } from '../../components/PortalLayout';
 import AadhaarVerify from '../../components/AadhaarVerify';
 import { usePatient, firstName, splitList, BLOOD_GROUPS, PageSkeleton } from './shared';
 import { LANGUAGES as APP_LANGUAGES, useI18n, codeForName } from '../../i18n';
+import { useEasyMode } from '../../components/easyMode';
 
 const NOTIF_KEY = 'oc_patient_notifs';
 const NOTIFS = [
@@ -180,6 +181,7 @@ export default function Settings() {
       </form>
 
       <div className="grid two">
+        <EasyCard />
         <Card title={<h3 className="row" style={{ gap: 8 }}><Bell size={18} /> Notifications <PreviewBadge /></h3>}>
           <p className="tiny muted mt-0">These choices are only remembered on this device for now — they don&apos;t change what we send yet. You&apos;ll still get every update in the app.</p>
           <div className="list">
@@ -244,5 +246,15 @@ export default function Settings() {
         </div>
       </Modal>
     </div>
+  );
+}
+
+// Bigger text, bigger buttons and a "Listen" button on every page — on this phone only.
+function EasyCard() {
+  const [easy, toggle] = useEasyMode();
+  return (
+    <Card title={<h3 className="row" style={{ gap: 8 }}><Languages size={18} /> Easier to read</h3>}>
+      <Switch checked={easy} onChange={toggle} label="Bigger text, bigger buttons, and a Listen button that reads each page aloud" />
+    </Card>
   );
 }

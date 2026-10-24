@@ -54,7 +54,7 @@ export default function Login() {
     // statement — those routes check the role again). Internal paths only.
     const from = location.state?.from;
     const ok = typeof from === 'string' && /^\/(?!\/)/.test(from)
-      && (from.startsWith(ROLE_HOME[user.role]) || /^\/(rx|lab-report|lab-label|invoice|statement|bill|s\/[pv])\//.test(from) || from === '/testimonials');
+      && (from.startsWith(ROLE_HOME[user.role]) || /^\/(rx|lab-report|lab-label|invoice|statement|bill|circle|s\/[pv])\//.test(from) || from === '/testimonials');
     navigate(ok ? from : ROLE_HOME[user.role], { replace: true });
   }, [user, navigate, location.state]);
 

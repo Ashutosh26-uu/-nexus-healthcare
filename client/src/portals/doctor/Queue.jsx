@@ -8,6 +8,7 @@ import { Avatar, Button, Card, Empty, Loading, Stat, TriageBadge, StatusBadge, t
 import { useDoctorHome } from './context';
 import { VitalsChips, routeInfo, greeting, shortName, useNow } from './shared';
 import { getLocale } from '../../i18n';
+import MissedFollowUps from './MissedFollowUps';
 
 export default function Queue() {
   const home = useDoctorHome();
@@ -51,6 +52,7 @@ export default function Queue() {
       <ReportsToReview home={home} />
       <TransfersIn home={home} />
       <ClinicVisits home={home} />
+      <MissedFollowUps />
 
       {!doctor.online && (
         <div className="callout">

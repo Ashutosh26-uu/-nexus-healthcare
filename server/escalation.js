@@ -17,7 +17,7 @@ const MINUTE_MS = process.env.NODE_ENV !== 'production' && Number(process.env.ES
 
 module.exports = function registerEscalation(app, x) {
   const { auth, role, db, store, notify, audit, broadcast, touch, nowIso, doctorFor, handledDoctorIds, patientOwnerUserIds,
-    findUserByPhone, labStaffIds, facilityName, userById } = x;
+    findUserByPhone, labStaffIds, facilityName, userById, circleUserIds = () => [] } = x;
 
   const acked = (o) => Boolean(o.criticalAckAt || o.doctorNote);
   const criticalLines = (o) => (o.results || []).filter((r) => r.flag === 'critical').map((r) => `${r.name} ${r.value} ${r.unit || ''}`.trim()).join(', ');
@@ -38,7 +38,7 @@ module.exports = function registerEscalation(app, x) {
         : `${p.name}'s critical result (${what}) has no ordering doctor. Please phone the patient.`, 'alert'));
       if (lab.length) sent.push('lab');
     } else if (level === 3) {
-      const family = new Set(patientOwnerUserIds(p));
+      const family = new Set([...patientOwnerUserIds(p), ...circleUserIds(p)]);
       for (const c of p.emergencyContacts || []) { if (c.relation !== 'Mobile' && c.phone) { const u = findUserByPhone(c.phone); if (u) family.add(u.id); } }
       family.forEach((u) => notify(u, '⚠️ A test result needs a doctor today', `${p.name?.split(' ')[0] || 'Your'}'s lab report has a result that needs urgent attention. Please see a doctor today — book one in the app or go to the nearest hospital. If they feel very unwell, call 108.`, 'alert'));
       if (family.size) sent.push('patient & family');

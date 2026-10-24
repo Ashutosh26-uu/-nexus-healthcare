@@ -30,6 +30,7 @@ const PublicLabs = lazy(() => import('./pages/public/Labs'));
 const PassportLanding = lazy(() => import('./pages/ScanLink').then((m) => ({ default: m.PassportLanding })));
 const VerifyDocument = lazy(() => import('./pages/ScanLink').then((m) => ({ default: m.VerifyDocument })));
 const SosFamily = lazy(() => import('./pages/SosFamily'));
+const CircleInvite = lazy(() => import('./pages/CircleInvite'));
 const VisitLanding = lazy(() => import('./pages/ScanLink').then((m) => ({ default: m.VisitLanding })));
 const PrivacyPolicy = lazy(() => import('./pages/Policies').then((m) => ({ default: m.PrivacyPolicy })));
 const CookiePolicy = lazy(() => import('./pages/Policies').then((m) => ({ default: m.CookiePolicy })));
@@ -152,6 +153,7 @@ function AppRoutes() {
         <Route path="/s/p/:id" element={<Lazy><PassportLanding /></Lazy>} />
         <Route path="/v/:kind/:token" element={<Lazy><VerifyDocument /></Lazy>} />
         <Route path="/sos/:token" element={<Lazy><SosFamily /></Lazy>} />
+        <Route path="/circle/:token" element={<Lazy><CircleInvite /></Lazy>} />
         <Route path="/s/v/:id/:code" element={<Lazy><VisitLanding /></Lazy>} />
         <Route path="/privacy" element={<Lazy><PrivacyPolicy /></Lazy>} />
         <Route path="/cookies" element={<Lazy><CookiePolicy /></Lazy>} />

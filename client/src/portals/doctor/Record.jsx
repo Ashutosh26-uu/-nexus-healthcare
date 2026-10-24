@@ -109,6 +109,7 @@ export function CriticalCard({ p }) {
           <AllergyList allergies={p.allergies} />
         </div>
       </div>
+      {p.gender !== 'Male' && <PregnancyLine patientId={p.id} />}
       <Section icon={HeartPulse} title="Conditions"><TagList items={p.conditions} empty="None recorded" /></Section>
       <Section icon={Pill} title="Current medicines"><TagList items={p.currentMeds} empty="None recorded" /></Section>
       {p.emergencyContacts?.length > 0 && (
@@ -116,6 +117,22 @@ export function CriticalCard({ p }) {
           {p.emergencyContacts.map((c) => <div key={c.phone} className="small">{c.name} <span className="muted">({c.relation})</span> · <span className="mono" translate="no" dir="ltr">{c.phone}</span></div>)}
         </Section>
       )}
+    </div>
+  );
+}
+
+// Pregnant patients: week, due date and check-ups at a glance (it changes which medicines are safe).
+function PregnancyLine({ patientId }) {
+  const { data } = useLive(`/doctor/patient/${encodeURIComponent(patientId)}/pregnancy`, ['patients']);
+  const pg = data?.pregnancy;
+  if (!pg) return null;
+  const pl = pg.plan;
+  const last = pg.visits[pg.visits.length - 1];
+  return (
+    <div className="callout clay small">
+      <AlertTriangle />
+      <span><strong>Pregnant — week {pl.week}</strong> · due {pg.edd} · check-ups {pl.anc.map((a) => (a.status === 'done' ? '✓' : a.status === 'missed' ? '✗' : '·')).join(' ')}
+        {last ? ` · last: ${last.date}${last.bp ? ` BP ${last.bp}` : ''}${last.hb ? ` Hb ${last.hb}` : ''}` : ''}. Check medicines are safe in pregnancy.</span>
     </div>
   );
 }
