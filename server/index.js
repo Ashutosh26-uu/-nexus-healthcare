@@ -96,6 +96,13 @@ const nowIso = () => new Date().toISOString();
 const APP_TZ = process.env.APP_TZ || 'Asia/Kolkata';
 const istDay = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: APP_TZ }); // YYYY-MM-DD in the network's time zone
 const ageOf = (dob) => (dob ? Math.floor((Date.now() - new Date(dob)) / (365.25 * 86400000)) : null);
+// Only an age is known: born the day before today's date (IST), that many years ago — so the age shows right all
+// year (ageOf counts 365.25-day years) and a baby (age 0) isn't given a birthday in the future.
+function dobFromAge(age) {
+  const y = new Date(Date.parse(`${istDay(nowIso())}T00:00:00Z`) - 86400000);
+  y.setUTCFullYear(y.getUTCFullYear() - age);
+  return y.toISOString().slice(0, 10);
+}
 // tokenVersion is session-revocation state — never part of what a screen (or the admin list) sees.
 // The two-step login secret and backup-code hashes never leave the server — screens only learn whether it's on.
 // Roles that can see many people's data must use two-step login; the client forces setup when this is true.
@@ -277,6 +284,14 @@ function notificationsFor(userId, limit) {
 const NOTIF_PER_USER = 200;
 const NOTIF_TRIM_AT = 220;
 const notifCounts = { list: null, map: new Map() };
+// Routine updates a patient can switch off in Settings (consult reminders, medicine reminders, order updates,
+// lab results, area health alerts). Safety messages — SOS, critical results, security, payments, consent
+// requests — always go through notify() directly and can't be turned off.
+const NOTIFY_PREFS = ['consults', 'medicines', 'orders', 'reports', 'alerts'];
+function notifyPref(key, userId, ...rest) {
+  if (userId && userById(userId)?.notifyPrefs?.[key] === false) return;
+  notify(userId, ...rest);
+}
 function notify(userId, title, body, kind) {
   if (!userId) return;
   touch(userId);
@@ -1588,7 +1603,7 @@ app.put('/api/patient/profile/complete', auth, role('patient', 'caregiver'), (re
     ...(b.lat != null && geo.validCoord(lat, lng) ? { lat: round3(lat), lng: round3(lng), locationSource: 'device' } : {}),
     profileComplete: true, profileCompletedAt: nowIso(),
   });
-  if (!p.dob || p.dobApprox) { p.dob = `${new Date().getFullYear() - age}-07-01`; p.dobApprox = true; }
+  if (!p.dob || p.dobApprox) { p.dob = dobFromAge(age); p.dobApprox = true; }
   if (aadhaar) p.aadhaarLast4 = aadhaar.slice(-4);
   // A different number typed later means the QR-verified badge no longer describes what's on file.
   if (aadhaar && p.aadhaarVerification && p.aadhaarVerification.last4 !== p.aadhaarLast4) { delete p.aadhaarVerification; delete p.aadhaarRefHash; }
@@ -1810,7 +1825,7 @@ app.post('/api/patient/records/upload', auth, role('patient', 'caregiver'), asyn
   const re = /(hba1c|haemoglobin|hemoglobin|glucose|sugar|cholesterol|tsh|creatinine|platelets?)\D{0,12}(\d+(\.\d+)?)/gi;
   let m;
   while ((m = re.exec(text))) found.push(`${m[1]}: ${m[2]}`);
-  const rec = { id: store.id('rec'), patientId: p.id, title: clean(title, 120) || clean(fileName, 120) || 'Uploaded report', date: /^\d{4}-\d{2}-\d{2}/.test(String(date || '')) ? String(date).slice(0, 10) : nowIso().slice(0, 10), fileName: clean(fileName, 160), summary: found.length ? `Extracted: ${found.join(', ')}` : 'Saved to your records.', extracted: found, uploadedAt: nowIso(), fileId: fileId || null, fileUrl: fileId ? `/api/files/${fileId}` : null };
+  const rec = { id: store.id('rec'), patientId: p.id, title: clean(title, 120) || clean(fileName, 120) || 'Uploaded report', date: /^\d{4}-\d{2}-\d{2}/.test(String(date || '')) ? String(date).slice(0, 10) : istDay(nowIso()), fileName: clean(fileName, 160), summary: found.length ? `Extracted: ${found.join(', ')}` : 'Saved to your records.', extracted: found, uploadedAt: nowIso(), fileId: fileId || null, fileUrl: fileId ? `/api/files/${fileId}` : null };
   db().records.push(rec);
   audit(req.user, 'uploaded_record', p.id, 'upload', rec.title);
   store.save();
@@ -1867,7 +1882,7 @@ app.post('/api/consults', auth, role('kiosk_operator'), (req, res) => {
   };
   d.consults.push(consult);
   // Consult implies time-limited consent for the treating doctor (patient approves at booking).
-  d.consents.push({ id: store.id('cst'), patientId: p.id, granteeType: 'doctor', granteeId: doctor.id, granteeName: doctor.name, scope: ['history', 'prescriptions', 'labs', 'allergies'], purpose: 'Kiosk teleconsult (patient present at kiosk)', start: nowIso(), expiry: new Date(Date.now() + 2 * 86400000).toISOString(), status: 'active' });
+  d.consents.push({ id: store.id('cst'), patientId: p.id, granteeType: 'doctor', granteeId: doctor.id, granteeName: doctor.name, scope: ['history', 'prescriptions', 'labs', 'allergies'], purpose: 'Kiosk teleconsult (patient present at kiosk)', start: nowIso(), expiry: new Date(Math.max(Date.now(), scheduledAt ? Date.parse(scheduledAt) : 0) + 2 * 86400000).toISOString(), status: 'active' });
   doctorInbox(d, doctor).forEach((uid) => notify(uid, type === 'scheduled' ? 'New booking' : 'New patient in your queue', `${p.name} · ${consult.triage.level.replace('_', ' ')} — open the visit for symptoms`));
   audit(req.user, 'booked_consult', p.id, 'consult', consult.id);
   store.save();
@@ -2045,8 +2060,8 @@ app.post('/api/consults/:id/cancel', auth, (req, res) => {
   // for them, so no refund. A cancellation by the doctor / clinic side is always refunded in full.
   let refund = 0;
   if (pay?.status === 'created') pay.status = 'void';
-  else if (pay?.status === 'paid' && !c.startedAt) {
-    if (!patientSide || cancelRefundable(c)) { pay.status = 'refund_pending'; pay.refundReason = 'Booking cancelled before the visit'; refund = pay.amount; }
+  else if (pay?.status === 'paid' && (!patientSide || !c.startedAt)) {
+    if (!patientSide || cancelRefundable(c)) { pay.status = 'refund_pending'; pay.refundReason = c.startedAt ? 'Cancelled by the doctor after starting' : 'Booking cancelled before the visit'; refund = pay.amount; }
     else pay.refundReason = 'Cancelled within 2 hours of the visit — no refund';
   }
   if (patientSide && wasBooked) {
@@ -2087,6 +2102,12 @@ app.post('/api/consults/:id/reschedule', auth, role('patient', 'caregiver'), (re
   c.scheduledAt = at; c.rescheduled = (c.rescheduled || 0) + 1; c.rescheduledAt = nowIso();
   c.runningLate = null; // a delay announced for the old time doesn't apply to the new one
   c.reminderSentAt = null; // let reminder workflows remind about the new time
+  // The access the booking gave the doctor ran to the old time + 3 days: carry it to the new time, or on the
+  // day the doctor couldn't see allergies or write the prescription.
+  const until = new Date(t + 3 * 86400000).toISOString();
+  for (const cs of d.consents) {
+    if (cs.patientId === c.patientId && cs.granteeId === c.doctorId && cs.status === 'active' && cs.expiry && cs.expiry < until) cs.expiry = until;
+  }
   const doc = d.doctors.find((x) => x.id === c.doctorId);
   const p = d.patients.find((x) => x.id === c.patientId);
   if (doc) doctorInbox(d, doc).forEach((u) => notify(u, 'Visit moved', `${p?.name || 'A patient'} moved their visit from ${istWhenShort(from)} to ${istWhenShort(at)}.`));
@@ -2454,6 +2475,32 @@ app.get('/api/patient/medicine-orders', auth, role('patient', 'caregiver'), (req
   res.json(db().medOrders.filter((o) => o.patientId === p.id).slice(0, 30).map(enrichMedOrder));
 });
 
+const SYSTEM_ACTOR = { id: 'system', name: 'Sehatra', role: 'system' };
+// Take `need` units of a medicine off a store's shelf. A brand / Jan Aushadhi line is stocked under its generic
+// name — match either. Every batch, earliest expiry first (first-expiry-first-out). Returns the first batch used.
+function takeStock(d, fid, drug, need) {
+  const generic = normDrug(catalog.priceOf(drug)?.name || '');
+  const rows = d.inventory.filter((i) => i.facilityId === fid && i.qty > 0 && (normDrug(i.drug) === normDrug(drug) || (generic && normDrug(i.drug) === generic)))
+    .sort((a, b) => String(a.expiry || '9999').localeCompare(String(b.expiry || '9999')));
+  let first = null;
+  for (const inv of rows) {
+    if (need <= 0) break;
+    const take = Math.min(inv.qty, need);
+    inv.qty -= take; need -= take; inv.updatedAt = nowIso();
+    first = first || inv;
+  }
+  return first;
+}
+// A cancelled / declined order's cash advance goes to the refund queue (finance sees it under refunds pending);
+// the Sehatra-credit part comes back as credit through credits.sweep.
+function refundOrderAdvance(d, o, reason) {
+  const pay = o.paymentId && d.payments.find((x) => x.id === o.paymentId);
+  if (!pay || pay.status !== 'paid' || !(pay.amount > 0)) return;
+  pay.status = 'refund_pending'; pay.refundReason = reason;
+  audit(SYSTEM_ACTOR, 'payment_refund_due', pay.patientId || o.patientId, 'payment', `${pay.id} · ₹${pay.amount} · ${reason}`);
+  automation.emit('payment.refund_due', { paymentId: pay.id, purpose: pay.purpose, amount: pay.amount, method: pay.method, gatewayPaymentId: pay.gatewayPaymentId || null, reason, patientId: pay.patientId || o.patientId || null });
+}
+
 app.post('/api/medicine-orders/:id/cancel', auth, role('patient', 'caregiver'), (req, res) => {
   const d = db();
   const o = d.medOrders.find((x) => x.id === req.params.id);
@@ -2464,6 +2511,7 @@ app.post('/api/medicine-orders/:id/cancel', auth, role('patient', 'caregiver'), 
   const opay = o.paymentId && d.payments.find((x) => x.id === o.paymentId);
   if (opay?.status === 'created') opay.status = 'void';
   credits.sweep(d, req.user);
+  refundOrderAdvance(d, o, 'Medicine order cancelled by the patient');
   (o.pharmacyId ? [o.pharmacyId] : o.candidates).forEach((fid) => pharmacistsOf(d, fid).forEach((u) => touch(u.id)));
   store.save();
   broadcast('pharmacy', 'medorders');
@@ -2486,6 +2534,7 @@ app.post('/api/medicine-orders/:id/respond', auth, role('pharmacist'), (req, res
     o.status = 'declined'; o.declinedAt = nowIso(); o.declineReason = clean(req.body?.reason, 160) || 'Not available right now';
     if (o.advancePaid) o.refundDue = o.advancePaid;
     credits.sweep(d, req.user); // the Sehatra-credit part of the advance goes back as credit
+    refundOrderAdvance(d, o, `Medicine order declined: ${o.declineReason}`);
     patientOwnerUserIds(p).forEach((u) => notify(u, 'Order not accepted', `${o.pharmacyId ? f.name : 'Nearby chemists'} couldn't take order ${o.orderNo}: ${o.declineReason}.${o.advancePaid ? ` Your advance of ₹${o.advancePaid} will be refunded.` : ''} Try another chemist.`));
   } else {
     if (!o.pharmacyId) {
@@ -2531,18 +2580,8 @@ app.post('/api/medicine-orders/:id/status', auth, role('pharmacist'), (req, res)
   const p = d.patients.find((x) => x.id === o.patientId);
   if (next === 'packed') {
     for (const it of o.items) {
-      // A brand / Jan Aushadhi line is stocked under its generic name — match either, and keep batch/expiry for the invoice.
-      // Every batch of the medicine, earliest expiry first (first-expiry-first-out) until the ordered qty is covered.
-      const generic = normDrug(catalog.priceOf(it.drug)?.name || '');
-      const rows = d.inventory.filter((i) => i.facilityId === fid && i.qty > 0 && (normDrug(i.drug) === normDrug(it.drug) || (generic && normDrug(i.drug) === generic)))
-        .sort((a, b) => String(a.expiry || '9999').localeCompare(String(b.expiry || '9999')));
-      let need = it.qty;
-      for (const inv of rows) {
-        if (need <= 0) break;
-        const take = Math.min(inv.qty, need);
-        inv.qty -= take; need -= take; inv.updatedAt = nowIso();
-        if (!it.batch) { it.batch = inv.batch; it.expiry = inv.expiry; } // the invoice shows the first batch used
-      }
+      const first = takeStock(d, fid, it.drug, it.qty);
+      if (first && !it.batch) { it.batch = first.batch; it.expiry = first.expiry; } // the invoice shows the first batch used
     }
     if (o.fulfilment === 'delivery' && o.deliveryBy === 'nexus') {
       const rider = pickRider(d, f.district);
@@ -2554,7 +2593,7 @@ app.post('/api/medicine-orders/:id/status', auth, role('pharmacist'), (req, res)
   o.status = next; o[`${next}At`] = nowIso();
   if (['collected', 'delivered'].includes(next)) o.balancePaid = o.balance;
   const msg = { packed: o.fulfilment === 'pickup' ? `Packed and ready at ${f.name}. Show code ${o.otp} at the counter.` : 'Packed — on its way soon.', out_for_delivery: `On the way from ${f.name}. Share code ${o.otp} with the delivery person.`, delivered: 'Delivered. Get well soon!', collected: 'Collected. Get well soon!' }[next];
-  patientOwnerUserIds(p).forEach((u) => notify(u, `Medicines · ${o.orderNo}`, msg));
+  patientOwnerUserIds(p).forEach((u) => notifyPref('orders', u, `Medicines · ${o.orderNo}`, msg));
   automation.emit(next === 'delivered' ? 'medicine_order.delivered' : 'medicine_order.updated', { orderId: o.id, orderNo: o.orderNo, patientId: o.patientId, status: next, pharmacyId: fid, pharmacyName: f.name, fulfilment: o.fulfilment, deliveryBy: o.deliveryBy || null, by: 'store' }, { contact: autoContact(p) });
   store.save();
   broadcast('pharmacy', 'medorders', 'dispatch');
@@ -2631,7 +2670,7 @@ function sweepRefills(now = Date.now()) {
     if (!p) continue;
     rx.refill = { notifiedFor: info.runOutDay, at: new Date(now).toISOString() };
     const docName = d.doctors.find((x) => x.id === rx.doctorId)?.name;
-    patientOwnerUserIds(p).forEach((u) => notify(u, 'Running low on medicines', `Your ${refillLabel(d, rx)}${docName ? ` from ${docName}` : ''} ${left >= 0 ? 'run out' : 'ran out'} on ${runOutText(info.runOut)} — reorder?`, 'refill'));
+    patientOwnerUserIds(p).forEach((u) => notifyPref('medicines', u, 'Running low on medicines', `Your ${refillLabel(d, rx)}${docName ? ` from ${docName}` : ''} ${left >= 0 ? 'run out' : 'ran out'} on ${runOutText(info.runOut)} — reorder?`, 'refill'));
     sent += 1;
   }
   if (sent) { store.save(); broadcast('notifications', 'prescriptions'); }
@@ -3499,8 +3538,12 @@ function sweepCarePlans(now = Date.now()) {
       }
     }
     if (pl.status !== 'active') continue;
-    // Consent gone (patient revoked it): the plan can't run without it.
+    // Consent gone. Only a patient revoking it ends the plan; access that simply ran out (a free plan's 45 days
+    // with no doctor review in between) is renewed — the patient agreed to the plan and hasn't left it.
     if (!hasConsent(p.id, [doc.id], 'history')) {
+      const revoked = d.consents.some((c) => c.patientId === p.id && c.granteeId === doc.id && c.status === 'revoked' && c.revokedAt
+        && Date.parse(c.revokedAt) >= Date.parse(pl.startedAt || pl.createdAt));
+      if (!revoked) { grantPlanAccess(d, pl, planAccessUntil(pl)); changed = true; continue; }
       Object.assign(pl, { status: 'ended', endedAt: nowIso(), endReason: 'Consent withdrawn' }); changed = true;
       doctorInbox(d, doc).forEach((u) => notify(u, `${p.name}'s care plan ended`, 'The patient withdrew access to their records.'));
       continue;
@@ -3635,7 +3678,10 @@ app.get('/api/consults/:id/pass', auth, role('patient', 'caregiver'), (req, res)
 
 app.post('/api/visits/check-in', auth, role('doctor', 'hospital_admin', 'kiosk_operator'), checkInLimiter, (req, res) => {
   const d = db();
-  let candidates = d.consults.filter((c) => c.mode === 'in_person' && c.paidAt && c.visitSecret && ['scheduled', 'queued'].includes(c.status) && !c.checkedInAt);
+  // Only visits for today (IST): an old missed pass, or next week's, can't put someone in today's queue.
+  const todayIst = istDay(nowIso());
+  let candidates = d.consults.filter((c) => c.mode === 'in_person' && c.paidAt && c.visitSecret && ['scheduled', 'queued'].includes(c.status) && !c.checkedInAt
+    && (!c.scheduledAt || istDay(c.scheduledAt) === todayIst));
   if (req.user.role === 'doctor') { const ids = handledDoctorIds(req.user); candidates = candidates.filter((c) => ids.includes(c.doctorId)); }
   else candidates = candidates.filter((c) => c.location?.facilityId === req.user.facilityId);
   let code = String(req.body?.code || '').replace(/\D/g, '');
@@ -5141,7 +5187,7 @@ app.post('/api/doctor/walkin-patient', auth, role('doctor'), (req, res) => {
     return res.status(409).json({ error: 'This mobile number already has a Health Passport — search for it instead.' });
   }
   const p = {
-    id: makePassportId(), userId: null, name, dob: `${new Date().getFullYear() - age}-07-01`, dobApprox: true,
+    id: makePassportId(), userId: null, name, dob: dobFromAge(age), dobApprox: true,
     gender: ['Female', 'Male', 'Other'].includes(b.gender) ? b.gender : 'Prefer not to say', language: clean(b.language, 40) || 'Hindi', bloodGroup: 'Unknown',
     allergies: cleanList(b.allergies), conditions: [], currentMeds: [], emergencyContacts: phone ? [{ name, relation: 'Mobile', phone }] : [],
     abha: '', pincode: '', district: doc.district || '', state: doc.state || '', vaccinations: [], createdAt: nowIso(), createdBy: `${doc.name} (in clinic)`,
@@ -5695,7 +5741,7 @@ app.post('/api/hospital/reception/patients', auth, role('hospital_admin'), (req,
   if (b.phone && !phone) return res.status(400).json({ error: 'Please check the mobile number.' });
   if (phone && d.patients.some((p) => samePhone(patientPhone(d, p), phone))) return res.status(409).json({ error: 'This mobile number already has a Health Passport — search for it instead.' });
   const p = {
-    id: makePassportId(), userId: null, name, dob: `${new Date().getFullYear() - age}-07-01`, dobApprox: true,
+    id: makePassportId(), userId: null, name, dob: dobFromAge(age), dobApprox: true,
     gender: ['Female', 'Male', 'Other'].includes(b.gender) ? b.gender : 'Prefer not to say', language: clean(b.language, 40) || 'Hindi', bloodGroup: 'Unknown',
     allergies: [], conditions: [], currentMeds: [], emergencyContacts: phone ? [{ name, relation: 'Mobile', phone }] : [],
     abha: '', pincode: f.pincode || '', district: f.district || '', state: f.state || '', vaccinations: [], createdAt: nowIso(), registeredAt: f.name, createdBy: `${f.name} reception`,
@@ -5910,7 +5956,8 @@ app.get('/api/hospital/reports', auth, role('hospital_admin'), (req, res) => {
     const r = row(c.doctorId);
     const inPerson = c.mode === 'in_person';
     // A visit happens on the day the patient arrived (or the video consult started / was booked for).
-    const visitAt = inPerson ? c.checkedInAt : (c.startedAt || c.completedAt);
+    // A booked visit the doctor started straight from "scheduled" (no desk check-in) still happened.
+    const visitAt = inPerson ? (c.checkedInAt || c.startedAt || c.completedAt) : (c.startedAt || c.completedAt);
     if (visitAt && inRange(visitAt) && c.status !== 'cancelled') {
       const dr = dayRow(istDay(visitAt));
       r.visits += 1; dr.visits += 1;
@@ -5924,7 +5971,7 @@ app.get('/api/hospital/reports', auth, role('hospital_admin'), (req, res) => {
     const pay = paidFor.get(c.id);
     if (pay && inRange(pay.paidAt)) { r.revenue += pay.amount; r.revenueOnline += pay.amount; dayRow(istDay(pay.paidAt)).revenue += pay.amount; }
     // No-show: a paid in-person booking for a day that has ended, never checked in.
-    if (inPerson && !c.walkIn && c.paidAt && c.scheduledAt && !c.checkedInAt && c.status !== 'cancelled' && inRange(c.scheduledAt) && istDay(c.scheduledAt) < today) { r.noShows += 1; dayRow(istDay(c.scheduledAt)).noShows += 1; }
+    if (inPerson && !c.walkIn && c.paidAt && c.scheduledAt && !c.checkedInAt && !c.startedAt && !['cancelled', 'completed', 'in_progress'].includes(c.status) && inRange(c.scheduledAt) && istDay(c.scheduledAt) < today) { r.noShows += 1; dayRow(istDay(c.scheduledAt)).noShows += 1; }
   }
   const doctors = [...rows.values()].filter((r) => r.visits || r.revenue || r.noShows)
     .map(({ waitSum, waitN, ...r }) => ({ ...r, revenue: catalog.round(r.revenue), revenueOnline: catalog.round(r.revenueOnline), revenueDesk: catalog.round(r.revenueDesk), avgWaitMin: waitN ? Math.round(waitSum / waitN / 60000) : null }))
@@ -6117,7 +6164,7 @@ app.post('/api/referrals/:id/:action', auth, role('hospital_admin'), (req, res) 
   r.note = clean(req.body?.note, 300) || undefined;
   if (action === 'accept') {
     const b = d.beds.find((x) => x.facilityId === r.toFacilityId && x.type === r.bedType);
-    if (b && b.occupied < b.total) { b.occupied += 1; b.updatedAt = nowIso(); }
+    if (b && b.occupied < b.total) { b.occupied += 1; b.updatedAt = nowIso(); r.bedTaken = true; } else r.bedTaken = false;
   }
   const doc = d.doctors.find((x) => x.id === r.fromDoctorId);
   notify(doc?.userId, `Referral ${r.status}`, `${facilityName(r.toFacilityId)} ${r.status} ${r.patientName}.`);
@@ -6263,7 +6310,7 @@ function approveLabReport(d, o, signedBy, user) {
     notify(doc?.userId, '🚨 Critical lab value', `${p.name}: ${results.filter((r) => r.flag === 'critical').map((r) => `${r.name} ${r.value} ${r.unit || ''}`).join(', ')}`, 'alert');
     patientOwnerUserIds(p).forEach((u) => notify(u, 'Important lab result', `One of your results needs attention. ${doc?.userId ? `${doc.name} has been sent this result too. ` : ''}Please see a doctor today — book one from the app if you haven't heard from them.`, 'alert'));
   } else {
-    patientOwnerUserIds(p).forEach((u) => notify(u, 'Lab report ready 📄', `Your ${o.tests.map((t) => t.name).join(', ')} report is ready in Tests & reports — view it online or download the PDF, with suggestions on what to do next.`));
+    patientOwnerUserIds(p).forEach((u) => notifyPref('reports', u, 'Lab report ready 📄', `Your ${o.tests.map((t) => t.name).join(', ')} report is ready in Tests & reports — view it online or download the PDF, with suggestions on what to do next.`));
     notify(doc?.userId, 'Lab report ready', `${p.name}: ${o.tests.map((t) => t.name).join(', ')}`);
   }
   // Anonymised feed → outbreak engine (test, result, pin, date only).
@@ -6679,10 +6726,7 @@ app.post('/api/prescriptions/:id/dispense', auth, role('pharmacist'), (req, res)
   if (!(NEXT[r.status] || []).includes(status)) return res.status(409).json({ error: status === 'delivered' ? 'Delivery is confirmed by the rider with the patient\'s code.' : 'That step isn\'t possible for this prescription right now.' });
   if (status === 'dispensed') {
     if (!r.stockTaken) {
-      for (const it of r.items) {
-        const inv = d.inventory.find((i) => i.facilityId === req.user.facilityId && i.drug.toLowerCase() === it.drug.toLowerCase());
-        if (inv) inv.qty = Math.max(0, inv.qty - catalog.unitsFor(it));
-      }
+      for (const it of r.items) takeStock(d, req.user.facilityId, it.drug, catalog.unitsFor(it));
       r.stockTaken = true;
     }
     r.partial = Boolean(partial);
@@ -6697,7 +6741,7 @@ app.post('/api/prescriptions/:id/dispense', auth, role('pharmacist'), (req, res)
     if (rider) notify(rider.id, 'New pickup', `${facilityName(r.pharmacyId)} → ${p.name}`);
   }
   const msg = { dispensed: 'Your medicines are packed and ready.', collected: 'Medicines collected. Get well soon!', out_for_delivery: 'Your medicines are on the way.', delivered: 'Your medicines have been delivered.' }[status];
-  patientOwnerUserIds(p).forEach((u) => notify(u, 'Medicine update', msg));
+  patientOwnerUserIds(p).forEach((u) => notifyPref('orders', u, 'Medicine update', msg));
   store.save();
   broadcast('prescriptions', 'pharmacy', 'dispatch');
   res.json(enrichRx(r));
@@ -7200,16 +7244,16 @@ app.post('/api/deliveries/:id/status', auth, role('delivery'), async (req, res) 
   if (del.kind === 'med_order') {
     const o = d.medOrders.find((x) => x.id === del.refId);
     const p = o && d.patients.find((x) => x.id === o.patientId);
-    if (o && status === 'picked' && o.status === 'packed') { o.status = 'out_for_delivery'; o.out_for_deliveryAt = nowIso(); patientOwnerUserIds(p).forEach((u) => notify(u, `Medicines · ${o.orderNo}`, `On the way with ${req.user.name}. Share code ${o.otp} when it arrives${o.balance ? ` and pay ₹${o.balance}` : ''}.`)); }
-    if (o && status === 'delivered') { o.status = 'delivered'; o.deliveredAt = nowIso(); o.balancePaid = o.balance; patientOwnerUserIds(p).forEach((u) => notify(u, 'Delivered ✅', 'Your medicines have been delivered. Get well soon!')); pharmacistsOf(d, o.pharmacyId).forEach((u) => notify(u.id, 'Order delivered', `${o.orderNo} delivered by ${req.user.name}.`)); automation.emit('medicine_order.delivered', { orderId: o.id, orderNo: o.orderNo, patientId: o.patientId, status: 'delivered', pharmacyId: o.pharmacyId, pharmacyName: facilityName(o.pharmacyId), by: 'nexus_rider', collected: o.balance || 0 }, { contact: autoContact(p) }); }
+    if (o && status === 'picked' && o.status === 'packed') { o.status = 'out_for_delivery'; o.out_for_deliveryAt = nowIso(); patientOwnerUserIds(p).forEach((u) => notifyPref('orders', u, `Medicines · ${o.orderNo}`, `On the way with ${req.user.name}. Share code ${o.otp} when it arrives${o.balance ? ` and pay ₹${o.balance}` : ''}.`)); }
+    if (o && status === 'delivered') { o.status = 'delivered'; o.deliveredAt = nowIso(); o.balancePaid = o.balance; patientOwnerUserIds(p).forEach((u) => notifyPref('orders', u, 'Delivered ✅', 'Your medicines have been delivered. Get well soon!')); pharmacistsOf(d, o.pharmacyId).forEach((u) => notify(u.id, 'Order delivered', `${o.orderNo} delivered by ${req.user.name}.`)); automation.emit('medicine_order.delivered', { orderId: o.id, orderNo: o.orderNo, patientId: o.patientId, status: 'delivered', pharmacyId: o.pharmacyId, pharmacyName: facilityName(o.pharmacyId), by: 'nexus_rider', collected: o.balance || 0 }, { contact: autoContact(p) }); }
   }
   if (status === 'delivered') {
     if (del.kind === 'med_order') { /* handled above */ } else if (del.kind === 'prescription') {
       const r = d.prescriptions.find((x) => x.id === del.refId);
       if (r) {
-        r.status = 'delivered';
+        r.status = 'delivered'; r.deliveredAt = nowIso(); // refill timing counts from here
         const p = d.patients.find((x) => x.id === r.patientId);
-        patientOwnerUserIds(p).forEach((u) => notify(u, 'Delivered ✅', 'Your medicines have been delivered. Get well soon!'));
+        patientOwnerUserIds(p).forEach((u) => notifyPref('orders', u, 'Delivered ✅', 'Your medicines have been delivered. Get well soon!'));
         touchFacility(r.pharmacyId);
       }
     } else {
@@ -7615,7 +7659,7 @@ app.post('/api/advisories', auth, role('official', 'super_admin'), (req, res) =>
   const region = sc && sc.level !== 'national' ? (sc.level === 'state' ? sc.state : sc.district) : clean(b.region, 80) || 'All';
   const a = { id: store.id('adv'), title, body, region, createdBy: req.user.id, languages: b.languages === undefined ? ['Hindi', 'English'] : cleanList(b.languages, 12), status: publish ? 'published' : 'draft', createdAt: nowIso(), by: req.user.name };
   db().advisories.unshift(a);
-  if (publish) advisoryAudience(a).forEach((uid) => notify(uid, `Health advisory: ${title}`, body, 'alert'));
+  if (publish) advisoryAudience(a).forEach((uid) => notifyPref('alerts', uid, `Health advisory: ${title}`, body, 'alert'));
   store.save();
   broadcast('gov', 'admin', 'advisories');
   res.json(a);
@@ -7641,7 +7685,7 @@ app.put('/api/advisories/:id', auth, role('official', 'super_admin'), (req, res)
     a.status = b.status;
   }
   // Patients are told when it goes live — not again every time an already-published advisory is edited.
-  if (a.status === 'published' && !wasPublished) { a.publishedAt = nowIso(); advisoryAudience(a).forEach((uid) => notify(uid, `Health advisory: ${a.title}`, a.body, 'alert')); }
+  if (a.status === 'published' && !wasPublished) { a.publishedAt = nowIso(); advisoryAudience(a).forEach((uid) => notifyPref('alerts', uid, `Health advisory: ${a.title}`, a.body, 'alert')); }
   store.save();
   broadcast('gov', 'admin', 'advisories');
   res.json(a);
@@ -8180,6 +8224,14 @@ const circle = require('./circle')(app, {
   auth, role, activePatient, db, store, notify, audit, broadcast, touch, nowIso, clean, patientOwnerUserIds, userById, publicLimiter,
   appUrl: () => APP_URL(),
 });
+// Notification preferences (Settings → Notifications): stored on the account, honoured by notifyPref().
+app.get('/api/me/notify-prefs', auth, (req, res) => res.json(Object.fromEntries(NOTIFY_PREFS.map((k) => [k, req.user.notifyPrefs?.[k] !== false]))));
+app.put('/api/me/notify-prefs', auth, (req, res) => {
+  const b = req.body || {};
+  req.user.notifyPrefs = Object.fromEntries(NOTIFY_PREFS.map((k) => [k, b[k] === undefined ? req.user.notifyPrefs?.[k] !== false : Boolean(b[k])]));
+  store.save();
+  res.json(req.user.notifyPrefs);
+});
 // "Tell me when a doctor joins near me" (doctorAlerts.js) — the hook above runs when a doctor is verified.
 const doctorAlerts = require('./doctorAlerts')(app, { auth, role, activePatient, db, store, notify, nowIso, clean, patientOwnerUserIds });
 // Missed follow-ups (followups.js): who didn't come back when the doctor asked, with a one-tap nudge.
@@ -8310,7 +8362,7 @@ function sweepReminders(now = Date.now()) {
     if (band) {
       r[band[0]] = nowIso();
       const when = istWhen(c.scheduledAt);
-      patientOwnerUserIds(p).forEach((u) => notify(u, `Appointment ${bandLabel(band, left)}`, `${doc.name} · ${when} · ${consultWhere(c)}. ${consultPrep(c)}`, 'reminder'));
+      patientOwnerUserIds(p).forEach((u) => notifyPref('consults', u, `Appointment ${bandLabel(band, left)}`, `${doc.name} · ${when} · ${consultWhere(c)}. ${consultPrep(c)}`, 'reminder'));
       emailPatient(p, `Reminder: your appointment with ${doc.name} ${bandLabel(band, left)}`, [`This is a reminder of your appointment with ${doc.name} on ${when} IST (${consultWhere(c)}).`, consultPrep(c)]);
       out.consult += 1;
     }
@@ -8355,7 +8407,7 @@ function sweepReminders(now = Date.now()) {
     if (!p) continue;
     rx.medNudgeDay = today;
     const docName = d.doctors.find((x) => x.id === rx.doctorId)?.name;
-    patientOwnerUserIds(p).forEach((u) => notify(u, `Medicine reminder: take your ${s.first} medicines`, `Today's doses${docName ? ` from ${docName}'s prescription` : ''}: ${s.slots.join(', ')}. Day ${dayNo + 1} of ${s.days}.`, 'reminder'));
+    patientOwnerUserIds(p).forEach((u) => notifyPref('medicines', u, `Medicine reminder: take your ${s.first} medicines`, `Today's doses${docName ? ` from ${docName}'s prescription` : ''}: ${s.slots.join(', ')}. Day ${dayNo + 1} of ${s.days}.`, 'reminder'));
     out.medicine += 1;
   }
   if (out.consult + out.doctor + out.lab + out.medicine) { store.save(); broadcast('notifications'); }
@@ -8373,6 +8425,14 @@ function expireUnpaid() {
   for (const p of d.payments) if (p.status === 'claimed' || (p.status === 'created' && p.decidedAt && Date.parse(p.decidedAt) >= cutoff)) held.add(p.refId);
   for (const c of d.consults) {
     if (c.status === 'awaiting_payment' && !held.has(c.id) && Date.parse(c.createdAt) < cutoff) { c.status = 'expired'; changed = true; }
+  }
+  // Visits whose day has gone by without anyone being seen: a booked time more than 6 hours ago, or a queued
+  // walk-in / E-Clinic visit from an earlier day. Closed as "missed" so they leave queues and "next visit" cards.
+  const today = istDay(nowIso());
+  for (const c of d.consults) {
+    const lateBooked = c.status === 'scheduled' && c.scheduledAt && Date.parse(c.scheduledAt) < Date.now() - 6 * 3600000;
+    const staleQueue = c.status === 'queued' && istDay(c.checkedInAt || c.scheduledAt || c.createdAt) < today;
+    if (lateBooked || staleQueue) { c.status = 'missed'; c.missedAt = nowIso(); changed = true; }
   }
   for (const o of d.medOrders || []) {
     if (o.status === 'awaiting_payment' && !held.has(o.id) && Date.parse(o.createdAt) < cutoff) { o.status = 'cancelled'; o.cancelledAt = nowIso(); o.cancelReason = 'Advance not paid in time'; changed = true; }

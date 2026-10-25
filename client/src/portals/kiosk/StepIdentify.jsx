@@ -7,6 +7,7 @@ import AadhaarVerify from '../../components/AadhaarVerify';
 import { useKiosk } from './context';
 import { langOf, LANGS } from './i18n';
 import { KButton, KError, StepFrame } from './KUi';
+import { localDay, dobFromAge } from '../../dates';
 
 const BLOOD = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-', 'Unknown'];
 
@@ -69,7 +70,7 @@ function RegisterForm({ initialPhone, prefill, onDone, onCancel, t, lang }) {
     e.preventDefault();
     setErr('');
     let dob = f.dob;
-    if (!dob && f.age) dob = `${new Date().getFullYear() - Number(f.age)}-07-01`; // approximate when only age is known
+    if (!dob && f.age) dob = dobFromAge(f.age); // approximate when only age is known
     if (!f.name.trim() || !dob) { setErr('Please enter the name and either date of birth or age.'); return; }
     if (!f.gender) { setErr('Please choose Female, Male or Other.'); return; }
     setBusy(true);
@@ -88,7 +89,7 @@ function RegisterForm({ initialPhone, prefill, onDone, onCancel, t, lang }) {
       <KError>{err}</KError>
       <div className="k-reg-grid">
         <label className="k-field span2"><span>Full name</span><input className="k-input notranslate" value={f.name} onChange={set('name')} placeholder="e.g. Rajkumari Devi" autoFocus /></label>
-        <label className="k-field"><span>Date of birth</span><input className="k-input" type="date" value={f.dob} max={new Date().toISOString().slice(0, 10)} onChange={set('dob')} /></label>
+        <label className="k-field"><span>Date of birth</span><input className="k-input" type="date" value={f.dob} max={localDay()} onChange={set('dob')} /></label>
         <label className="k-field"><span>…or age in years</span><input className="k-input" inputMode="numeric" value={f.age} onChange={(e) => setF({ ...f, age: e.target.value.replace(/\D/g, '').slice(0, 3) })} placeholder="e.g. 42" /></label>
         <div className="k-field span2">
           <span>Gender</span>

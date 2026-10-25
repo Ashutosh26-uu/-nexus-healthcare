@@ -7,6 +7,7 @@ import { useLive } from '../../live';
 import { api } from '../../api';
 import ExpiryMatches from './ExpiryMatches';
 import RefillForecast from './RefillForecast';
+import { localDay } from '../../dates';
 
 // Purchase list for the distributor when a request can't go through the network (or for the paper file).
 function downloadCsv(rows, store) {
@@ -19,7 +20,7 @@ function downloadCsv(rows, store) {
   const blob = new Blob([`${lines.map((l) => l.map(esc).join(',')).join('\n')}\n`], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `purchase-list-${(store || 'store').replace(/\W+/g, '-').toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `purchase-list-${(store || 'store').replace(/\W+/g, '-').toLowerCase()}-${localDay()}.csv`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 }

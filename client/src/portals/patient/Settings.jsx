@@ -10,20 +10,14 @@ import { usePatient, firstName, splitList, BLOOD_GROUPS, PageSkeleton } from './
 import { LANGUAGES as APP_LANGUAGES, useI18n, codeForName } from '../../i18n';
 import { useEasyMode } from '../../components/easyMode';
 
-const NOTIF_KEY = 'oc_patient_notifs';
 const NOTIFS = [
   { key: 'consults', label: 'Consult reminders', hint: '30 minutes and 5 minutes before a booked consult' },
   { key: 'medicines', label: 'Medicine reminders', hint: 'A gentle nudge at dose times' },
   { key: 'orders', label: 'Order updates', hint: 'When medicines are packed, on the way, or delivered' },
   { key: 'reports', label: 'Lab results', hint: 'As soon as a report is ready' },
   { key: 'alerts', label: 'Health alerts in my area', hint: 'Outbreaks, heatwaves and vaccination camps' },
-  { key: 'sms', label: 'Also send by SMS', hint: 'Useful when mobile data is off' },
 ];
-const DEFAULT_NOTIFS = { consults: true, medicines: true, orders: true, reports: true, alerts: true, sms: false };
-
-function loadNotifs() {
-  try { return { ...DEFAULT_NOTIFS, ...JSON.parse(localStorage.getItem(NOTIF_KEY) || '{}') }; } catch { return DEFAULT_NOTIFS; }
-}
+const DEFAULT_NOTIFS = { consults: true, medicines: true, orders: true, reports: true, alerts: true };
 
 const toForm = (p) => ({
   name: p.name || '',
@@ -45,7 +39,9 @@ export default function Settings() {
   const { refresh } = useAuth();
   const [form, setForm] = useState(null);
   const [dirty, setDirty] = useState(false);
-  const [notifs, setNotifs] = useState(loadNotifs);
+  // Saved on the account, so they apply on every phone and the server honours them.
+  const [notifs, setNotifs] = useState(DEFAULT_NOTIFS);
+  useEffect(() => { api.get('/me/notify-prefs').then((p) => setNotifs({ ...DEFAULT_NOTIFS, ...p })).catch(() => {}); }, []);
   const [privacyDraft, setPrivacyDraft] = useState(null); // optimistic value while a save is in flight
   const [deleting, setDeleting] = useState(false);
   const [reason, setReason] = useState('');
@@ -68,6 +64,7 @@ export default function Settings() {
     run('save', async () => {
       await api.put('/patient/profile', {
         ...form,
+        dob: form.dob || undefined, // no date of birth yet (quick sign-up) — leave it out rather than send ""
         allergies: splitList(form.allergies),
         conditions: splitList(form.conditions),
         currentMeds: splitList(form.currentMeds),
@@ -80,9 +77,9 @@ export default function Settings() {
   };
 
   const toggleNotif = (k, v) => {
-    const next = { ...notifs, [k]: v };
-    setNotifs(next);
-    try { localStorage.setItem(NOTIF_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+    const prev = notifs;
+    setNotifs({ ...notifs, [k]: v });
+    api.put('/me/notify-prefs', { [k]: v }).then((p) => setNotifs({ ...DEFAULT_NOTIFS, ...p })).catch(() => setNotifs(prev));
   };
 
   // Saved on the server per profile (defaults: research off, kiosk OTP on).
@@ -182,8 +179,8 @@ export default function Settings() {
 
       <div className="grid two">
         <EasyCard />
-        <Card title={<h3 className="row" style={{ gap: 8 }}><Bell size={18} /> Notifications <PreviewBadge /></h3>}>
-          <p className="tiny muted mt-0">These choices are only remembered on this device for now — they don&apos;t change what we send yet. You&apos;ll still get every update in the app.</p>
+        <Card title={<h3 className="row" style={{ gap: 8 }}><Bell size={18} /> Notifications</h3>}>
+          <p className="tiny muted mt-0">Turn off the updates you don&apos;t want. Emergency alerts (SOS, urgent lab results), payments and security messages always come through.</p>
           <div className="list">
             {NOTIFS.map((n) => (
               <div key={n.key} className="list-item">

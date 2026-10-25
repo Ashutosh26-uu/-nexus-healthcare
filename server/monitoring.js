@@ -6,7 +6,8 @@
 const wellness = require('./wellness');
 
 const DAY = 86400000;
-const dayOf = (iso) => String(iso).slice(0, 10);
+// The calendar day in India (a 4 am IST reading is still "today", not yesterday in UTC).
+const dayOf = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: process.env.APP_TZ || 'Asia/Kolkata' });
 const avg = (xs) => xs.reduce((s, x) => s + x, 0) / xs.length;
 const r0 = (n) => Math.round(n);
 

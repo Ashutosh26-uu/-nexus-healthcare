@@ -4,9 +4,10 @@ import { PageHeader } from '../../components/PortalLayout';
 import { Card, Button, Empty, useToast, fmtNum, fmtDate, fmtDateTime } from '../../components/ui';
 import { useAuth } from '../../auth';
 import { useGov, downloadCsv, alertTitle } from './shared';
+import { localDay } from '../../dates';
 
 const scopeName = (s) => (s.level === 'national' ? 'National' : s.level === 'state' ? `${s.state} state` : `${s.district} district`);
-const stamp = () => new Date().toISOString().slice(0, 10);
+const stamp = () => localDay();
 
 const REPORTS = [
   {

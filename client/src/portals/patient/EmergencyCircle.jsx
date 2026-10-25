@@ -20,7 +20,7 @@ export default function EmergencyCircle() {
   };
   const msg = link ? `Please join my emergency circle on Sehatra, so you're alerted if I ever press SOS: ${link}` : '';
   const copy = async () => { try { await navigator.clipboard.writeText(msg); toast('Copied — paste it in WhatsApp or SMS'); } catch { toast('Copy failed — press and hold the link to copy', 'error'); } };
-  const remove = async (id, who) => { if (window.confirm(`Remove ${who}?`) && await run(`rm-${id}`, () => api.delete(`/patient/circle/${id}`))) reload(); };
+  const remove = async (id, who) => { if (window.confirm(`Remove ${who}?`) && await run(`rm-${id}`, () => api.del(`/patient/circle/${id}`))) reload(); };
   const leave = async (c) => { if (window.confirm(`Leave ${c.name}'s emergency circle? You won't get their SOS alerts any more.`) && await run(`lv-${c.patientId}`, () => api.post(`/circle/leave/${c.patientId}`), `You left ${c.name}'s circle`)) mine.reload(); };
   return (
     <Card title={<h3 className="row" style={{ gap: 8 }}><Users size={18} /> Emergency circle</h3>}>

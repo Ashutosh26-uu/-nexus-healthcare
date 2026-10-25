@@ -4,8 +4,9 @@ import { PageHeader } from '../../components/PortalLayout';
 import { Button, Card, Field, Modal, cx, fmtDate, useAction } from '../../components/ui';
 import { api } from '../../api';
 import { usePatientLive, usePatient, firstName, PageSkeleton } from './shared';
+import { localDay } from '../../dates';
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localDay();
 const STATE = {
   done: { icon: CheckCircle2, tone: 'green', word: 'Done' },
   due: { icon: Clock, tone: 'sun', word: 'Due now' },

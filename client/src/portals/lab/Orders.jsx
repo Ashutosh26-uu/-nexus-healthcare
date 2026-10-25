@@ -69,7 +69,7 @@ export default function Orders({ home, orders, reload, onReport }) {
                 <TestChips tests={o.tests} />
                 <div className="row wrap tiny muted mt-1" style={{ gap: 12 }}>
                   <span className="row" style={{ gap: 4 }}><Stethoscope size={12} /> {o.doctorName || (o.packageName ? 'Booked by patient' : 'Network doctor')}</span>
-                  <span className="row" style={{ gap: 4 }}><MapPin size={12} /> Pin {o.pincode}</span>
+                  {o.pincode && <span className="row" style={{ gap: 4 }}><MapPin size={12} /> Pin {o.pincode}</span>}
                   <span title={new Date(o.createdAt).toLocaleString(getLocale())}>Ordered {timeAgo(o.createdAt)}</span>
                   {o.referredByDoctor && <span className="lab-chip">Referred to you by the doctor</span>}
                   {o.booking?.homeCollection && <span className="lab-chip"><Home size={12} /> Home collection</span>}

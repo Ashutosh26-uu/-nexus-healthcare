@@ -23,7 +23,9 @@ const fmt12 = (t) => {
 export default function Opd({ home, setData, reload }) {
   const toast = useToast();
   const [adding, setAdding] = useState(false);
-  const slots = [...(home.opd || [])].sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
+  // Today onwards only — past days' slots aren't "upcoming" and their places can't be booked any more.
+  const today = ymd(new Date());
+  const slots = [...(home.opd || [])].filter((o) => !o.date || o.date >= today).sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
   const booked = slots.reduce((s, o) => s + o.booked, 0);
   const cap = slots.reduce((s, o) => s + o.capacity, 0);
 
@@ -87,7 +89,7 @@ export default function Opd({ home, setData, reload }) {
 
 function AddSlot({ open, onClose, depts, onAdded }) {
   const [run, busy] = useAction();
-  const blank = () => ({ department: depts[0] || '', date: ymd(new Date(Date.now() + 86400000)), time: '10:00', capacity: 20 });
+  const blank = () => ({ department: depts[0] || 'General Medicine', date: ymd(new Date(Date.now() + 86400000)), time: '10:00', capacity: 20 });
   const [form, setForm] = useState(blank);
   useEffect(() => { if (open) setForm(blank()); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps -- fresh defaults (and a fresh "tomorrow") each time it opens
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
@@ -99,10 +101,10 @@ function AddSlot({ open, onClose, depts, onAdded }) {
   return (
     <Modal open={open} onClose={onClose} title="Open an OPD slot">
       <form className="stack" onSubmit={submit}>
-        <Field label="Department">
-          <select className="select" value={form.department} onChange={set('department')}>
-            {depts.map((d) => <option key={d}>{d}</option>)}
-          </select>
+        <Field label="Department" hint={depts.length ? undefined : 'Type the department, e.g. General Medicine or Paediatrics'}>
+          {depts.length
+            ? <select className="select" value={form.department} onChange={set('department')}>{depts.map((d) => <option key={d}>{d}</option>)}</select>
+            : <input className="input" value={form.department} onChange={set('department')} maxLength={60} required />}
         </Field>
         <div className="grid three" style={{ gap: 12 }}>
           <Field label="Date"><input className="input" type="date" min={ymd(new Date())} value={form.date} onChange={set('date')} required /></Field>

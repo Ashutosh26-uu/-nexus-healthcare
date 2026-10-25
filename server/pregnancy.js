@@ -39,8 +39,11 @@ function plan(pg, now = Date.now()) {
   const week = Math.floor(days / 7);
   const visits = pg.visits || [];
   const weekOf = (date) => Math.floor((Date.parse(date) - lmp) / DAY / 7);
+  // Each recorded visit fills one check-up at most (windows overlap by a week at 13, 27 and 35), in order.
+  const used = new Set();
   const anc = ANC.map((v) => {
-    const done = visits.find((x) => { const w = weekOf(x.date); return w >= v.from - 1 && w <= v.to + 1; });
+    const done = visits.find((x) => { const w = weekOf(x.date); return !used.has(x) && w >= v.from - 1 && w <= v.to + 1; });
+    if (done) used.add(done);
     const dueFrom = dayOf(lmp + v.from * 7 * DAY);
     const dueBy = dayOf(lmp + (v.to + 1) * 7 * DAY - DAY);
     const status = done ? 'done' : week > v.to ? 'missed' : week >= v.from ? 'due' : 'upcoming';
@@ -165,7 +168,14 @@ module.exports = function registerPregnancy(app, x) {
       if (pg.status !== 'active') continue;
       const p = patientById(pg.patientId);
       if (!p || p.erasedAt) continue;
-      // Long past the due date with nothing recorded: stop reminding (the pregnancy has surely ended).
+      // Six weeks past the due date and still open: the family never closed it. Close it quietly so check-ups
+      // don't show as "missed" forever and a new pregnancy can be added.
+      if (now - Date.parse(pg.edd) > 42 * DAY) {
+        Object.assign(pg, { status: 'ended', outcome: 'unknown', endedAt: nowIso(), endReason: 'Closed automatically six weeks after the due date' });
+        changed = true;
+        continue;
+      }
+      // Past the due date: no more check-up reminders.
       if (now - Date.parse(pg.edd) > 21 * DAY) continue;
       const pl = plan(pg, now);
       pg.reminded = pg.reminded || {};

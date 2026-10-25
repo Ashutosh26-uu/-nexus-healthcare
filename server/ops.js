@@ -117,7 +117,9 @@ module.exports = function registerOps(app, x) {
     r.followUpOn = followUpOn;
     // The bed this admission took is free again.
     const bed = d.beds.find((y) => y.facilityId === r.toFacilityId && y.type === (r.bedType || 'general'));
-    if (bed && bed.occupied > 0) { bed.occupied -= 1; bed.updatedAt = nowIso(); }
+    // Only if accepting this referral actually took a bed (a full ward isn't charged one) — older referrals
+    // from before that was recorded are assumed to have taken one.
+    if (bed && bed.occupied > 0 && r.bedTaken !== false) { bed.occupied -= 1; bed.updatedAt = nowIso(); }
     if (p) {
       const text = [
         diagnosis && `Diagnosis: ${diagnosis}`,
@@ -197,7 +199,9 @@ module.exports = function registerOps(app, x) {
     if (!k) return res.json({ tasks: [] });
     const today = istDay(Date.now());
     // Only people this E-Clinic already looks after: registered or seen here.
-    const ours = d.patients.filter((p) => !p.erasedAt && (p.registeredAt === k.name || p.kioskSeen?.kioskId === k.id));
+    // Same rule as the kiosk look-up: registered here, last seen here, or ever consulted from here.
+    const consulted = new Set(d.consults.filter((c) => c.kioskId === k.id).map((c) => c.patientId));
+    const ours = d.patients.filter((p) => !p.erasedAt && (p.registeredAt === k.name || p.kioskSeen?.kioskId === k.id || consulted.has(p.id)));
     const ids = new Set(ours.map((p) => p.id));
     const tasks = [];
     for (const p of ours) {
@@ -209,7 +213,7 @@ module.exports = function registerOps(app, x) {
     for (const p of ours) {
       const pg = activePregnancy?.(p.id);
       const pl = pg && pregnancyPlan(pg);
-      if (!pl) continue;
+      if (!pl || pl.daysToEdd < -42) continue; // long past the due date: closed by the pregnancy sweep
       const missed = pl.anc.filter((a) => a.status === 'missed');
       const due = pl.anc.find((a) => a.status === 'due');
       if (due) tasks.push({ kind: 'pregnancy', urgent: Date.parse(due.dueBy) - Date.now() < 7 * 86400000, patientId: p.id, name: p.name, text: `Week ${pl.week} of pregnancy — ${due.label.toLowerCase()} due by ${due.dueBy}` });
@@ -225,6 +229,8 @@ module.exports = function registerOps(app, x) {
     }
     for (const rc of d.recoveryChecks || []) {
       if (rc.status !== 'open' || !ids.has(rc.patientId)) continue;
+      // Courses are short (two weeks at most): an old record left "open" is not today's task.
+      if (Date.now() - Date.parse(rc.createdAt) > 21 * 86400000) continue;
       const answered = (rc.entries || []).some((e) => e.date === today);
       if (!rc.needsReview && (rc.remindedOn !== today || answered)) continue;
       const p = patientById(rc.patientId);

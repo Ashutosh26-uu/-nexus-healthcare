@@ -46,7 +46,7 @@ module.exports = function registerSos(app, x) {
       .sort((a, b) => ((a.km ?? 40) + (a.er ? 0 : 30)) - ((b.km ?? 40) + (b.er ? 0 : 30)))
       .slice(0, limit);
   }
-  const hasDesk = (fid) => db().users.some((u) => u.role === 'hospital_admin' && u.facilityId === fid && !u.disabled);
+  const hasDesk = (fid) => db().users.some((u) => u.role === 'hospital_admin' && u.facilityId === fid && u.status === 'active');
 
   // Everyone on Sehatra who should hear about it: the profile's other owner (guardian / the person themself) and
   // emergency contacts whose phone number has a Sehatra account. Never the person who pressed it.
@@ -58,7 +58,7 @@ module.exports = function registerSos(app, x) {
       if (u) ids.add(u.id);
     }
     ids.delete(presserId);
-    return [...ids].map((id) => userById(id)).filter((u) => u && !u.disabled);
+    return [...ids].map((id) => userById(id)).filter((u) => u && !['suspended', 'deleted'].includes(u.status));
   }
 
   function mailFamily(users, subject, lines) {

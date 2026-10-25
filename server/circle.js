@@ -78,11 +78,11 @@ module.exports = function registerCircle(app, x) {
     if (!f) return res.status(404).json({ error: 'This invite has expired or was already used. Ask them to send a new one.' });
     const { p, inv } = f;
     if (patientOwnerUserIds(p).includes(req.user.id)) return res.status(400).json({ error: 'This is your own profile — send the link to a family member instead.' });
+    const already = (p.circle || []).some((m) => m.userId === req.user.id);
+    // Check before using up the link: a refusal leaves the invite working.
+    if (!already && (p.circle || []).length >= MAX_MEMBERS) return res.status(409).json({ error: 'Their emergency circle is full.' });
     p.circleInvites = (p.circleInvites || []).filter((i) => i.id !== inv.id); // one use
-    if (!(p.circle || []).some((m) => m.userId === req.user.id)) {
-      if ((p.circle || []).length >= MAX_MEMBERS) return res.status(409).json({ error: 'Their emergency circle is full.' });
-      p.circle = [...(p.circle || []), { userId: req.user.id, relation: inv.relation, at: nowIso() }];
-    }
+    if (!already) p.circle = [...(p.circle || []), { userId: req.user.id, relation: inv.relation, at: nowIso() }];
     patientOwnerUserIds(p).forEach((u) => notify(u, `${first(req.user.name)} joined your emergency circle`, `If you press SOS, ${first(req.user.name)} will be alerted at once with your location.`));
     audit(req.user, 'circle_joined', p.id, 'circle', req.user.id);
     store.save();

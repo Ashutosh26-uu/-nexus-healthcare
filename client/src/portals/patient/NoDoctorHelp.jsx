@@ -8,7 +8,7 @@ export default function NoDoctorHelp({ canAsk = true, district, state }) {
   const alert = usePatientLive(canAsk ? '/patient/doctor-alert' : null, ['patients']);
   const [run, busy] = useAction();
   const ask = (anywhere) => run('ask', () => api.post('/patient/doctor-alert', { anywhere, district, state }), 'Done — we’ll tell you as soon as a doctor joins').then(alert.reload);
-  const stop = () => run('stop', () => api.delete('/patient/doctor-alert')).then(alert.reload);
+  const stop = () => run('stop', () => api.del('/patient/doctor-alert')).then(alert.reload);
   const waiting = alert.data;
   return (
     <div className="card stack mt-2" style={{ gap: 10 }}>

@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/PortalLayout';
 import { Card, Button, Field, Empty, StatusBadge, fmtDate, fmtNum, useAction, useToast } from '../../components/ui';
 import { api } from '../../api';
 import { COMMON_DRUGS } from '../pharmacy/stock';
+import { localDay } from '../../dates';
 
 let lineId = 0;
 const mkLine = (drug = '', qty = '') => ({ id: ++lineId, drug, qty });
@@ -12,7 +13,7 @@ const mkLine = (drug = '', qty = '') => ({ id: ++lineId, drug, qty });
 // The app doesn't send them to the supplier yet — the screen says so instead of pretending it did.
 export default function BulkOrder({ home, reload }) {
   const toast = useToast();
-  const inAWeek = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  const inAWeek = localDay(new Date(Date.now() + 7 * 86400000));
   const [supplier, setSupplier] = useState('');
   const [date, setDate] = useState(inAWeek);
   const [notes, setNotes] = useState('');

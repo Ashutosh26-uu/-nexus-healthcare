@@ -14,7 +14,7 @@ export default function VerifyEmailModal({ email, open, onClose, onVerified }) {
   const [err, setErr] = useState('');
   const [timer, setTimer] = useState(0);
 
-  useEffect(() => { if (!open) return; setSent(null); setCode(''); setErr(''); send(); /* eslint-disable-next-line */ }, [open]);
+  useEffect(() => { if (!open) return; setSent(null); setCode(''); setErr(''); send(); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps -- send once each time it opens
   useEffect(() => { if (timer <= 0) return undefined; const t = setTimeout(() => setTimer((s) => s - 1), 1000); return () => clearTimeout(t); }, [timer]);
 
   const send = async () => {

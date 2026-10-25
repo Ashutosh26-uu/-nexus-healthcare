@@ -6,6 +6,7 @@ import { PageHeader } from '../../components/PortalLayout';
 import { Card, Empty, Button, Modal, Field, Loading, useAction, useToast, fmtDateTime, cx } from '../../components/ui';
 import { useLive } from '../../live';
 import { RoleBadge } from './shared';
+import { localDay } from '../../dates';
 
 const ACTIONS = [
   ['', 'All actions'],
@@ -41,7 +42,7 @@ function exportCsv(rows) {
   const csv = [cols.join(','), ...rows.map((r) => cols.map((c) => esc(r[c])).join(','))].join('\n');
   const url = URL.createObjectURL(new Blob([String.fromCharCode(0xfeff) + csv], { type: 'text/csv;charset=utf-8' }));
   const a = document.createElement('a');
-  a.href = url; a.download = `nexus-healthcare-audit-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.href = url; a.download = `sehatra-audit-${localDay()}.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
