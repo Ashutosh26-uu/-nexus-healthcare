@@ -74,6 +74,7 @@ module.exports = function registerPregnancy(app, x) {
   const activeFor = (pid) => list().find((p) => p.patientId === pid && p.status === 'active') || null;
   const view = (pg) => (pg ? { id: pg.id, lmp: pg.lmp, edd: pg.edd, status: pg.status, visits: pg.visits || [], td: pg.td || [], createdAt: pg.createdAt, plan: plan(pg) } : null);
   const owners = (p) => patientOwnerUserIds(p);
+  const lastViewed = new Map();
 
   app.get('/api/patient/pregnancy', auth, role('patient', 'caregiver'), (req, res) => {
     const p = activePatient(req);
@@ -156,7 +157,15 @@ module.exports = function registerPregnancy(app, x) {
     const doc = doctorFor(req.user);
     const scopes = consentScopes(req.params.id, [doc?.id]);
     if (!scopes.has('history')) return res.status(403).json({ error: 'The patient hasn’t shared their history with you.' });
-    res.json({ pregnancy: view(activeFor(req.params.id)) });
+    const pg = activeFor(req.params.id);
+    // Shows in the patient's access log — once per doctor per half hour (the screen refreshes itself live).
+    const k = `${req.user.id}|${req.params.id}`;
+    if (pg && !(Date.now() - (lastViewed.get(k) || 0) < 30 * 60000)) {
+      lastViewed.set(k, Date.now());
+      if (lastViewed.size > 5000) lastViewed.delete(lastViewed.keys().next().value);
+      audit(req.user, 'viewed_pregnancy', req.params.id, 'pregnancy', pg.id);
+    }
+    res.json({ pregnancy: view(pg) });
   });
 
   // Once a day: when a check-up window opens (and again if it is a week from closing and still not done),

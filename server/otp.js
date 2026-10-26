@@ -298,7 +298,7 @@ async function burn(adapter, target, row) {
 // Counted per (address, network) so a stranger guessing wrong can't lock the real person out for the day; a
 // much higher per-address ceiling still stops a spread-out grind (the resend cap keeps that slow anyway).
 const DAILY_FAIL_MAX = Number(process.env.OTP_DAILY_FAIL_MAX || 25);
-const DAILY_FAIL_MAX_ALL = Number(process.env.OTP_DAILY_FAIL_MAX_ALL || 150);
+const DAILY_FAIL_MAX_ALL = Number(process.env.OTP_DAILY_FAIL_MAX_ALL || 50);
 const dailyFails = new Map(); // key → { day, n }
 const dayNow = () => Math.floor(Date.now() / 86400000);
 const failsOn = (k) => { const e = dailyFails.get(k); return e && e.day === dayNow() ? e.n : 0; };

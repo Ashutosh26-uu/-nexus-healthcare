@@ -777,19 +777,20 @@ const CHAT_AI_PER_USER = 60;
 app.post('/api/chat', chatLimiter, optionalAuth, (req, res) => {
   const today = istDay(nowIso());
   if (chatBudget.day !== today) Object.assign(chatBudget, { day: today, used: 0, anon: 0, perUser: new Map() });
-  chatBudget.used += 1;
-  let over = chatBudget.used > CHAT_AI_DAILY;
+  const msgs = req.body?.messages;
+  if (!Array.isArray(msgs) || !msgs.length) return res.status(400).json({ error: 'Please type a message.' }); // not counted
+  // Signed-out visitors draw only on their own 40% share; signed-in people always keep the other 60%.
+  let over;
   if (req.user) {
     const n = (chatBudget.perUser.get(req.user.id) || 0) + 1;
     chatBudget.perUser.set(req.user.id, n);
-    over = over || n > CHAT_AI_PER_USER;
+    over = n > CHAT_AI_PER_USER || chatBudget.used + chatBudget.anon >= CHAT_AI_DAILY;
+    if (!over) chatBudget.used += 1;
   } else {
-    chatBudget.anon += 1;
-    over = over || chatBudget.anon > CHAT_AI_DAILY * CHAT_AI_ANON_SHARE;
+    over = chatBudget.anon >= CHAT_AI_DAILY * CHAT_AI_ANON_SHARE;
+    if (!over) chatBudget.anon += 1;
   }
   req.chatOffline = over;
-  const msgs = req.body?.messages;
-  if (!Array.isArray(msgs) || !msgs.length) return res.status(400).json({ error: 'Please type a message.' });
   req.body.messages = msgs.slice(-12).map((m) => ({ role: m?.role === 'assistant' ? 'assistant' : 'user', content: String(m?.content ?? '').slice(0, 2000) }));
   let ctx = null;
   if (req.user) {
@@ -1286,14 +1287,15 @@ function validateApplicant(b) {
   if (!/^\+?[\d\s-]{7,18}$/.test(clean(b.phone, 20))) return 'Please enter a valid mobile number.';
   // A string only: an object would become the password "[object Object]".
   if (typeof b.password !== 'string' || b.password.length < 8 || b.password.length > 200) return 'Choose a password of at least 8 characters.';
-  if (findUserByEmail(clean(b.email, 160))) return 'This email is already registered. Sign in instead, or use a different email.';
   // The email must be proven by a one-time code first, so no one can sign up with someone else's address,
-  // squat a rival's email, or later claim a clinic's listing without owning the inbox.
+  // squat a rival's email, or later claim a clinic's listing without owning the inbox. Checked BEFORE the
+  // "already registered" test, so this public form can't be used to find out who has a Sehatra account.
   const emailLc = clean(b.email, 160).toLowerCase();
   try {
     const t = jwt.verify(String(b.emailTicket || ''), JWT_SECRET, JWT_VERIFY);
     if (t.purpose !== 'signup' || String(t.email || '').toLowerCase() !== emailLc) throw new Error();
   } catch { return 'Please verify your email address with the code we send you before continuing.'; }
+  if (findUserByEmail(clean(b.email, 160))) return 'This email is already registered. Sign in instead, or use a different email.';
   return '';
 }
 
@@ -1811,7 +1813,11 @@ app.get('/api/patient/records', auth, role('patient', 'caregiver'), (req, res) =
 });
 
 // No OCR: picks numbers like "HbA1c 7.2" out of the text the patient typed (nothing is invented or "verified").
-app.post('/api/patient/records/upload', auth, role('patient', 'caregiver'), async (req, res) => {
+// Hand-entered / uploaded records: at most 60 an hour per account (uploadLimiter) and RECORDS_CAP per profile,
+// so one account can't grow the store without end.
+const RECORDS_CAP = 1000;
+app.post('/api/patient/records/upload', auth, role('patient', 'caregiver'), uploadLimiter, async (req, res) => {
+  if (db().records.filter((r) => r.patientId === activePatient(req)?.id).length >= RECORDS_CAP) return res.status(409).json({ error: `This profile already has ${RECORDS_CAP} records. Please remove old ones you don't need first.` });
   const p = activePatient(req);
   const { title, date, fileName } = req.body || {};
   const text = clean(req.body?.text, 20000);
@@ -2105,8 +2111,11 @@ app.post('/api/consults/:id/reschedule', auth, role('patient', 'caregiver'), (re
   // The access the booking gave the doctor ran to the old time + 3 days: carry it to the new time, or on the
   // day the doctor couldn't see allergies or write the prescription.
   const until = new Date(t + 3 * 86400000).toISOString();
+  // Only the consent this booking created (purpose "Booked consultation", given at or after booking) — never a
+  // short, separately approved one the patient time-boxed on purpose.
   for (const cs of d.consents) {
-    if (cs.patientId === c.patientId && cs.granteeId === c.doctorId && cs.status === 'active' && cs.expiry && cs.expiry < until) cs.expiry = until;
+    if (cs.patientId === c.patientId && cs.granteeId === c.doctorId && cs.status === 'active' && cs.purpose === 'Booked consultation'
+      && Date.parse(cs.start) >= Date.parse(c.createdAt) - 60000 && cs.expiry && cs.expiry < until) cs.expiry = until;
   }
   const doc = d.doctors.find((x) => x.id === c.doctorId);
   const p = d.patients.find((x) => x.id === c.patientId);
@@ -3538,12 +3547,17 @@ function sweepCarePlans(now = Date.now()) {
       }
     }
     if (pl.status !== 'active') continue;
-    // Consent gone. Only a patient revoking it ends the plan; access that simply ran out (a free plan's 45 days
-    // with no doctor review in between) is renewed — the patient agreed to the plan and hasn't left it.
+    // Consent gone. Renewed ONLY when the plan's own access simply ran out by time (a free plan's 45 days with
+    // no doctor review in between). Anything the patient did — revoking, narrowing, moving their care to
+    // another doctor (consents archived) — ends the plan; access is never handed back on their behalf.
     if (!hasConsent(p.id, [doc.id], 'history')) {
-      const revoked = d.consents.some((c) => c.patientId === p.id && c.granteeId === doc.id && c.status === 'revoked' && c.revokedAt
-        && Date.parse(c.revokedAt) >= Date.parse(pl.startedAt || pl.createdAt));
-      if (!revoked) { grantPlanAccess(d, pl, planAccessUntil(pl)); changed = true; continue; }
+      const since = Date.parse(pl.startedAt || pl.createdAt);
+      const forDoc = d.consents.filter((c) => c.patientId === p.id && c.granteeId === doc.id);
+      const patientEnded = forDoc.some((c) => ['revoked', 'archived', 'denied'].includes(c.status)
+        && Date.parse(c.revokedAt || c.archivedAt || c.decidedAt || c.start || 0) >= since);
+      const own = forDoc.filter((c) => c.purpose === 'Care plan').sort((a, b) => String(b.start).localeCompare(String(a.start)))[0];
+      const ranOut = own && (own.status === 'expired' || (own.status === 'active' && own.expiry && own.expiry <= nowIso()));
+      if (ranOut && !patientEnded) { grantPlanAccess(d, pl, planAccessUntil(pl)); changed = true; continue; }
       Object.assign(pl, { status: 'ended', endedAt: nowIso(), endReason: 'Consent withdrawn' }); changed = true;
       doctorInbox(d, doc).forEach((u) => notify(u, `${p.name}'s care plan ended`, 'The patient withdrew access to their records.'));
       continue;
@@ -3834,6 +3848,9 @@ app.post('/api/patient/transfers', auth, role('patient', 'caregiver'), (req, res
   if (toFac) d.consents.push({ id: store.id('cst'), patientId: p.id, granteeType: 'hospital', granteeId: toFac.id, granteeName: toFac.name, scope, purpose: `Care transferred to ${to.name}`, start: at, expiry: yearOn, status: 'active', transferId: t.id });
   // The previous doctor's live access ends now; they keep the copy up to this moment.
   if (from) d.consents.filter((c) => c.patientId === p.id && c.granteeId === from.id && c.status === 'active').forEach((c) => { c.status = 'archived'; c.archivedAt = at; c.copyUntil = at; });
+  // A care plan with the doctor they're leaving ends too (it would otherwise keep asking for their readings).
+  if (from) (d.carePlans || []).filter((pl) => pl.patientId === p.id && pl.doctorId === from.id && ['active', 'lapsed', 'invited'].includes(pl.status))
+    .forEach((pl) => Object.assign(pl, { status: 'ended', endedAt: at, endReason: 'Care transferred to another doctor' }));
   notify(to.userId, 'A patient moved their care to you', `${p.name} transferred their records to you${from ? ` from ${from.name}` : ''} — ${copied.visits} visits, ${copied.prescriptions} prescriptions, ${copied.reports} reports.`);
   if (from) notify(from.userId, 'Patient moved their care', `${p.name} has moved to another doctor. You keep a read-only copy of their records up to today.`);
   patientOwnerUserIds(p).forEach((u) => notify(u, 'Records transferred', `A copy of your full record is now with ${to.name}${toFac ? ` (${toFac.name})` : ''}.`));
@@ -3890,7 +3907,7 @@ app.post('/api/patient/deletion-request', auth, role('patient', 'caregiver'), (r
   p.deletionRequest = { at, reason, status: 'requested', by: req.user.id, scheduledFor: new Date(Date.parse(at) + DELETION_GRACE_DAYS * 86400000).toISOString() };
   const when = new Date(p.deletionRequest.scheduledFor).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: APP_TZ });
   patientOwnerUserIds(p).forEach((uid) => notify(uid, 'Deletion request received', `${p.name}'s Health Passport will be permanently deleted on ${when}. Changed your mind? Cancel any time before then from Settings.`));
-  db().users.filter((u) => u.role === 'super_admin').forEach((a) => notify(a.id, 'Account deletion requested', `${p.name} (${p.id})${reason ? ` — ${reason}` : ''}. It will be erased automatically on ${when} unless cancelled.`));
+  db().users.filter((u) => u.role === 'super_admin').forEach((a) => notify(a.id, 'Account deletion requested', `Passport ${p.id}. It will be erased automatically on ${when} unless cancelled.`));
   audit(req.user, 'deletion_requested', p.id, 'patient', reason);
   store.save();
   broadcast('patients', 'admin');
@@ -3921,6 +3938,7 @@ async function erasePatient(p, { by = 'system' } = {}) {
   // A self passport takes along the family profiles only that login could reach (no login of their own).
   const family = self ? d.patients.filter((x) => x.id !== p.id && x.guardianUserId === self.id && !x.userId && !x.erasedAt) : [];
   const ids = new Set([p.id, ...family.map((x) => x.id)]);
+  const names = [p, ...family].map((x) => String(x.name || '').trim()).filter((n) => n.length >= 3 && n !== ERASED_NAME);
   let files = 0;
   for (const pid of ids) {
     try { files += (await store.adapter().fileDeleteByOwner?.(pid)) || 0; } catch (e) { console.error('[erase] files', pid, e.message); throw e; }
@@ -3935,6 +3953,14 @@ async function erasePatient(p, { by = 'system' } = {}) {
   drop('sosEvents', mine);
   drop('recoveryChecks', mine);
   drop('pregnancies', mine);
+  // Nothing left that names them: the audit trail keeps what happened and when (accountability), but not their
+  // name or any free text; notifications that mention them — to anyone (doctors, desks, admins) — go.
+  for (const a of d.audit || []) {
+    if (self && a.actorId === self.id) a.actorName = ERASED_NAME;
+    if (ids.has(a.patientId) || (self && a.actorId === self.id)) a.reason = null;
+  }
+  const mentions = (s) => [...ids].some((id) => String(s || '').includes(id)) || names.some((n) => String(s || '').includes(n));
+  drop('notifications', (n) => mentions(n.title) || mentions(n.body));
   // Leaving the network also takes this person out of other people's emergency circles.
   for (const x of d.patients || []) if (x.circle?.length && self) x.circle = x.circle.filter((m) => m.userId !== self.id);
   // Ratings a patient left: keep the star score so doctors' averages stay honest, but strip everything that
@@ -5338,12 +5364,19 @@ app.get('/api/doctor/prescriptions', auth, role('doctor'), (req, res) => {
   })));
 });
 
-app.post('/api/break-glass', auth, role('doctor'), (req, res) => {
+// Emergency access is rare: 5 an hour per doctor. The reason is checked before the passport is looked up, and an
+// unknown passport is audited like a real one, so this can't be used to find out which passport numbers exist.
+const breakGlassLimiter = security.rateLimit({ windowMs: 60 * 60000, max: 5, key: (r) => r.user?.id || '', message: 'Too many emergency-access requests. The Sehatra team has been told; please contact them if this is a real emergency.' });
+app.post('/api/break-glass', auth, role('doctor'), breakGlassLimiter, (req, res) => {
   const patientId = clean(req.body?.patientId, 40);
   const reason = clean(req.body?.reason, 500);
-  const p = db().patients.find((x) => x.id === patientId);
-  if (!p) return res.status(404).json({ error: 'Patient not found.' });
   if (reason.length < 10) return res.status(400).json({ error: 'Please describe the emergency (at least 10 characters). This is reviewed by an admin.' });
+  const p = db().patients.find((x) => x.id === patientId && !x.erasedAt);
+  if (!p) {
+    audit(req.user, 'break_glass_failed', null, 'critical', `Unknown passport "${patientId}" · ${reason.slice(0, 120)}`);
+    store.save();
+    return res.status(404).json({ error: 'Patient not found.' });
+  }
   db().audit.unshift({ id: store.id('aud'), actorId: req.user.id, actorName: req.user.name, role: req.user.role, action: 'break_glass', patientId, recordType: 'critical', reason, at: nowIso(), reviewed: false });
   patientOwnerUserIds(p).forEach((u) => notify(u, '⚠️ Emergency access to your records', `${req.user.name} opened your critical health data in an emergency. Reason: "${reason}". This is logged and reviewed.`, 'alert'));
   store.save();
@@ -7831,7 +7864,7 @@ app.delete('/api/admin/users/:id/mfa', auth, role('super_admin'), (req, res) => 
   delete u.mfa;
   u.tokenVersion = (u.tokenVersion || 0) + 1;
   audit(req.user, 'mfa_reset_by_admin', null, 'user', u.name);
-  notify(u.id, 'Two-step login was reset', 'Our team switched off two-step login on your account at your request. Sign in with your password and set it up again from your account menu.');
+  securityAlert(u, 'Two-step login was reset', 'Our team switched off two-step login on your account at your request. Sign in with your password and set it up again from your account menu.');
   store.save();
   broadcast('admin', 'audit');
   res.json(publicUser(u));
