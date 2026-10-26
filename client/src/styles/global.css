@@ -561,7 +561,7 @@ html.easy .page-title { font-size: 2rem; }
 .nd-row:hover { border-color: var(--green); }
 .nd-row > svg:first-child { color: var(--green); flex: none; }
 .nd-row.danger > svg:first-child { color: var(--rose); }
-.block { display: block; }
+.block:not(.btn) { display: block; } /* a full-width .btn.block stays a flex row (icon beside the text) */
 
 /* First-visit language chooser */
 .lang-strip { border: 1px solid var(--green-soft); background: var(--green-soft); color: var(--green-ink); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 18px; display: grid; gap: 10px; }
