@@ -107,7 +107,7 @@ function Advance({ o, reload }) {
   return asking ? (
     <div className="stack" style={{ gap: 6, maxWidth: 300 }}>
       <span className="tiny muted">Ask the patient for the 4-digit code in their app</span>
-      <OtpInput value={code} onChange={setCode} length={4} />
+      <OtpInput value={code} onChange={setCode} length={4} onComplete={(c) => step(final, c)} />
       <div className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
         <Button size="sm" variant="ghost" onClick={() => setAsking(false)}>Cancel</Button>
         <Button size="sm" icon={KeyRound} disabled={code.length !== 4} loading={busy === `s-${o.id}`} onClick={() => step(final, code)}>Confirm</Button>

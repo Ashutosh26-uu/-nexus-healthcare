@@ -197,6 +197,8 @@ export default function StepIdentify() {
       say('is_this_you');
     } catch (e) { setErr(e.message); setCode(''); } finally { setBusy(false); }
   };
+  // The sixth digit opens the passport at once — no extra tap (a wrong code clears, so it can't loop).
+  useEffect(() => { if (code.length === 6 && pending && !busy) verifyCode(); }, [code]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const accept = () => { setFlow({ patient: found, step: 2 }); };
   const again = () => { setFound(null); setFresh(false); setQr(''); setPhone(''); setPending(null); setFlow({ patient: null }); };

@@ -5,8 +5,24 @@ import { useI18n } from '../i18n';
 import { COUNTRIES, guessCountry } from '../i18n/countries';
 import { Button, Field, cx, safeUrl } from './ui';
 
-export function OtpInput({ value, onChange, length = 6, autoFocus }) {
+// Typing (or pasting) the last digit checks the code straight away — no need to tap Verify.
+// `onComplete(code)` runs it; without one, a code box inside a <form> submits that form. `autoSubmit={false}`
+// turns this off (e.g. a reset form that still needs the new password). Each finished code is sent only once,
+// so a wrong code isn't retried in a loop — changing a digit sends again.
+export function OtpInput({ value, onChange, length = 6, autoFocus, onComplete, autoSubmit = true }) {
   const refs = useRef([]);
+  const wrap = useRef(null);
+  const sentFor = useRef('');
+  const complete = useRef(onComplete);
+  complete.current = onComplete;
+  useEffect(() => {
+    if (value.length < length) { sentFor.current = ''; return; }
+    if (!autoSubmit || !/^\d+$/.test(value) || sentFor.current === value) return;
+    sentFor.current = value;
+    if (complete.current) { complete.current(value); return; }
+    const form = wrap.current?.closest('form');
+    if (form) { if (form.requestSubmit) form.requestSubmit(); else form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); }
+  }, [value, length, autoSubmit]);
   const digits = value.padEnd(length, ' ').slice(0, length).split('');
   const set = (i, ch) => {
     const arr = digits.map((d) => (d === ' ' ? '' : d));
@@ -14,7 +30,7 @@ export function OtpInput({ value, onChange, length = 6, autoFocus }) {
     onChange(arr.join('').slice(0, length));
   };
   return (
-    <div className="otp" dir="ltr" onPaste={(e) => { const t = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, length); if (t) { e.preventDefault(); onChange(t); refs.current[Math.min(t.length, length - 1)]?.focus(); } }}>
+    <div className="otp" ref={wrap} dir="ltr" onPaste={(e) => { const t = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, length); if (t) { e.preventDefault(); onChange(t); refs.current[Math.min(t.length, length - 1)]?.focus(); } }}>
       {digits.map((d, i) => (
         <input
           key={i}

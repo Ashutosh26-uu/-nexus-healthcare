@@ -102,7 +102,7 @@ export default function TwoStepModal({ open, onClose }) {
               <div className="tiny muted mt-1">Account: <span translate="no">{setup.account}</span></div>
             </div>
           </div>
-          <Field label="6-digit code from the app"><OtpInput value={code} onChange={setCode} autoFocus /></Field>
+          <Field label="6-digit code from the app"><OtpInput value={code} onChange={setCode} autoFocus onComplete={() => enable()} /></Field>
           <Button icon={Smartphone} onClick={enable} loading={busy} disabled={code.length !== 6}>Turn on</Button>
         </div>
       )}

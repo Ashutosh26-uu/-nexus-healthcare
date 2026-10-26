@@ -157,7 +157,7 @@ export function CheckInModal({ open, onClose, onCheckedIn }) {
             <div className="dr-scan"><video ref={videoRef} playsInline muted /><span className="dr-scan-frame" /></div>
           ) : canScan ? <Button variant="secondary" icon={Camera} onClick={scan}>Scan QR with camera</Button> : null}
           <div className="tiny muted center">{canScan ? 'or type the code' : 'Type the code shown under the QR'}</div>
-          <div style={{ maxWidth: 380, margin: '0 auto' }}><OtpInput value={code} onChange={setCode} /></div>
+          <div style={{ maxWidth: 380, margin: '0 auto' }}><OtpInput value={code} onChange={setCode} onComplete={(c) => submit({ code: c })} /></div>
           {error && <div className="form-error">{error}</div>}
         </div>
       )}

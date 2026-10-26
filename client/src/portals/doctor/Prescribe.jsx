@@ -61,7 +61,7 @@ function PatientStep({ onReady }) {
           <p className="tiny muted mt-1 mb-0">Didn&apos;t get it? {sent.alternatives.map((ch) => <button key={ch} type="button" className="link-btn" onClick={() => sendCode(picked, ch)}>Send by {ch === 'email' ? 'email' : 'SMS'} instead</button>)}</p>
         )}
         {sent.devCode && <div className="dev-otp mt-1">Demo mode — the patient&apos;s code is <strong className="mono">{sent.devCode}</strong></div>}
-        <div className="mt-2" style={{ maxWidth: 380 }}><OtpInput value={code} onChange={setCode} autoFocus /></div>
+        <div className="mt-2" style={{ maxWidth: 380 }}><OtpInput value={code} onChange={setCode} autoFocus onComplete={() => verify()} /></div>
         {error && <div className="form-error mt-1">{error}</div>}
         <div className="row mt-2" style={{ gap: 8 }}>
           <Button icon={KeyRound} disabled={code.length !== 6} loading={busy === 'verify'} onClick={verify}>Verify & continue</Button>

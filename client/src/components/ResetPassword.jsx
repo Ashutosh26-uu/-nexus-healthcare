@@ -104,7 +104,7 @@ export default function ResetPassword({ initialEmail = '', accountEmail = '', on
       <p className="mb-0">{sent.message} <button type="button" className="link-btn" onClick={() => { setSent(null); setError(''); }}>Change email</button></p>
       <DevCode sent={sent} />
       {error && <div className="form-error">{error}</div>}
-      <Field label="6-digit code from the email"><OtpInput value={code} onChange={setCode} autoFocus /></Field>
+      <Field label="6-digit code from the email"><OtpInput value={code} onChange={setCode} autoFocus autoSubmit={false} /></Field>
       <Field label="New password" hint="At least 8 characters">
         <input className="input" type={show ? 'text' : 'password'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" minLength={8} required />
       </Field>
