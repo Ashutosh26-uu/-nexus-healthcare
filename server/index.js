@@ -1438,8 +1438,11 @@ app.get('/api/public/join/status/:ref', joinStatusLimiter, (req, res) => {
 });
 
 // ---------- shared ----------
+// Notices saved before the rename still say "Nexus Healthcare" / "Omni-Care": show today's name.
+const OLD_BRAND = /Nexus Healthcare|Omni-?Care/g;
+const rebrand = (n) => (OLD_BRAND.test(`${n.title} ${n.body}`) ? { ...n, title: String(n.title).replace(OLD_BRAND, 'Sehatra'), body: String(n.body || '').replace(OLD_BRAND, 'Sehatra') } : n);
 app.get('/api/notifications', auth, (req, res) => {
-  res.json(notificationsFor(req.user.id, 30));
+  res.json(notificationsFor(req.user.id, 30).map((n) => { OLD_BRAND.lastIndex = 0; return rebrand(n); }));
 });
 app.post('/api/notifications/read', auth, (req, res) => {
   const uid = req.user.id;

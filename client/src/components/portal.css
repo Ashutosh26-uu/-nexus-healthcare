@@ -130,3 +130,11 @@
 .mfa-gate { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; background: var(--sun-soft); color: #87590b; font-size: 0.85rem; }
 .mfa-gate .btn { flex: none; }
 .mfa-gate svg { flex: none; }
+
+/* Phones: a dropdown anchored to a button that isn't at the screen edge (the bell sits left of the account
+   button) ran off the left side. Pin dropdowns to the screen instead — full width with a 12px margin. */
+@media (max-width: 640px) {
+  .popover { position: fixed; top: 72px; left: 12px; right: 12px; inset-inline-end: 12px; width: auto; max-width: none; }
+  .notif-pop { width: auto; }
+  .notif-list { max-height: min(420px, calc(100vh - 160px)); }
+}
