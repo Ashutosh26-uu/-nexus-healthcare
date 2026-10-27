@@ -7,7 +7,16 @@ export default defineConfig({
     rollupOptions: {
       // React + router change far less often than the app: in their own chunk they stay cached across deploys.
       // 'react-dom/client' is its own module (the big one) — listing only 'react-dom' leaves it in the entry.
-      output: { manualChunks: { vendor: ['react', 'react-dom', 'react-dom/client', 'react-router-dom'] } },
+      // Icons: one chunk. Split per lazy page they became a dozen tiny files fetched one by one after the page
+      // code — each a full round trip (~0.5 s on a phone) for half a kilobyte.
+      output: {
+        manualChunks(id) {
+          const p = id.replace(/\\/g, '/'); // Windows paths
+          if (/node_modules\/(react|react-dom|react-router|react-router-dom|scheduler)\//.test(p)) return 'vendor';
+          if (/node_modules\/lucide-react\//.test(p)) return 'icons';
+          return undefined;
+        },
+      },
     },
   },
   server: {

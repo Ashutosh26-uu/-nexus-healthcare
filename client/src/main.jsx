@@ -21,6 +21,17 @@ try { window.__ocLangSaved = Boolean(localStorage.getItem('oc_lang')); } catch {
   }
 }
 
+// The app opens from the saved shell; after a release, a page still on the old build can ask for a code chunk
+// the server no longer has. Load the new build once instead of showing an error (guarded against loops).
+window.addEventListener('vite:preloadError', (e) => {
+  try {
+    if (sessionStorage.getItem('oc_reloaded_for') === location.pathname) return;
+    sessionStorage.setItem('oc_reloaded_for', location.pathname);
+  } catch { /* storage blocked: still reload once */ }
+  e.preventDefault();
+  window.location.reload();
+});
+
 // Installable app (PWA): the service worker caches the app shell only — never /api health data.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}); });
