@@ -6,7 +6,10 @@ import { Button, Card, cx, timeAgo, useToast } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, usePatientLive, firstName, PageSkeleton } from './shared';
 import EmergencyCircle from './EmergencyCircle';
+import { emergencyNumber, abroadCountry } from '../../emergencyNumbers';
 import './sos.css';
+
+const num = () => emergencyNumber().number; // 108 in India, or the local number of the country you said you're in
 
 const HOLD_MS = 1200; // a press this long opens the countdown — a brush of the thumb doesn't
 const COUNTDOWN = 5;
@@ -30,10 +33,10 @@ function dial(number) {
   a.click();
 }
 
-// Dial 108 first (an ambulance call must never wait for our server), then raise the alert with whatever location
+// Dial the ambulance number first — 108, or the local one when travelling (a call must never wait for our server), then raise the alert with whatever location
 // arrives within 1.5 s; a slower GPS fix is sent to the family page when it comes. Returns the SOS.
 async function sendSos(wherePromise) {
-  dial('108');
+  dial(num());
   let loc = null;
   try { loc = await Promise.race([wherePromise, new Promise((r) => setTimeout(() => r(null), 1500))]); } catch { /* none */ }
   const { sos } = await api.post('/patient/sos', loc || {});
@@ -101,7 +104,7 @@ function Countdown({ onCancel, onSend }) {
       <div className="sos-count-box">
         <div id="sos-count-title" className="sos-count-title">Sending SOS in</div>
         <div className="sos-count-num" aria-live="assertive">{Math.max(n, 0)}</div>
-        <p className="sos-count-text">Your family will be alerted with your location, and your phone will open <strong>108</strong> to call an ambulance.</p>
+        <p className="sos-count-text">Your family will be alerted with your location, and your phone will open <strong>{num()}</strong> to call an ambulance.</p>
         <button type="button" className="sos-cancel" onClick={onCancel} autoFocus><X size={22} /> Cancel — I'm OK</button>
       </div>
     </div>
@@ -117,7 +120,7 @@ export function SosButton() {
   const toast = useToast();
   const send = useCallback(async (wherePromise) => {
     setCounting(false);
-    try { await sendSos(wherePromise); } catch (e) { toast(e.message || "Couldn't send the alert — please call 108 directly."); }
+    try { await sendSos(wherePromise); } catch (e) { toast(e.message || `Couldn't send the alert — please call ${num()} directly.`); }
     navigate('/patient/sos');
   }, [navigate, toast]);
   if (!patient) return null;
@@ -152,7 +155,7 @@ export default function SosPage() {
 
   const send = async (wherePromise) => {
     setCounting(false);
-    try { await sendSos(wherePromise); } catch (e) { toast(e.message || "Couldn't send the alert — please call 108 directly."); }
+    try { await sendSos(wherePromise); } catch (e) { toast(e.message || `Couldn't send the alert — please call ${num()} directly.`); }
     reload();
   };
 
@@ -162,7 +165,7 @@ export default function SosPage() {
   };
   const refreshLocation = () => act('loc', async () => {
     const l = await locate();
-    if (!l) throw new Error('Location is off or unavailable. Turn on location for this site, or tell 108 where you are.');
+    if (!l) throw new Error('Location is off or unavailable. Turn on location for this site, or tell the ambulance operator where you are.');
     await api.post(`/patient/sos/${sos.id}/location`, l);
   }, 'Location updated for your family');
 
@@ -180,7 +183,7 @@ export default function SosPage() {
           </HoldButton>
           <ol className="sos-steps">
             <li><strong>5-second countdown</strong> — tap Cancel if it was a mistake.</li>
-            <li>Your phone opens <strong>108</strong> to call an ambulance.</li>
+            <li>Your phone opens <strong>{num()}</strong> to call an ambulance{abroadCountry() ? ` (${emergencyNumber().name})` : ''}.</li>
             <li>Your family and your emergency circle (below) get an alert at once, with your location. You can also send the alert to anyone by WhatsApp or SMS.</li>
             <li>You see the nearest hospitals with an emergency department, and free beds where the hospital shares them.</li>
           </ol>
@@ -203,13 +206,13 @@ export default function SosPage() {
         </div>
       </div>
 
-      <a className="sos-call" href="tel:108"><Phone size={24} /> Call 108 — ambulance</a>
+      <a className="sos-call" href={`tel:${num()}`}><Phone size={24} /> Call {num()} — ambulance</a>
 
       <Card title={<span className="sos-ct"><MapPin size={18} /> Your location</span>}>
         {sos.location ? (
           <p className="small">Shared with your family{sos.location.accuracy ? ` (within about ${sos.location.accuracy} m)` : ''} · {timeAgo(sos.location.at)}. <a href={mapsLink(sos.location.lat, sos.location.lng)} target="_blank" rel="noreferrer">Open in Maps</a></p>
         ) : (
-          <p className="small sos-warn">We couldn't get your location. Turn on location for this site — or tell the 108 operator where you are.</p>
+          <p className="small sos-warn">We couldn't get your location. Turn on location for this site — or tell the ambulance operator where you are.</p>
         )}
         <Button size="sm" variant="secondary" icon={RefreshCw} loading={busy === 'loc'} onClick={refreshLocation}>Update my location</Button>
       </Card>
@@ -237,7 +240,7 @@ export default function SosPage() {
 
       <Card title={<span className="sos-ct"><Hospital size={18} /> Nearest hospitals</span>}>
         {sos.approximate && sos.hospitals.length > 0 && <p className="tiny muted">Sorted from the area on your profile — share your location for the closest ones.</p>}
-        {!sos.hospitals.length && <p className="small muted">No verified hospital found near you yet. Call 108 — they will take you to the right one.</p>}
+        {!sos.hospitals.length && <p className="small muted">No verified hospital found near you yet. Call {num()} — they will take you to the right one.</p>}
         <div className="sos-hosp-list">
           {sos.hospitals.map((h) => (
             <div key={h.id} className="sos-hosp">

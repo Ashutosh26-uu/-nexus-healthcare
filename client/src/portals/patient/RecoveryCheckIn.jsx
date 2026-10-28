@@ -5,6 +5,7 @@ import { api } from '../../api';
 import { Button, cx, useToast } from '../../components/ui';
 import { usePatientLive } from './shared';
 import './recovery.css';
+import { emergencyNumber } from '../../emergencyNumbers';
 
 const FEEL = [
   { id: 'better', label: 'Better', icon: Smile },
@@ -69,7 +70,7 @@ function Course({ c, danger, onDone }) {
           <strong><Siren size={18} /> Please get help now</strong>
           <p className="small">These signs need a doctor today. {result.alertedDoctor ? `${doc} has been told. ` : ''}If it feels serious, call 108 or go to the nearest hospital.</p>
           <div className="row wrap" style={{ gap: 8 }}>
-            <a className="btn" href="tel:108"><Phone size={16} /> Call 108</a>
+            <a className="btn" href={`tel:${emergencyNumber().number}`}><Phone size={16} /> Call {emergencyNumber().number}</a>
             <Link className="btn secondary" to="/patient/sos">SOS & nearest hospitals</Link>
           </div>
         </div>

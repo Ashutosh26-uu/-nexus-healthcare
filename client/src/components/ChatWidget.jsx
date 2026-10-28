@@ -8,6 +8,7 @@ import { cx } from './ui';
 import { useSupport } from '../config';
 import { listenSupported, speakSupported, listenOnce, speak, stopSpeaking, speechLang, voiceLangFor } from './speech';
 import './chat.css';
+import { emergencyNumber } from '../emergencyNumbers';
 
 const STORE_KEY = 'oc_chat';
 const VOICE_KEY = 'oc_chat_voice'; // '1' = read every reply aloud
@@ -324,9 +325,9 @@ export default function ChatWidget() {
         </div>
 
         {emergency && (
-          <a className="chat-emergency" href="tel:108">
+          <a className="chat-emergency" href={`tel:${emergencyNumber().number}`}>
             <Phone size={18} />
-            <span><strong>Emergency? Call 108 now</strong><br /><span className="tiny">Tap to call an ambulance</span></span>
+            <span><strong>Emergency? Call {emergencyNumber().number} now</strong><br /><span className="tiny">Tap to call an ambulance</span></span>
           </a>
         )}
 

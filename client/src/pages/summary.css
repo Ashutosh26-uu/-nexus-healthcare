@@ -1,0 +1,27 @@
+/* Shared medical summary (/summary/:token) — calm, printable, readable on a phone. */
+.ms { max-width: 780px; margin: 0 auto; padding: 24px 16px 48px; color: var(--ink); background: var(--paper); min-height: 100vh; }
+.ms-head { display: flex; gap: 12px; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid var(--line); padding-bottom: 14px; margin-bottom: 16px; }
+.ms-head h1 { margin: 4px 0; font-size: 1.8rem; }
+.ms-kicker { font-size: 0.78rem; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.04em; }
+.ms-sub { color: var(--ink-2); }
+.ms h2 { font-size: 1rem; margin: 0 0 6px; display: flex; gap: 6px; align-items: center; }
+.ms p { margin: 0; }
+.ms-box, .ms-alert { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; background: var(--card); }
+.ms-alert { border-color: var(--rose); background: var(--rose-soft); }
+.ms-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.ms-item { padding: 8px 0; border-top: 1px solid var(--line); }
+.ms-item:first-of-type { border-top: 0; }
+.ms-item ul { margin: 4px 0 0; padding-left: 18px; }
+.ms-date { font-size: 0.85rem; color: var(--ink-3); }
+.ms-note { font-size: 0.9rem; color: var(--ink-2); margin-top: 4px; }
+.ms-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-top: 4px; }
+.ms-table td { padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.ms-table tr.flag td { color: var(--rose); }
+.ms-row { display: flex; gap: 10px; padding: 3px 0; }
+.ms-row span { color: var(--ink-3); min-width: 90px; }
+.ms-foot { font-size: 0.78rem; color: var(--ink-3); margin-top: 20px; }
+@media print {
+  .no-print, .chat-fab, .nx-cookie { display: none !important; }
+  .ms { padding: 0; background: #fff; }
+  .ms-box, .ms-alert { break-inside: avoid; }
+}

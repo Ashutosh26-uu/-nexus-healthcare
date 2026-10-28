@@ -1,7 +1,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Home as HomeIcon, HeartPulse, Video, FolderHeart, Pill, ShieldCheck, Users, IdCard, Settings as SettingsIcon, ChevronDown, Check, UserPlus, Activity, Coins, Dna, ScanLine, UserRoundPen, MapPin, Stethoscope, FileUp, FlaskConical, CalendarClock, Repeat, Gauge, Syringe } from 'lucide-react';
-import { Gift, Siren, LayoutGrid, BadgeIndianRupee, Baby } from 'lucide-react'; // Invite & earn · SOS · More · Ayushman · Pregnancy
+import { Gift, Siren, LayoutGrid, BadgeIndianRupee, Baby, Plane } from 'lucide-react'; // Invite & earn · SOS · More · Ayushman · Pregnancy
 import PortalLayout from '../../components/PortalLayout';
 import { pageLoader } from '../../prefetch';
 import { Avatar, Button, Modal, cx, useToast } from '../../components/ui';
@@ -41,6 +41,7 @@ const Vaccines = page(() => import('./Vaccines'));
 const SosPage = page(() => import('./Sos'));
 const Ayushman = page(() => import('./Ayushman'));
 const Pregnancy = page(() => import('./Pregnancy'));
+const CareAbroad = page(() => import('./CareAbroad'));
 
 // Keyed by id so state from one consult never carries into the next.
 function ConsultRoomById() {
@@ -117,6 +118,7 @@ export default function PatientApp() {
     { to: '/patient/medicines', label: 'Medicines', icon: Pill, badge: medsBadge, group: 'Get care' },
     { to: '/patient/tests', label: 'Lab tests', icon: FlaskConical, group: 'Get care' },
     { to: '/patient/ayushman', label: 'Free treatment (Ayushman)', icon: BadgeIndianRupee, group: 'Get care' },
+    { to: '/patient/abroad', label: 'Care abroad', icon: Plane, group: 'Get care' },
     { to: '/patient/records', label: 'My reports & records', icon: FolderHeart, group: 'My health', groupIcon: Activity },
     { to: '/patient/tracker', label: 'BP, sugar & weight', icon: Gauge, group: 'My health' },
     { to: '/patient/vaccines', label: 'Vaccinations', icon: Syringe, group: 'My health' },
@@ -166,6 +168,7 @@ export default function PatientApp() {
           <Route path="sos" element={<SosPage />} />
           <Route path="ayushman" element={<Ayushman />} />
           <Route path="pregnancy" element={<Pregnancy />} />
+          <Route path="abroad" element={<CareAbroad />} />
           <Route path="settings" element={<Settings />} />
           <Route path="complete-profile" element={<CompleteProfile />} />
           <Route path="tests" element={<Tests />} />

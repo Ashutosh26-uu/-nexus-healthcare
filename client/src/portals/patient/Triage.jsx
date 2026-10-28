@@ -7,6 +7,7 @@ import { Avatar, Button, Field, TriageBadge, cx } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, firstName, relationOf, SPEECH_LANG } from './shared';
 import { useDictation } from '../../components/speech';
+import { emergencyNumber } from '../../emergencyNumbers';
 
 const QUICK_SYMPTOMS = ['Fever', 'Cough', 'Headache', 'Body ache', 'Sore throat', 'Cold / runny nose', 'Vomiting', 'Loose motions', 'Stomach pain', 'Dizziness', 'Rash or itching', 'Burning urine', 'Tiredness', 'Acidity'];
 const DANGER_SIGNS = [
@@ -216,7 +217,7 @@ function TriageResult({ result, symptoms, who, isSelf, onRestart }) {
         <h2>This needs urgent care — please don&apos;t wait.</h2>
         <p>{result.advice}</p>
         {result.redFlags?.length > 0 && <p className="small" style={{ opacity: 0.9 }}>Because: {result.redFlags.join(', ')}</p>}
-        <a className="btn lg pt-call108" href="tel:108"><Phone size={20} /> Call 108 ambulance</a>
+        <a className="btn lg pt-call108" href={`tel:${emergencyNumber().number}`}><Phone size={20} /> Call {emergencyNumber().number} ambulance</a>
         <div className="row wrap mt-2" style={{ justifyContent: 'center' }}>
           <Button variant="secondary" icon={IdCard} onClick={() => navigate('/patient/emergency')}>Show {isSelf ? 'my' : `${who}’s`} emergency card</Button>
         </div>

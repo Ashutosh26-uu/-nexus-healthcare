@@ -14,6 +14,7 @@ import ShareButton from '../../components/ShareButton';
 import BookingFlow from './BookingFlow';
 import { getLocale } from '../../i18n';
 import './tests.css';
+import { emergencyNumber } from '../../emergencyNumbers';
 
 const STEP_LABEL = { ordered: 'Booked', collected: 'Test done', received: 'At the lab', processing: 'Being tested', review: 'Pathologist check', reported: 'Report ready' };
 const hrs = (h) => (h == null ? '—' : h < 24 ? `${h} hours` : `${Math.round(h / 24)} day${h >= 48 ? 's' : ''}`);
@@ -324,7 +325,7 @@ export default function Tests() {
               {o.nextSteps.map((x, i) => (
                 <div key={i} className={cx('pt-next-step', x.kind)}>
                   <span className="small">{x.text}</span>
-                  {x.action === 'call108' && <a className="btn sm danger" href="tel:108"><Ambulance size={14} /> Call 108</a>}
+                  {x.action === 'call108' && <a className="btn sm danger" href={`tel:${emergencyNumber().number}`}><Ambulance size={14} /> Call {emergencyNumber().number}</a>}
                   {x.action === 'book_doctor' && o.doctorId && <Button size="sm" icon={Repeat} onClick={() => setRebook({ id: o.doctorId, name: o.doctorName })}>Book follow-up</Button>}
                   {x.action === 'find_specialist' && <Button size="sm" variant="secondary" icon={Search} onClick={() => navigate('/patient/consult', { state: { department: x.department } })}>Find {x.department}</Button>}
                 </div>

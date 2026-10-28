@@ -4,6 +4,7 @@ import { AlertTriangle, Phone } from 'lucide-react';
 import { cx } from '../../components/ui';
 import { getLocale } from '../../i18n';
 import './health.css';
+import { emergencyNumber } from '../../emergencyNumbers';
 
 export const READING_KINDS = {
   bp: { label: 'Blood pressure', short: 'BP', unit: 'mmHg' },
@@ -41,7 +42,7 @@ export function FlagNote({ flag }) {
           <strong className="block">Get medical help now</strong>
           <span className="small">{flag.text}</span>
         </div>
-        <a className="btn sm" href="tel:108"><Phone size={14} /> Call 108</a>
+        <a className="btn sm" href={`tel:${emergencyNumber().number}`}><Phone size={14} /> Call {emergencyNumber().number}</a>
       </div>
     );
   }

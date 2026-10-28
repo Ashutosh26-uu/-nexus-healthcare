@@ -31,6 +31,7 @@ const PassportLanding = lazy(() => import('./pages/ScanLink').then((m) => ({ def
 const VerifyDocument = lazy(() => import('./pages/ScanLink').then((m) => ({ default: m.VerifyDocument })));
 const SosFamily = lazy(() => import('./pages/SosFamily'));
 const CircleInvite = lazy(() => import('./pages/CircleInvite'));
+const MedicalSummary = lazy(() => import('./pages/MedicalSummary'));
 const VisitLanding = lazy(() => import('./pages/ScanLink').then((m) => ({ default: m.VisitLanding })));
 const PrivacyPolicy = lazy(() => import('./pages/Policies').then((m) => ({ default: m.PrivacyPolicy })));
 const CookiePolicy = lazy(() => import('./pages/Policies').then((m) => ({ default: m.CookiePolicy })));
@@ -134,7 +135,7 @@ function ScrollToTop() {
 function AppRoutes() {
   const location = useLocation();
   // The kiosk is a full-screen touch app and the print pages are documents; no floating chat or install nudge there.
-  const bare = ['/kiosk', '/rx/', '/lab-report/', '/lab-label/', '/invoice/', '/statement/', '/bill/', '/display/'].some((p) => location.pathname.startsWith(p));
+  const bare = ['/kiosk', '/rx/', '/lab-report/', '/lab-label/', '/invoice/', '/statement/', '/bill/', '/display/', '/summary/'].some((p) => location.pathname.startsWith(p));
   return (
     <>
       <ScrollToTop />
@@ -154,6 +155,7 @@ function AppRoutes() {
         <Route path="/v/:kind/:token" element={<Lazy><VerifyDocument /></Lazy>} />
         <Route path="/sos/:token" element={<Lazy><SosFamily /></Lazy>} />
         <Route path="/circle/:token" element={<Lazy><CircleInvite /></Lazy>} />
+        <Route path="/summary/:token" element={<Lazy><MedicalSummary /></Lazy>} />
         <Route path="/s/v/:id/:code" element={<Lazy><VisitLanding /></Lazy>} />
         <Route path="/privacy" element={<Lazy><PrivacyPolicy /></Lazy>} />
         <Route path="/cookies" element={<Lazy><CookiePolicy /></Lazy>} />

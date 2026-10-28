@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useConsent, openLocationSettings } from '../../consent';
-import { LocateFixed, MapPin, Star, Video, Stethoscope, Ambulance, Phone, Building2, Loader2, CalendarClock, BedDouble, Clock, X, Globe2, Radar, MonitorSmartphone, SlidersHorizontal, ChevronDown } from 'lucide-react';
+import { LocateFixed, MapPin, Star, Video, Stethoscope, Ambulance, Phone, Building2, Loader2, CalendarClock, BedDouble, Clock, X, Globe2, Radar, MonitorSmartphone, SlidersHorizontal, ChevronDown, Plane } from 'lucide-react';
 import { api, subscribe } from '../../api';
 import { Avatar, Button, Empty, Field, fmtMoney, cx, useDebounced } from '../../components/ui';
 import { AvailBadge, availClass } from '../../components/Availability';
@@ -81,7 +81,8 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
     if (!active) { setData(null); return undefined; }
     let alive = true;
     setLoading(true); setError('');
-    const params = new URLSearchParams({ symptoms: q, scope, radiusKm: String(radius) });
+    const params = new URLSearchParams({ symptoms: q, scope: scope === 'abroad' ? 'all' : scope, radiusKm: String(radius) });
+    if (scope === 'abroad') params.set('abroad', '1'); // doctors practising in other countries (video)
     if (dept) params.set('department', dept);
     if (excludeId) params.set('exclude', excludeId);
     if (place) { params.set('district', place.district); params.set('state', place.state); } else if (lat != null && lng != null) { params.set('lat', lat); params.set('lng', lng); } else if (manualDistrict) { params.set('district', manualDistrict); params.set('state', manualState); }
@@ -110,7 +111,7 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
       )}
 
       <div className="pt-find-head">
-        <h3 className="mb-0 row" style={{ gap: 8 }}><Stethoscope size={19} />{title || (scope === 'all' ? `Doctors across ${countryName}` : `Doctors within ${radius} km`)}</h3>
+        <h3 className="mb-0 row" style={{ gap: 8 }}><Stethoscope size={19} />{title || (scope === 'abroad' ? 'Doctors in other countries' : scope === 'all' ? `Doctors across ${countryName}` : `Doctors within ${radius} km`)}</h3>
         {data && (
           <p className="small muted mb-0">
             {data.triage.byDepartment ? <>Department: <strong>{data.triage.specialty}</strong></> : q ? <>For “{q.length > 50 ? `${q.slice(0, 50)}…` : q}” we suggest <strong>{data.triage.specialty}</strong></> : 'All specialties'}
@@ -137,6 +138,7 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
           <div className="pt-scope" role="radiogroup" aria-label="Search area">
             <button type="button" role="radio" aria-checked={scope === 'near'} className={cx(scope === 'near' && 'on')} onClick={() => setScope('near')}><Radar size={13} /> Near me</button>
             <button type="button" role="radio" aria-checked={scope === 'all'} className={cx(scope === 'all' && 'on')} onClick={() => setScope('all')}><Globe2 size={13} /> All of {countryName}</button>
+            <button type="button" role="radio" aria-checked={scope === 'abroad'} className={cx(scope === 'abroad' && 'on')} onClick={() => setScope('abroad')}><Plane size={13} /> Other countries</button>
           </div>
           {scope === 'near' && <DistancePicker value={radius} onChange={setRadius} label="How far to look for doctors" />}
           {scope === 'near' && (place ? (
@@ -157,7 +159,7 @@ export default function NearbyDoctors({ symptoms: givenSymptoms, department: giv
       {loading && !data && <div className="row small muted mt-2"><span className="spinner sm" /> Finding the right doctors…</div>}
       {error && !loading && <div className="form-error mt-2">{error}</div>}
       {data && data.doctors.length === 0 && (
-        <Empty icon={Stethoscope} title={scope === 'near' ? `No matching doctor within ${radius} km yet` : 'No verified doctors for this yet'}>
+        <Empty icon={Stethoscope} title={scope === 'near' ? `No matching doctor within ${radius} km yet` : scope === 'abroad' ? 'No doctors from other countries on Sehatra yet' : 'No verified doctors for this yet'}>
           {scope === 'near' ? <>Our network is growing. Try a bigger distance, or <button type="button" className="link-btn" onClick={() => setScope('all')}>See doctors across {countryName}</button> — many consult by video.</> : 'Try another department, or a general physician.'}
         </Empty>
       )}

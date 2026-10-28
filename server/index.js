@@ -1702,7 +1702,9 @@ app.get('/api/doctors/recommend', auth, role('patient', 'caregiver', 'kiosk_oper
   const symptoms = clean(req.query.symptoms, 500) || p?.currentSymptoms?.text || '';
   const t = engines.triage({ symptoms: symptoms || 'general check-up', age: ageOf(p?.dob) ?? undefined }, d.aiConfig);
   const department = SPECIALTIES.includes(req.query.department) ? req.query.department : null;
-  const scopeAll = req.query.scope === 'all';
+  // ?abroad=1: verified doctors practising in OTHER countries (video second opinions) — distance doesn't apply.
+  const abroad = req.query.abroad === '1';
+  const scopeAll = req.query.scope === 'all' || abroad;
   const radiusKm = Math.max(2, Math.min(200, Number(req.query.radiusKm) || NEAR_RADIUS_KM));
   const country = countryOf(p);
   const lat = Number(req.query.lat); const lng = Number(req.query.lng);
@@ -1718,7 +1720,7 @@ app.get('/api/doctors/recommend', auth, role('patient', 'caregiver', 'kiosk_oper
   const docsByFac = new Map(); for (const x of d.doctors) if (x.verified && x.facilityId) { if (!docsByFac.has(x.facilityId)) docsByFac.set(x.facilityId, []); docsByFac.get(x.facilityId).push(x); }
   const inArea = (km) => scopeAll || km === null || km <= radiusKm;
   const exclude = String(req.query.exclude || '');
-  const list = d.doctors.filter((x) => x.verified && countryOf(x) === country && x.id !== exclude).map((doc) => {
+  const list = d.doctors.filter((x) => x.verified && (abroad ? countryOf(x) !== country : countryOf(x) === country) && x.id !== exclude).map((doc) => {
     const a = availabilityOf(doc, { facilities: d.facilities });
     const fac = doc.facilityId ? facilityById(doc.facilityId) : null;
     const practice = practiceOf(doc, fac);
@@ -3989,7 +3991,7 @@ async function erasePatient(p, { by = 'system' } = {}) {
     if (!x) continue;
     const keep = { id: x.id, createdAt: x.createdAt, country: x.country || 'IN', deletionRequest: { ...(x.deletionRequest || {}), status: 'completed', completedAt: nowIso() } };
     for (const k of Object.keys(x)) delete x[k];
-    Object.assign(x, keep, { name: ERASED_NAME, userId: null, guardianUserId: null, dob: null, gender: 'Prefer not to say', language: 'English', bloodGroup: 'Unknown', allergies: [], conditions: [], currentMeds: [], emergencyContacts: [], vaccinations: [], abha: '', pincode: '', district: '', state: '', circle: [], circleInvites: [], doctorAlert: null, erasedAt: nowIso() });
+    Object.assign(x, keep, { name: ERASED_NAME, userId: null, guardianUserId: null, dob: null, gender: 'Prefer not to say', language: 'English', bloodGroup: 'Unknown', allergies: [], conditions: [], currentMeds: [], emergencyContacts: [], vaccinations: [], abha: '', pincode: '', district: '', state: '', circle: [], circleInvites: [], doctorAlert: null, travelLinks: [], erasedAt: nowIso() });
   }
   // The login: only when this was the person's own passport — a caregiver deleting a parent's profile keeps their account.
   if (self) {
@@ -5014,7 +5016,7 @@ app.get('/api/doctor/patient/:id', auth, role('doctor'), lookupLimiter, (req, re
     return res.json({ emergency: true, expiresAt: new Date(new Date(bg.at).getTime() + 60 * 60000).toISOString(), patient: { id: p.id, name: p.name, age: ageOf(p.dob), gender: p.gender, bloodGroup: p.bloodGroup, allergies: p.allergies, conditions: p.conditions, currentMeds: p.currentMeds, emergencyContacts: p.emergencyContacts } });
   }
   // Account-level settings (privacy choices, deletion requests, kiosk session) are the patient's own — not part of the clinical record.
-  const { privacy: _priv, deletionRequest: _del, kioskSeen: _ks, aadhaarRefHash: _ar, vaxReminded: _vr, vaxPrefs: _vp, vitalsReminder: _vit, govIds: _gi, aadhaarLast4: _a4, aadhaarVerification: _av, lat: _lat, lng: _lng, receptionSeen: _rs, circle: _cc, circleInvites: _ci, doctorAlert: _da, ...clinical } = p;
+  const { privacy: _priv, deletionRequest: _del, kioskSeen: _ks, aadhaarRefHash: _ar, vaxReminded: _vr, vaxPrefs: _vp, vitalsReminder: _vit, govIds: _gi, aadhaarLast4: _a4, aadhaarVerification: _av, lat: _lat, lng: _lng, receptionSeen: _rs, circle: _cc, circleInvites: _ci, doctorAlert: _da, travelLinks: _tl, ...clinical } = p;
   // With consent, only the parts the patient approved (break-glass returned above). Allergies and conditions stay
   // in the header for prescribing safety — the same critical set an emergency view shows.
   const may = consented ? consentScopes(p.id, [doc.id]) : new Set(CONSENT_SCOPES);
@@ -8276,6 +8278,12 @@ require('./followups')(app, { auth, role, db, store, notify, audit, broadcast, t
 const pregnancy = require('./pregnancy')(app, {
   auth, role, activePatient, db, store, notify, audit, broadcast, touch, nowIso, clean, istDay, patientOwnerUserIds, patientById,
   ageOf, consentScopes, doctorFor,
+});
+// Care abroad (careabroad.js): an English medical summary on a private, expiring link for doctors in any country.
+require('./careabroad')(app, {
+  auth, role, activePatient, db, store, notify, audit, nowIso, patientOwnerUserIds, doctorById, facilityName, ageOf, publicLimiter,
+  appUrl: () => APP_URL(),
+  pregnancyFor: (pid) => { const pg = pregnancy.activeFor(pid); return pg ? pregnancy.plan(pg) : null; },
 });
 require('./sos')(app, {
   circleUserIds: circle.circleUserIds,
