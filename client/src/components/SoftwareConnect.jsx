@@ -126,6 +126,7 @@ function DocsModal({ open, doc, onClose }) {
         <p className="mb-0">Send the key with every call: <code dir="ltr">Authorization: Bearer sehatra_…</code> to <code dir="ltr">{base}</code>. Up to 4 calls a second. Answers are JSON.</p>
         <pre className="mono tiny" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', background: 'var(--paper-2, var(--paper))', padding: 10, borderRadius: 8 }} dir="ltr">{doc.calls.join('\n')}</pre>
         {doc.events && <p className="mb-0">Webhook: a POST of <code dir="ltr">{'{ "event": "' + doc.events + '", "id", "facilityId", "occurredAt" }'}</code> — only ids, never patient details; fetch the rest with your key. Check it with <code dir="ltr">X-Sehatra-Signature: sha256=HMAC(secret, X-Sehatra-Timestamp + "." + body)</code>. Failed deliveries are retried in order.</p>}
+        {doc.events && <p className="mb-0">Software that speaks <strong>HL7 FHIR R4</strong> can use the same key at <code dir="ltr">{base}/api/integration/fhir/r4</code> — <code dir="ltr">ServiceRequest</code> (search / read){doc.events === 'lab_order.created' ? <>, and results as a <code dir="ltr">DiagnosticReport</code> with contained Observations</> : ''}. See <code dir="ltr">/metadata</code>.</p>}
         {!doc.events && <p className="mb-0 muted">Software that can't call a web API (Marg, GoFrugal and most others can export stock as CSV): import the file from the stock screen with “Import from billing software”.</p>}
       </div>
     </Modal>

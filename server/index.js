@@ -57,7 +57,7 @@ app.use(security.securityHeaders);
 app.use(cors(security.corsOptions()));
 // gzip everything except the live event stream (compression would buffer SSE).
 app.use(compression({ filter: (req, res) => (req.path === '/api/events' || req.path === '/api/public/stats/stream' ? false : compression.filter(req, res)) }));
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '2mb', type: ['application/json', 'application/fhir+json'] })); // FHIR clients (fhir.js) send fhir+json
 // Per-request context: who acted and whom the request touched (scopes live-update fan-out).
 app.use((req, _res, next) => requestCtx.run({ affected: new Set(), userId: null }, next));
 // Every API answer is computed live from the database — never served from a browser, proxy or CDN cache
@@ -8295,11 +8295,13 @@ require('./careabroad')(app, {
   pregnancyFor: (pid) => { const pg = pregnancy.activeFor(pid); return pg ? pregnancy.plan(pg) : null; },
 });
 // Software connectors (integrations.js): HMIS / LIS / billing software keys, API and signed webhooks.
-require('./integrations')(app, {
+const integrations = require('./integrations')(app, {
   auth, role, db, store, notify, audit, broadcast, touch, touchFacility, nowIso, clean, addStock, validStockRow, sameDrug,
   labView, moveLabStatus, labStaffIds, isPathologist, facilityUsers, secret: JWT_SECRET, security,
   allowLocalWebhooks: process.env.NODE_ENV !== 'production',
 });
+// The same connectors in HL7 FHIR R4 (fhir.js), for hospital and lab software that speaks FHIR.
+require('./fhir')(app, { db, audit, labView, appUrl: () => APP_URL(), ...integrations });
 // Purchase orders sent to suppliers (supplierpo.js): email / WhatsApp + a private link the supplier answers on.
 const supplierPo = require('./supplierpo')(app, {
   auth, role, db, store, notify, audit, broadcast, touchFacility, nowIso, clean, publicLimiter, otp, facilityUsers, security,

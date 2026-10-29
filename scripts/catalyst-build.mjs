@@ -24,7 +24,7 @@ mkdirSync(out, { recursive: true });
 run('npm run build --prefix client');
 
 // Server code only — never the local SQLite database, uploads or secrets (any .env variant except the example).
-const skip = new Set(['node_modules', 'data', 'loadtest.js']);
+const skip = new Set(['node_modules', 'data', 'loadtest.js', 'test']);
 const skipFile = (name) => skip.has(name) || (name.startsWith('.env') && name !== '.env.example') || /\.(db|db-wal|db-shm|log)$/.test(name);
 cpSync(join(root, 'server'), join(out, 'server'), { recursive: true, filter: (src) => src === join(root, 'server') || !skipFile(src.split(/[\\/]/).pop()) });
 cpSync(join(root, 'client', 'dist'), join(out, 'client', 'dist'), { recursive: true });

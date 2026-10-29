@@ -19,6 +19,7 @@
 // occurredAt } — ids only, never patient details; the software fetches what it needs with its key. Signed with
 // HMAC-SHA256 over "<timestamp>.<body>" (headers X-Sehatra-Timestamp, X-Sehatra-Signature: sha256=<hex>).
 //   hmis → referral.created     lis → lab_order.created
+// The same in HL7 FHIR R4: fhir.js.
 // Staff routes (session login): GET/POST /api/facility/integrations, PUT/DELETE /api/facility/integrations/:id,
 // POST /api/facility/integrations/:id/test.
 const crypto = require('crypto');
@@ -250,18 +251,24 @@ module.exports = function registerIntegrations(app, x) {
   });
   // Results from the analyser / LIS land as a draft for the pathologist — exactly like a technician entering them.
   app.post(`${V1}/lab-orders/:id/results`, ...k('lis'), (req, res) => {
-    const d = db();
     const o = labOrder(req, res); if (!o) return;
-    if (o.status === 'reported') return res.status(409).json({ error: 'This report is already signed and released.' });
-    if (o.status === 'ordered') return res.status(409).json({ error: 'The sample hasn\'t been collected yet.' });
-    const results = (Array.isArray(req.body?.results) ? req.body.results : []).slice(0, 60).filter((r) => r && typeof r === 'object')
+    const out = saveDraft(req, o, req.body?.results);
+    if (out.error) return res.status(out.status).json({ error: out.error });
+    res.json({ id: o.id, status: o.status, awaitingApproval: true });
+  });
+  // Shared by the JSON API and FHIR (fhir.js): results become the pathologist's draft, never a signed report.
+  function saveDraft(req, o, raw) {
+    const d = db();
+    if (o.status === 'reported') return { status: 409, error: 'This report is already signed and released.' };
+    if (o.status === 'ordered') return { status: 409, error: 'The sample hasn\'t been collected yet.' };
+    const results = (Array.isArray(raw) ? raw : []).slice(0, 60).filter((r) => r && typeof r === 'object')
       .map((r) => {
         const code = clean(r.code, 20);
         const test = code && o.tests.find((t) => t.code === code);
         return { name: clean(r.name, 80) || test?.name || code, value: clean(r.value, 40), unit: clean(r.unit, 20), range: clean(r.range, 40), flag: clean(r.flag, 20).toLowerCase() };
       })
       .filter((r) => r.name && r.value !== '');
-    if (!results.length) return res.status(400).json({ error: 'Send at least one result: { results: [{ name or code, value, unit, range, flag }] }.' });
+    if (!results.length) return { status: 400, error: 'Send at least one result: { results: [{ name or code, value, unit, range, flag }] }.' };
     o.draftReport = { results, reportFileId: o.draftReport?.reportFileId || null, critical: results.some((r) => r.flag === 'critical'), enteredBy: { id: req.actor.id, name: req.actor.name }, enteredAt: nowIso(), source: 'lis' };
     o.returnNote = null;
     if (o.status !== 'review') { o.status = 'review'; o.reviewAt = nowIso(); }
@@ -273,8 +280,8 @@ module.exports = function registerIntegrations(app, x) {
     touch(labStaffIds(o.labId));
     store.save();
     broadcast('lab');
-    res.json({ id: o.id, status: o.status, awaitingApproval: true });
-  });
+    return { ok: true };
+  }
 
   // ---------- billing ----------
   const stockRow = (i) => ({ id: i.id, drug: i.drug, batch: i.batch || null, expiry: i.expiry || null, qty: i.qty, gtin: i.gtin || null, updatedAt: i.updatedAt || null });
@@ -377,5 +384,5 @@ module.exports = function registerIntegrations(app, x) {
   }
   setInterval(sweep, 20000).unref?.();
 
-  return { upsertStock, privateIp };
+  return { upsertStock, privateIp, keyAuth, keyLimiter, labVisible, saveDraft };
 };

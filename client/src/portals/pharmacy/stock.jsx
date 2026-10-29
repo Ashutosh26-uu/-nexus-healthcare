@@ -4,6 +4,7 @@ import { ScanBarcode, PackagePlus, ClipboardPaste, Truck, CheckCircle2 } from 'l
 import { Button, Field, Modal, Progress, Empty, useAction, useToast, fmtNum, fmtDate, cx } from '../../components/ui';
 import { api } from '../../api';
 import BarcodeScanner, { canScan, packFieldsFrom } from '../../components/BarcodeScanner';
+import { excelSerialDate, readXlsx } from '../../xlsx';
 import './stock.css';
 
 export const COMMON_DRUGS = [
@@ -184,6 +185,8 @@ const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8,
 const lastDay = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
 export function parseExpiry(v) {
   const s = String(v || '').trim();
+  // An Excel date cell arrives as a day number (e.g. 46752 = 2027-12-31).
+  if (/^\d{5}(\.\d+)?$/.test(s) && Number(s) > 36000 && Number(s) < 80000) return excelSerialDate(s);
   let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
   m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/); // DD/MM/YYYY (Indian order)
@@ -243,8 +246,14 @@ export function PasteStockModal({ open, onClose, onAdded, sync = false }) {
     const f = e.target.files?.[0];
     e.target.value = '';
     if (!f) return;
-    if (/\.xlsx?$/i.test(f.name)) { toast('Save it as CSV first (File → Save as → CSV), then choose that file', 'error'); return; }
+    if (/\.xls$/i.test(f.name)) { toast('Old .xls files can\'t be read — save it as .xlsx or CSV, then choose that file', 'error'); return; }
     if (f.size > 5 * 1024 * 1024) { toast('That file is too big — export only the stock list', 'error'); return; }
+    if (/\.xlsx$/i.test(f.name)) {
+      // Excel: the first sheet becomes tab-separated rows, read by the same parser as a paste.
+      readXlsx(f).then((rows) => { setText(rows.map((r) => r.join('\t')).join('\n')); setFileName(f.name); setResult(null); })
+        .catch((err) => toast(err.message || 'Couldn\'t read that Excel file — save it as CSV instead', 'error'));
+      return;
+    }
     const rd = new FileReader();
     rd.onload = () => { setText(String(rd.result || '')); setFileName(f.name); setResult(null); };
     rd.readAsText(f);
@@ -266,12 +275,12 @@ export function PasteStockModal({ open, onClose, onAdded, sync = false }) {
   if (!open) return null;
   return (
     <Modal open wide onClose={onClose} title={sync ? 'Import from billing software' : 'Paste stock from Excel'}
-      subtitle={sync ? 'Export your stock list from Marg, GoFrugal or any billing software as CSV and choose the file. Quantities here are set to match it.' : 'Copy the rows from your supplier\'s sheet or invoice and paste them here — no typing one by one.'}
+      subtitle={sync ? 'Export your stock list from Marg, GoFrugal or any billing software as Excel (.xlsx) or CSV and choose the file. Quantities here are set to match it.' : 'Copy the rows from your supplier\'s sheet or invoice and paste them here — no typing one by one.'}
       footer={<><span className="grow tiny muted">{rows.length ? `${rows.length} row${rows.length === 1 ? '' : 's'} read${bad.length ? ` · ${bad.length} need a fix` : ''}` : ''}</span><Button variant="ghost" onClick={onClose}>Cancel</Button><Button icon={PackagePlus} loading={busy === 'bulk'} disabled={!syncing} onClick={submit}>{sync ? `Sync ${syncing || ''} lines` : `Add ${rows.length || ''} to stock`}</Button></>}>
       <div className="stack">
         {sync && (
           <div className="row wrap" style={{ gap: 8 }}>
-            <label className="btn sm secondary" style={{ cursor: 'pointer' }}>Choose CSV file<input type="file" accept=".csv,.txt,text/csv" onChange={pickFile} hidden /></label>
+            <label className="btn sm secondary" style={{ cursor: 'pointer' }}>Choose Excel or CSV file<input type="file" accept=".xlsx,.csv,.txt,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={pickFile} hidden /></label>
             <span className="tiny muted">{fileName || 'or paste the rows below'}</span>
           </div>
         )}
