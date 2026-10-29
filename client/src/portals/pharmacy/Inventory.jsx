@@ -1,5 +1,5 @@
 import { useDeferredValue, useMemo, useState } from 'react';
-import { Search, PackagePlus, ScanBarcode, Boxes, AlertTriangle, CalendarX, ClipboardPaste } from 'lucide-react';
+import { Search, PackagePlus, ScanBarcode, Boxes, AlertTriangle, CalendarX, ClipboardPaste, FileSpreadsheet } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
 import { Button, Pills, Stat, fmtNum } from '../../components/ui';
 import { StockTable, AddStockModal, PasteStockModal, IncomingPurchases, expiryInfo } from './stock';
@@ -12,6 +12,7 @@ export default function Inventory({ home, reload }) {
   const [adding, setAdding] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [pasting, setPasting] = useState(false);
+  const [importing, setImporting] = useState(false);
   const purchases = useLive('/pharmacy/purchases', ['billing', 'supply', 'pharmacy']);
   // Typing stays instant on a big shelf: the table filters on a deferred copy of the search, and
   // the list is only rebuilt when the stock, filter or search actually change.
@@ -32,6 +33,7 @@ export default function Inventory({ home, reload }) {
     <>
       <PageHeader title="Inventory" subtitle="Your live shelf. Doctors see “in stock nearby” from these numbers, so a quick correction saves a wasted trip for a patient.">
         <Button variant="ghost" icon={ClipboardPaste} onClick={() => setPasting(true)}>Paste from Excel</Button>
+        <Button variant="ghost" icon={FileSpreadsheet} onClick={() => setImporting(true)}>Import from billing software</Button>
         <Button variant="secondary" icon={ScanBarcode} onClick={() => setScanning(true)}>Scan barcode</Button>
         <Button icon={PackagePlus} onClick={() => setAdding(true)}>Add stock</Button>
       </PageHeader>
@@ -60,6 +62,7 @@ export default function Inventory({ home, reload }) {
       <StockTable items={items} onSaved={reload} unit="strips / units" />
 
       <PasteStockModal open={pasting} onClose={() => setPasting(false)} onAdded={reload} />
+      <PasteStockModal sync open={importing} onClose={() => setImporting(false)} onAdded={reload} />
       <AddStockModal open={adding || scanning} scanFirst={scanning} onClose={() => { setAdding(false); setScanning(false); }} onAdded={reload} />
     </>
   );

@@ -1,6 +1,7 @@
-import { PlugZap, RefreshCw, ShieldCheck, Check, X, Radar, Server } from 'lucide-react';
+import { ShieldCheck, Check, X, Radar } from 'lucide-react';
 import { PageHeader } from '../../components/PortalLayout';
-import { Card, Button, Empty, PreviewBadge, fmtDate } from '../../components/ui';
+import { Card, Empty, fmtDate } from '../../components/ui';
+import SoftwareConnect from '../../components/SoftwareConnect';
 
 const NOTIFIABLE = /dengue|malaria|typhoid|widal|influenza/i;
 const SHARED = ['Test type (LOINC code)', 'Result (positive / negative / value)', 'Pin code of the patient', 'Date of the test'];
@@ -19,18 +20,7 @@ export default function Connectors({ orders }) {
     <>
       <PageHeader title="LIS & data feed" subtitle="How results move in from your lab software, and what leaves the lab for public health." />
       <div className="grid two">
-        <Card title={<h3 className="row" style={{ gap: 8 }}><PlugZap size={18} /> LIS connector</h3>} action={<PreviewBadge>Coming soon</PreviewBadge>}>
-          <p className="small muted">Your lab software isn&apos;t connected to Sehatra yet, so results don&apos;t flow in automatically. For now, enter results on each order with <strong>Enter results</strong> — they go to the doctor and patient as soon as they&apos;re signed.</p>
-          <p className="small muted">We&apos;re building an HL7 / FHIR connector so analyser results can be pulled in directly.</p>
-          <div className="row mt-2" style={{ gap: 10 }}>
-            <Button variant="secondary" size="sm" icon={RefreshCw} disabled>Pull results now</Button>
-            <span className="tiny muted">Available once a connector is set up.</span>
-          </div>
-          <div className="callout sky mt-2">
-            <Server />
-            <span>Manual entry is fully supported — nothing is lost while the connector is being built.</span>
-          </div>
-        </Card>
+        <SoftwareConnect intro="Connect your lab software (LIS) or analyser PC: new orders reach it by themselves and results come back without typing. Results still wait for your pathologist's signature before anyone sees them. Manual entry with Enter results always works too." />
 
         <Card title={<h3 className="row" style={{ gap: 8 }}><ShieldCheck size={18} /> Anonymised feed to the outbreak engine</h3>}>
           <p className="small muted">For notifiable tests like Dengue, Malaria and Typhoid, a stripped-down copy of each result goes to the district outbreak engine. It compares today's positives with the usual level for that pin code and season.</p>

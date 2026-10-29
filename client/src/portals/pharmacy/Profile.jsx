@@ -6,6 +6,7 @@ import { api } from '../../api';
 import { useAuth } from '../../auth';
 import { ProtectedImg } from '../../components/Availability';
 import AadhaarVerify from '../../components/AadhaarVerify';
+import SoftwareConnect from '../../components/SoftwareConnect';
 
 export default function Profile({ home, reload }) {
   const { user, refresh } = useAuth();
@@ -89,9 +90,9 @@ export default function Profile({ home, reload }) {
               </li>
             ))}
           </ul>
-          <p className="tiny muted mb-0">Billing software sync (Marg / GoFrugal) is coming soon.</p>
         </Card>
       </div>
+      <div className="mt-3"><SoftwareConnect intro="Keep your stock here in step with your billing software (Marg, GoFrugal or any other). Software that can call a web API syncs stock and counter sales by itself; otherwise export a stock CSV and use “Import from billing software” on the Stock screen." /></div>
     </>
   );
 }

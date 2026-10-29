@@ -6856,16 +6856,21 @@ app.post('/api/inventory/bulk', auth, role('pharmacist', 'distributor'), (req, r
   const fac = d.facilities.find((f) => f.id === req.user.facilityId);
   const rows = Array.isArray(req.body?.rows) ? req.body.rows.filter((r) => r && typeof r === 'object').slice(0, 300) : [];
   if (!rows.length) return res.status(400).json({ error: 'Nothing to add — paste at least one row.' });
+  // mode 'set' (a billing-software stock export, e.g. Marg / GoFrugal): the file's quantity is what's on the
+  // shelf now, so the same medicine + batch + expiry is replaced, not added to — importing twice never doubles it.
+  const setMode = req.body?.mode === 'set';
   const added = []; const errors = [];
   rows.forEach((r, n) => {
     const { row, error } = validStockRow(r);
     if (error) { errors.push({ row: n + 1, drug: clean(r.drug, 80) || null, error }); return; }
-    const i = addStock(d, fac.id, row);
+    const same = setMode && d.inventory.find((i) => i.facilityId === fac.id && sameDrug(i.drug, row.drug) && (i.batch || null) === (row.batch || null) && i.expiry === row.expiry);
+    if (same) { same.qty = row.qty; same.updatedAt = nowIso(); if (row.gtin && !same.gtin) same.gtin = row.gtin; }
+    const i = same || addStock(d, fac.id, row);
     if (row.gtin) learnGtin(d, row.gtin, row.drug, fac);
     added.push({ id: i.id, drug: i.drug, batch: i.batch, qty: row.qty });
   });
   if (added.length) {
-    audit(req.user, 'stock_bulk_added', null, 'inventory', `${added.length} rows`);
+    audit(req.user, setMode ? 'stock_file_synced' : 'stock_bulk_added', null, 'inventory', `${added.length} rows`);
     touchFacility(fac.id);
     store.save();
     broadcast('pharmacy', 'supply');
@@ -7149,8 +7154,8 @@ app.get('/api/distributor/home', auth, role('distributor'), (req, res) => {
   });
 });
 
-// Purchase orders a warehouse raises to its supplier — stored and listed for that warehouse only. The app
-// doesn't transmit them to the supplier (no supplier integration yet); the warehouse shares the PO number itself.
+// Purchase orders a warehouse raises to its supplier — stored and listed for that warehouse only. Sending one
+// to the supplier (email / WhatsApp with a private link the supplier answers on) is in supplierpo.js.
 app.post('/api/distributor/purchase-orders', auth, role('distributor'), (req, res) => {
   const d = db();
   const fid = req.user.facilityId;
@@ -7162,9 +7167,12 @@ app.post('/api/distributor/purchase-orders', auth, role('distributor'), (req, re
   if (!lines.length) return res.status(400).json({ error: 'Add at least one medicine with a quantity.' });
   const by = String(req.body?.deliverBy || '');
   const deliverBy = /^\d{4}-\d{2}-\d{2}$/.test(by) && !Number.isNaN(Date.parse(by)) ? by : null;
+  const supplierEmail = clean(req.body?.supplierEmail, 120).toLowerCase();
+  if (supplierEmail && !/^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,}$/i.test(supplierEmail)) return res.status(400).json({ error: 'The supplier\'s email doesn\'t look right.' });
+  const supplierPhone = String(req.body?.supplierPhone || '').replace(/[^\d+]/g, '').slice(0, 16);
   if (!d.purchaseOrders) d.purchaseOrders = [];
   const seq = d.purchaseOrders.filter((o) => o.facilityId === fid).length + 1;
-  const po = { id: store.id('po'), poNo: `PO-${new Date().getFullYear()}-${String(seq).padStart(4, '0')}`, facilityId: fid, supplier, lines, units: lines.reduce((s, l) => s + l.qty, 0), deliverBy, notes: clean(req.body?.notes, 400), status: 'raised', createdBy: req.user.id, createdByName: req.user.name, createdAt: nowIso() };
+  const po = { id: store.id('po'), poNo: `PO-${new Date().getFullYear()}-${String(seq).padStart(4, '0')}`, facilityId: fid, supplier, lines, units: lines.reduce((s, l) => s + l.qty, 0), deliverBy, notes: clean(req.body?.notes, 400), supplierEmail: supplierEmail || null, supplierPhone: supplierPhone || null, status: 'raised', createdBy: req.user.id, createdByName: req.user.name, createdAt: nowIso() };
   d.purchaseOrders.unshift(po);
   audit(req.user, 'raised_po', null, 'purchase_order', `${po.poNo} → ${supplier} (${lines.length} lines)`);
   store.save();
@@ -7174,9 +7182,10 @@ app.post('/api/distributor/purchase-orders', auth, role('distributor'), (req, re
 app.post('/api/distributor/purchase-orders/:id/cancel', auth, role('distributor'), (req, res) => {
   const po = (db().purchaseOrders || []).find((o) => o.id === req.params.id && o.facilityId === req.user.facilityId);
   if (!po) return res.status(404).json({ error: 'Purchase order not found.' });
-  if (po.status !== 'raised') return res.status(409).json({ error: `This order is ${po.status}.` });
+  if (!['raised', 'sent', 'accepted'].includes(po.status)) return res.status(409).json({ error: `This order is ${po.status}.` });
   po.status = 'cancelled'; po.cancelledAt = nowIso();
   audit(req.user, 'cancelled_po', null, 'purchase_order', po.poNo);
+  supplierPo.cancelled(po, facilityById(po.facilityId));
   store.save();
   broadcast('supply');
   res.json(po);
@@ -8284,6 +8293,17 @@ require('./careabroad')(app, {
   auth, role, activePatient, db, store, notify, audit, nowIso, patientOwnerUserIds, doctorById, facilityName, ageOf, publicLimiter,
   appUrl: () => APP_URL(),
   pregnancyFor: (pid) => { const pg = pregnancy.activeFor(pid); return pg ? pregnancy.plan(pg) : null; },
+});
+// Software connectors (integrations.js): HMIS / LIS / billing software keys, API and signed webhooks.
+require('./integrations')(app, {
+  auth, role, db, store, notify, audit, broadcast, touch, touchFacility, nowIso, clean, addStock, validStockRow, sameDrug,
+  labView, moveLabStatus, labStaffIds, isPathologist, facilityUsers, secret: JWT_SECRET, security,
+  allowLocalWebhooks: process.env.NODE_ENV !== 'production',
+});
+// Purchase orders sent to suppliers (supplierpo.js): email / WhatsApp + a private link the supplier answers on.
+const supplierPo = require('./supplierpo')(app, {
+  auth, role, db, store, notify, audit, broadcast, touchFacility, nowIso, clean, publicLimiter, otp, facilityUsers, security,
+  appUrl: () => APP_URL(), escHtml: (s) => escHtml(s),
 });
 require('./sos')(app, {
   circleUserIds: circle.circleUserIds,

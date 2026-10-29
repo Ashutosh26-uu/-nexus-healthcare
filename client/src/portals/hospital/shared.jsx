@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { PlugZap } from 'lucide-react';
-import { PreviewBadge } from '../../components/ui';
+import SoftwareConnect from '../../components/SoftwareConnect';
 
 export const BED_TYPES = {
   general: { label: 'General ward', short: 'General', color: 'var(--green-2)' },
@@ -20,18 +19,7 @@ export function useTick(ms = 30000) {
   }, [ms]);
 }
 
-/* No hospital software (HMIS) integration exists yet — say so honestly instead of a fake "synced" chip. */
+/* Hospital software (HMIS): a key and an optional webhook — beds, referrals and new-referral alerts in sync. */
 export function HmisCard() {
-  return (
-    <div className="card hmis-card">
-      <div className="row top">
-        <span className="hmis-icon"><PlugZap size={20} /></span>
-        <div className="grow">
-          <h4 className="mb-0 row" style={{ gap: 8 }}>HMIS connector <PreviewBadge>Coming soon</PreviewBadge></h4>
-          <div className="small muted">Not connected</div>
-        </div>
-      </div>
-      <p className="small muted mt-1 mb-0">Linking your hospital software isn&apos;t available yet, so nothing syncs automatically. Please keep the bed counts here up to date by hand — they&apos;re what the network sees.</p>
-    </div>
-  );
+  return <SoftwareConnect intro="Connect your hospital software so bed counts update here by themselves and new referrals reach it instantly. Until then, keep the bed counts here up to date by hand — they're what the network sees." />;
 }

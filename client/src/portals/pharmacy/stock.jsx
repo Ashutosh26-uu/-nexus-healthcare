@@ -197,42 +197,87 @@ export function parseExpiry(v) {
 export function parsePastedStock(text) {
   const lines = String(text || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (!lines.length) return [];
-  const split = (l) => (l.includes('\t') ? l.split('\t') : l.split(',')).map((c) => c.trim().replace(/^"|"$/g, ''));
+  // Tabs (pasted from Excel), else commas or semicolons — quotes respected, so "Paracetamol, 500mg" stays one cell.
+  const sep = lines[0].includes('\t') ? '\t' : (lines[0].split(';').length > lines[0].split(',').length ? ';' : ',');
+  const split = (l) => {
+    if (sep === '\t') return l.split('\t').map((c) => c.trim().replace(/^"|"$/g, ''));
+    const out = []; let cur = ''; let q = false;
+    for (let i = 0; i < l.length; i += 1) {
+      const ch = l[i];
+      if (ch === '"') { if (q && l[i + 1] === '"') { cur += '"'; i += 1; } else q = !q; } else if (ch === sep && !q) { out.push(cur.trim()); cur = ''; } else cur += ch;
+    }
+    out.push(cur.trim());
+    return out;
+  };
   const head = split(lines[0]).map((h) => h.toLowerCase());
-  const find = (...names) => head.findIndex((h) => names.some((n) => h.includes(n)));
-  const hasHeader = find('medicine', 'name', 'item', 'product', 'drug') >= 0 && find('qty', 'quantity', 'units') >= 0;
+  // Names in order of preference — billing-software exports (Marg, GoFrugal…) call quantity "Closing Stock",
+  // "Cl. Qty", "Stock Qty" or "Balance"; a "Stock Value" column must never be read as the quantity.
+  const find = (...names) => { for (const n of names) { const i = head.findIndex((h) => h.includes(n) && !/value|amount|amt|rate|price/.test(h)); if (i >= 0) return i; } return -1; };
+  const drugCol = find('medicine', 'item name', 'product name', 'drug', 'item', 'product', 'name', 'description');
+  const qtyCol = find('closing', 'cl. qty', 'cl.qty', 'cl qty', 'stock qty', 'qty', 'quantity', 'balance', 'units', 'stock');
+  const hasHeader = drugCol >= 0 && qtyCol >= 0;
   const idx = hasHeader
-    ? { drug: find('medicine', 'name', 'item', 'product', 'drug'), batch: find('batch', 'lot'), expiry: find('exp'), qty: find('qty', 'quantity', 'units'), gtin: find('barcode', 'gtin', 'ean'), safety: find('safety', 'min') }
+    ? { drug: drugCol, batch: find('batch', 'lot'), expiry: find('exp'), qty: qtyCol, gtin: find('barcode', 'gtin', 'ean'), safety: find('safety', 'min') }
     : { drug: 0, batch: 1, expiry: 2, qty: 3, gtin: -1, safety: -1 };
   return lines.slice(hasHeader ? 1 : 0).map((l) => {
     const c = split(l);
     const get = (k) => (idx[k] >= 0 ? c[idx[k]] || '' : '');
-    return { drug: get('drug'), batch: get('batch'), expiry: parseExpiry(get('expiry')), rawExpiry: get('expiry'), qty: parseInt(String(get('qty')).replace(/[^\d]/g, ''), 10) || 0, gtin: get('gtin'), safetyStock: get('safety') };
+    // Quantities like "480", "1,200" or "480.00" (exports often add decimals) — never "48000".
+    const qty = Math.floor(Number(String(get('qty')).replace(/[^\d.]/g, ''))) || 0;
+    return { drug: get('drug'), batch: get('batch'), expiry: parseExpiry(get('expiry')), rawExpiry: get('expiry'), qty, gtin: get('gtin'), safetyStock: get('safety') };
   }).filter((r) => r.drug);
 }
 
-export function PasteStockModal({ open, onClose, onAdded }) {
+// sync: a stock export from billing software (Marg, GoFrugal…) — a file, quantities replace what's here
+// (same medicine + batch + expiry), so importing again tomorrow never doubles the stock.
+export function PasteStockModal({ open, onClose, onAdded, sync = false }) {
   const [run, busy] = useAction();
   const toast = useToast();
   const [text, setText] = useState('');
   const [result, setResult] = useState(null);
+  const [fileName, setFileName] = useState('');
   const rows = parsePastedStock(text);
-  const bad = rows.filter((r) => !r.expiry || !r.qty);
+  const bad = rows.filter((r) => !r.expiry || (!r.qty && !sync));
+  const syncing = sync ? rows.filter((r) => r.qty > 0).length : rows.length;
+  const pickFile = (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    if (/\.xlsx?$/i.test(f.name)) { toast('Save it as CSV first (File → Save as → CSV), then choose that file', 'error'); return; }
+    if (f.size > 5 * 1024 * 1024) { toast('That file is too big — export only the stock list', 'error'); return; }
+    const rd = new FileReader();
+    rd.onload = () => { setText(String(rd.result || '')); setFileName(f.name); setResult(null); };
+    rd.readAsText(f);
+  };
   const submit = async () => {
-    const r = await run('bulk', () => api.post('/inventory/bulk', { rows: rows.map(({ rawExpiry: _r, ...x }) => x) }));
-    if (!r) return;
-    setResult(r);
-    if (r.added) { toast(`${r.added} line${r.added === 1 ? '' : 's'} added to stock`); onAdded?.(); }
-    if (!r.errors.length) { setText(''); onClose(); }
+    // Zero-quantity lines in a stock export just mean "sold out" — skip them instead of failing.
+    const send = rows.filter((r) => !sync || r.qty > 0).map(({ rawExpiry: _r, ...x }) => x);
+    let added = 0; const errors = [];
+    for (let i = 0; i < send.length; i += 300) {
+      const r = await run('bulk', () => api.post('/inventory/bulk', { rows: send.slice(i, i + 300), mode: sync ? 'set' : 'add' }));
+      if (!r) return;
+      added += r.added;
+      errors.push(...r.errors.map((e) => ({ ...e, row: e.row + i })));
+    }
+    setResult({ added, errors });
+    if (added) { toast(`${added} line${added === 1 ? '' : 's'} ${sync ? 'synced' : 'added to stock'}`); onAdded?.(); }
+    if (!errors.length) { setText(''); setFileName(''); onClose(); }
   };
   if (!open) return null;
   return (
-    <Modal open wide onClose={onClose} title="Paste stock from Excel" subtitle="Copy the rows from your supplier's sheet or invoice and paste them here — no typing one by one."
-      footer={<><span className="grow tiny muted">{rows.length ? `${rows.length} row${rows.length === 1 ? '' : 's'} read${bad.length ? ` · ${bad.length} need a fix` : ''}` : ''}</span><Button variant="ghost" onClick={onClose}>Cancel</Button><Button icon={PackagePlus} loading={busy === 'bulk'} disabled={!rows.length} onClick={submit}>Add {rows.length || ''} to stock</Button></>}>
+    <Modal open wide onClose={onClose} title={sync ? 'Import from billing software' : 'Paste stock from Excel'}
+      subtitle={sync ? 'Export your stock list from Marg, GoFrugal or any billing software as CSV and choose the file. Quantities here are set to match it.' : 'Copy the rows from your supplier\'s sheet or invoice and paste them here — no typing one by one.'}
+      footer={<><span className="grow tiny muted">{rows.length ? `${rows.length} row${rows.length === 1 ? '' : 's'} read${bad.length ? ` · ${bad.length} need a fix` : ''}` : ''}</span><Button variant="ghost" onClick={onClose}>Cancel</Button><Button icon={PackagePlus} loading={busy === 'bulk'} disabled={!syncing} onClick={submit}>{sync ? `Sync ${syncing || ''} lines` : `Add ${rows.length || ''} to stock`}</Button></>}>
       <div className="stack">
+        {sync && (
+          <div className="row wrap" style={{ gap: 8 }}>
+            <label className="btn sm secondary" style={{ cursor: 'pointer' }}>Choose CSV file<input type="file" accept=".csv,.txt,text/csv" onChange={pickFile} hidden /></label>
+            <span className="tiny muted">{fileName || 'or paste the rows below'}</span>
+          </div>
+        )}
         <textarea className="textarea mono" rows={6} value={text} onChange={(e) => { setText(e.target.value); setResult(null); }}
           placeholder={'Medicine\tBatch\tExpiry\tQty\nParacetamol 500mg\tPCM24A118\t08/2027\t500\nMetformin 500mg\tMF2203\t31/03/2027\t300'} aria-label="Pasted rows" />
-        <p className="tiny muted mb-0">Headers like Medicine, Batch, Expiry, Qty (and Barcode) are understood in any order. Expiry can be 2027-08-31, 31/08/2027, 08/2027 or Aug-27.</p>
+        <p className="tiny muted mb-0">Headers like Medicine / Item Name, Batch, Expiry, Qty / Closing Stock (and Barcode) are understood in any order. Expiry can be 2027-08-31, 31/08/2027, 08/2027 or Aug-27.{sync ? ' Lines with 0 in stock are skipped.' : ''}</p>
         {rows.length > 0 && (
           <div className="table-wrap" style={{ maxHeight: 260, overflow: 'auto' }}>
             <table className="table">
@@ -240,7 +285,7 @@ export function PasteStockModal({ open, onClose, onAdded }) {
               <tbody>{rows.slice(0, 100).map((r, i) => (
                 <tr key={i}><td>{r.drug}</td><td className="mono small">{r.batch || '—'}</td>
                   <td className={cx(!r.expiry && 'text-rose')}>{r.expiry || <span style={{ color: 'var(--rose)' }}>{r.rawExpiry ? `can't read “${r.rawExpiry}”` : 'missing'}</span>}</td>
-                  <td className="right">{r.qty || <span style={{ color: 'var(--rose)' }}>missing</span>}</td></tr>
+                  <td className="right">{r.qty || (sync ? <span className="muted">0 · skipped</span> : <span style={{ color: 'var(--rose)' }}>missing</span>)}</td></tr>
               ))}</tbody>
             </table>
           </div>
