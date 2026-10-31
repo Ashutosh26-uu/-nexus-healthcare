@@ -252,7 +252,7 @@ function demoSeed() {
     users, patients, doctors, facilities, consults, prescriptions, labOrders, drugMaster, inventory,
     beds, roster, referrals, opdSlots, transfers, deliveries, alerts, corridors, consents, audit,
     notifications, advisories, aiConfig, translations, regions, records: [], payments: [], otps: {},
-    pharmacyReturns: [], purchaseOrders: [], integrations: [],
+    pharmacyReturns: [], purchaseOrders: [], integrations: [], errorEvents: [],
     reviews: [
       { id: 'rev_1', doctorId: 'doc_1', consultId: 'con_101', patientId: 'OC-2041-7783', stars: 5, text: 'Explained my sugar report very patiently, in Hindi. Medicines worked.', name: 'Sunita D', at: ago(20) },
       { id: 'rev_2', doctorId: 'doc_2', consultId: 'con_102', patientId: 'OC-2041-9015', stars: 5, text: 'Very gentle with my son. Wheezing settled in 2 days.', name: 'Sunita D', at: ago(8) },
@@ -277,7 +277,7 @@ const dataMode = () => (process.env.DATA_MODE || (process.env.NODE_ENV === 'prod
 function liveSeed({ withAdmin = true } = {}) {
   const full = demoSeed();
   const crypto = require('crypto');
-  const empty = ['integrations', 'sosEvents', 'recoveryChecks', 'kioskIntakes', 'bedHistory', 'pregnancies', 'stories', 'gtinMap', 'bills', 'carePlans', 'reviews', 'medOrders', 'careTransfers', 'payments', 'patients', 'doctors', 'facilities', 'consults', 'prescriptions', 'labOrders', 'inventory', 'beds', 'roster', 'referrals', 'opdSlots', 'transfers', 'deliveries', 'alerts', 'corridors', 'consents', 'audit', 'notifications', 'advisories', 'regions', 'records', 'pharmacyReturns', 'purchaseOrders', 'credits', 'vitalsLog', 'monitorAlerts'];
+  const empty = ['errorEvents', 'integrations', 'sosEvents', 'recoveryChecks', 'kioskIntakes', 'bedHistory', 'pregnancies', 'stories', 'gtinMap', 'bills', 'carePlans', 'reviews', 'medOrders', 'careTransfers', 'payments', 'patients', 'doctors', 'facilities', 'consults', 'prescriptions', 'labOrders', 'inventory', 'beds', 'roster', 'referrals', 'opdSlots', 'transfers', 'deliveries', 'alerts', 'corridors', 'consents', 'audit', 'notifications', 'advisories', 'regions', 'records', 'pharmacyReturns', 'purchaseOrders', 'credits', 'vitalsLog', 'monitorAlerts'];
   // The rule set is reference data, but the demo's change history ("signed off by medical advisor", "after
   // pilot feedback") never happened on a live network: start at v1 with one honest entry (and a snapshot,
   // so an admin can roll back to the defaults).

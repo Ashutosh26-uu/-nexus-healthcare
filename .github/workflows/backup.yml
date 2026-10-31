@@ -1,0 +1,64 @@
+# Daily encrypted backup of the live database, kept 30 days in a private S3-compatible bucket (e.g. Cloudflare R2).
+# This repository is public, so backups never go into GitHub artifacts. Nothing runs until these repository
+# secrets exist (Settings → Secrets and variables → Actions):
+#   BACKUP_DATABASE_URL   Neon DIRECT connection string (not the -pooler one) — read access is enough
+#   BACKUP_PASSPHRASE     long random passphrase; keep a copy outside GitHub, it is needed to restore
+#   BACKUP_S3_ENDPOINT    e.g. https://<account id>.r2.cloudflarestorage.com
+#   BACKUP_S3_BUCKET      a PRIVATE bucket used only for backups
+#   BACKUP_S3_KEY_ID / BACKUP_S3_SECRET   an access key limited to that bucket
+# Restore: see DEPLOY.md → "Backups and restore". The restore-drill workflow proves a backup restores.
+name: Backup
+
+on:
+  schedule:
+    - cron: '30 20 * * *' # 02:00 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PGURL: ${{ secrets.BACKUP_DATABASE_URL }}
+      PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET }}
+      AWS_DEFAULT_REGION: auto
+      ENDPOINT: ${{ secrets.BACKUP_S3_ENDPOINT }}
+      BUCKET: ${{ secrets.BACKUP_S3_BUCKET }}
+    steps:
+      - name: Check configuration
+        id: cfg
+        run: |
+          missing=""
+          for v in PGURL PASS AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY ENDPOINT BUCKET; do [ -n "${!v}" ] || missing="$missing $v"; done
+          if [ -n "$missing" ]; then echo "::warning::Backups are NOT running — repository secrets missing:$missing"; echo "ready=no" >> "$GITHUB_OUTPUT"; else echo "ready=yes" >> "$GITHUB_OUTPUT"; fi
+      - name: Dump, encrypt, upload
+        if: steps.cfg.outputs.ready == 'yes'
+        run: |
+          set -euo pipefail
+          umask 077
+          name="sehatra-$(date -u +%Y-%m-%dT%H%MZ).dump.enc"
+          # pg_dump 18 can dump any older server version.
+          docker run --rm -e PGURL postgres:18 sh -c 'pg_dump --format=custom --no-owner --no-privileges --dbname="$PGURL"' \
+            | openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass env:PASS -out "$name"
+          size=$(stat -c%s "$name")
+          [ "$size" -gt 1024 ] || { echo "::error::Backup is suspiciously small ($size bytes)"; exit 1; }
+          aws s3 cp "$name" "s3://$BUCKET/db/$name" --endpoint-url "$ENDPOINT" --only-show-errors
+          echo "Uploaded $name ($size bytes)"
+          rm -f "$name"
+      - name: Keep the last 30 days
+        if: steps.cfg.outputs.ready == 'yes'
+        run: |
+          cutoff=$(date -u -d '30 days ago' +%Y-%m-%d)
+          aws s3 ls "s3://$BUCKET/db/" --endpoint-url "$ENDPOINT" | awk '{print $4}' | while read -r f; do
+            d=$(echo "$f" | sed -n 's/^sehatra-\([0-9-]\{10\}\).*/\1/p')
+            if [ -n "$d" ] && [[ "$d" < "$cutoff" ]]; then aws s3 rm "s3://$BUCKET/db/$f" --endpoint-url "$ENDPOINT" --only-show-errors; echo "Removed $f"; fi
+          done

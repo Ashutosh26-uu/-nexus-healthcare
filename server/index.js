@@ -6,6 +6,7 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const store = require('./db');
+const monitor = require('./monitor');
 const engines = require('./engines');
 const { handleChat, aiEnabled } = require('./chat');
 const crypto = require('crypto');
@@ -58,6 +59,7 @@ app.use(cors(security.corsOptions()));
 // gzip everything except the live event stream (compression would buffer SSE).
 app.use(compression({ filter: (req, res) => (req.path === '/api/events' || req.path === '/api/public/stats/stream' ? false : compression.filter(req, res)) }));
 app.use(express.json({ limit: '2mb', type: ['application/json', 'application/fhir+json'] })); // FHIR clients (fhir.js) send fhir+json
+app.use(monitor.track); // status + duration of every API call (monitor.js)
 // Per-request context: who acted and whom the request touched (scopes live-update fan-out).
 app.use((req, _res, next) => requestCtx.run({ affected: new Set(), userId: null }, next));
 // Every API answer is computed live from the database — never served from a browser, proxy or CDN cache
@@ -7753,7 +7755,7 @@ app.get('/api/admin/home', auth, role('super_admin'), (_req, res) => {
     },
     carePlans: careplans.outcomes(d.carePlans, Date.now(), planProgress),
     // Only what the server actually knows, in every mode — no uptime / latency / call-quality monitoring exists yet.
-    monitoring: { uptime: null, apiErrorRate: null, p95LatencyMs: null, videoQuality: null, activeCalls: d.consults.filter((c) => c.status === 'in_progress').length, uptimeSeries: [], processUptimeHours: Math.round(process.uptime() / 360) / 10 },
+    monitoring: { ...monitor.health(), uptime: null, videoQuality: null, activeCalls: d.consults.filter((c) => c.status === 'in_progress').length, uptimeSeries: [], openErrors: (d.errorEvents || []).filter((g) => !g.resolvedAt).length },
   });
 });
 
@@ -8302,6 +8304,8 @@ const integrations = require('./integrations')(app, {
 });
 // The same connectors in HL7 FHIR R4 (fhir.js), for hospital and lab software that speaks FHIR.
 require('./fhir')(app, { db, audit, labView, appUrl: () => APP_URL(), ...integrations });
+// Error monitoring (monitor.js): server + browser errors grouped for admins, with an email on a new kind.
+monitor.attach(app, { auth, role, db, store, notify, otp, security, broadcast, touch, nowIso });
 // Purchase orders sent to suppliers (supplierpo.js): email / WhatsApp + a private link the supplier answers on.
 const supplierPo = require('./supplierpo')(app, {
   auth, role, db, store, notify, audit, broadcast, touchFacility, nowIso, clean, publicLimiter, otp, facilityUsers, security,
@@ -8349,6 +8353,7 @@ app.use((err, _req, res, _next) => {
   // A malformed %-encoded address (e.g. /lab-tests/%E0%A4%A) is a bad request, not a server fault.
   if (err instanceof URIError || /^Failed to decode param/.test(err?.message || '')) return res.status(400).json({ error: 'That address isn’t valid.' });
   // Message, code and route only: database errors carry the conflicting values (personal data) in their details.
+  monitor.capture({ source: 'server', message: `${err?.code ? `${err.code}: ` : ''}${err?.message || err}`, stack: err?.stack, route: _req.path, method: _req.method, status: 500 });
   console.error('[error]', _req.method, _req.path, err?.code || '', err?.message || err, process.env.NODE_ENV === 'production' ? '' : err?.stack || '');
   res.status(500).json({ error: 'Something went wrong on our side. Please try again.' });
 });
@@ -8590,8 +8595,8 @@ function scrubLiveArtifacts() {
   process.on('SIGTERM', () => shutdown(0));
   // A stray rejected promise is logged, never fatal. A thrown exception leaves the process in an unknown state:
   // flush what we have and exit 1 so the platform restarts a clean instance.
-  process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', e));
-  process.on('uncaughtException', (e) => { console.error('[uncaughtException]', e); shutdown(1); });
+  process.on('unhandledRejection', (e) => { console.error('[unhandledRejection]', e); monitor.capture({ source: 'server', message: `Unhandled rejection: ${e?.message || e}`, stack: e?.stack }); });
+  process.on('uncaughtException', (e) => { console.error('[uncaughtException]', e); monitor.capture({ source: 'server', message: `Crash: ${e?.message || e}`, stack: e?.stack }); shutdown(1); });
 })().catch((e) => {
   console.error('Failed to start:', e);
   process.exit(1);

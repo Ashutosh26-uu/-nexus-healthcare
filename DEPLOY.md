@@ -109,3 +109,27 @@ See [`.env.production.example`](.env.production.example) for the full, commented
 | `UPI_VPA` | optional | your UPI ID for the scan-to-pay QR |
 | `CORS_ORIGIN` | if needed | only if another origin calls the API |
 | `ANTHROPIC_API_KEY` | optional | smarter Saathi assistant & translations |
+
+## 8. Monitoring, uptime and backups
+
+**Errors** — built in, no outside service. Server faults and errors people hit in their browser are grouped under **Admin → Monitoring → Errors** with counts, the route and where in the code. Admins get an in-app notice and an email when a new kind of error appears (at most every 30 minutes). Personal data is scrubbed before anything is stored.
+
+**Uptime** — `.github/workflows/uptime.yml` checks the live site every 15 minutes. A failed run means the site or its API is down; GitHub emails the repository owner (check Settings → Notifications → Actions on GitHub). Set the repository variable `LIVE_URL` if the address changes.
+
+**Backups** — `.github/workflows/backup.yml` dumps the live database every night at 02:00 IST, encrypts it (AES-256) and uploads it to a private S3-compatible bucket, keeping 30 days. The repository is public, so backups are never stored as GitHub artifacts. It does nothing until these repository secrets are added (GitHub → Settings → Secrets and variables → Actions):
+
+| Secret | What |
+| --- | --- |
+| `BACKUP_DATABASE_URL` | Neon **direct** connection string (not the `-pooler` one) |
+| `BACKUP_PASSPHRASE` | long random passphrase — keep a copy outside GitHub; without it a backup can't be restored |
+| `BACKUP_S3_ENDPOINT` | e.g. `https://<account id>.r2.cloudflarestorage.com` (Cloudflare R2 free tier) |
+| `BACKUP_S3_BUCKET` | a private bucket used only for backups |
+| `BACKUP_S3_KEY_ID`, `BACKUP_S3_SECRET` | an access key limited to that bucket |
+
+**Restore drill** — `.github/workflows/restore-drill.yml` restores the latest backup into a throw-away database every month (or on demand) and fails if it doesn't come back.
+
+**Restoring for real** — restore into a new, empty database (a fresh Neon branch), check it, then point `DATABASE_URL` at it:
+
+```bash
+BACKUP_PASSPHRASE=... scripts/restore-backup.sh sehatra-2026-11-01T2030Z.dump.enc "postgres://...new-branch..."
+```

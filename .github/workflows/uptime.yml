@@ -1,0 +1,34 @@
+# Checks the live site from outside every 15 minutes. A failed run = the site or its API is down or broken;
+# GitHub emails the repository owner about failed scheduled runs (Settings → Notifications → Actions).
+# Set the repository variable LIVE_URL to change the address checked.
+name: Uptime
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      LIVE_URL: ${{ vars.LIVE_URL || 'https://sehatra-50047089327.development.catalystappsail.in' }}
+    steps:
+      - name: API answers
+        run: |
+          for i in 1 2 3; do
+            body=$(curl -fsS --max-time 20 "$LIVE_URL/api/health") && echo "$body" | grep -q '"ok":true' && { echo "API ok: $body"; exit 0; }
+            echo "Attempt $i failed; retrying in 20 s"; sleep 20
+          done
+          echo "::error::$LIVE_URL/api/health is not answering"; exit 1
+      - name: App page loads
+        run: |
+          for i in 1 2 3; do
+            curl -fsS --max-time 20 "$LIVE_URL/" | grep -q 'assets/index-' && { echo "Page ok"; exit 0; }
+            echo "Attempt $i failed; retrying in 20 s"; sleep 20
+          done
+          echo "::error::$LIVE_URL/ did not return the app"; exit 1

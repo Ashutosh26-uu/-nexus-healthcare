@@ -3,7 +3,9 @@ import { createRoot } from 'react-dom/client';
 import './styles/global.css';
 import App from './App';
 import { applyEasy } from './components/easyMode';
+import { installErrorReporting } from './errorReport';
 applyEasy(); // bigger text from the first paint, before React renders
+installErrorReporting(); // JavaScript errors → Admin → Monitoring (errorReport.js)
 
 // Remember whether a language was explicitly saved before the i18n provider writes its default,
 // so the patient portal can adopt the profile language on first login.

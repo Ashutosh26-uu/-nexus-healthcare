@@ -1,0 +1,52 @@
+# Proves the latest backup can actually be restored: downloads it, decrypts it and restores it into a throw-away
+# database inside this run (never the live one), then counts what came back. Monthly, or run it by hand.
+name: Restore drill
+
+on:
+  schedule:
+    - cron: '0 3 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      scratch:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: drill
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-retries 20
+    env:
+      PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET }}
+      AWS_DEFAULT_REGION: auto
+      ENDPOINT: ${{ secrets.BACKUP_S3_ENDPOINT }}
+      BUCKET: ${{ secrets.BACKUP_S3_BUCKET }}
+    steps:
+      - name: Restore the latest backup into a scratch database
+        run: |
+          set -euo pipefail
+          umask 077
+          if [ -z "$PASS" ] || [ -z "$BUCKET" ]; then echo "::warning::Backup secrets not set — nothing to drill"; exit 0; fi
+          latest=$(aws s3 ls "s3://$BUCKET/db/" --endpoint-url "$ENDPOINT" | awk '{print $4}' | sort | tail -1)
+          [ -n "$latest" ] || { echo "::error::No backups found in the bucket"; exit 1; }
+          echo "Latest backup: $latest"
+          aws s3 cp "s3://$BUCKET/db/$latest" backup.enc --endpoint-url "$ENDPOINT" --only-show-errors
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass env:PASS -in backup.enc -out backup.dump
+          docker run --rm --network host -v "$PWD:/b" -e PGPASSWORD=drill postgres:18 \
+            pg_restore --no-owner --no-privileges -h localhost -U postgres -d postgres /b/backup.dump
+          q() { docker run --rm --network host -e PGPASSWORD=drill postgres:18 psql -h localhost -U postgres -d postgres -At -c "$1"; }
+          # Each collection lives in its own c_<name> table; the user accounts must have come back.
+          tables=$(q "select count(*) from information_schema.tables where table_schema = 'public'")
+          users=$(q "select count(*) from c_users")
+          patients=$(q "select count(*) from c_patients")
+          echo "Tables: $tables · users: $users · patients: $patients"
+          [ "$users" -gt 0 ] || { echo "::error::Restored database has no users"; exit 1; }
+          echo "Restore drill passed — $latest restores."
+          rm -f backup.enc backup.dump

@@ -6,6 +6,7 @@ import { I18nProvider } from './i18n';
 import InstallPrompt from './components/InstallPrompt';
 import { ConsentProvider } from './consent';
 import Landing, { About } from './pages/Landing';
+import { reportError } from './errorReport';
 import NotFound from './pages/NotFound';
 
 const Login = lazy(() => import('./pages/Login'));
@@ -59,6 +60,7 @@ class ChunkBoundary extends Component {
   static getDerivedStateFromError(error) { return { error }; }
 
   componentDidCatch(error) {
+    if (!isChunkError(error)) reportError(error, 'screen crashed');
     let reloaded = false;
     try { reloaded = sessionStorage.getItem(RELOAD_FLAG); } catch { /* ignore */ }
     if (isChunkError(error) && !reloaded) {

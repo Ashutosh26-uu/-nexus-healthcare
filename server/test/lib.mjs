@@ -4,7 +4,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 export const BASE = `${process.env.API_BASE || 'http://localhost:4500'}/api`;
 let fail = 0;
 export const check = (ok, label, extra = '') => { if (!ok) fail += 1; console.log(`${ok ? 'PASS' : 'FAIL'} ${label}${extra ? ` — ${extra}` : ''}`); };
-export const done = () => { console.log(fail ? `${fail} failed` : 'all passed'); process.exit(fail ? 1 : 0); };
+// exitCode, not process.exit(): exiting while fetch sockets close can trip a libuv assertion on Windows.
+export const done = () => { console.log(fail ? `${fail} failed` : 'all passed'); process.exitCode = fail ? 1 : 0; };
 
 // call(method, path, token?, body?) → { s: status, j: json, h: headers }
 export async function call(m, p, t, b) {
