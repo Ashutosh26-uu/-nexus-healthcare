@@ -12,7 +12,7 @@ import { usePatient } from './shared';
 // Doctors within 20 km for the patient's symptoms or chosen department — hospital doctors, doctors with
 // their own clinic and Sehatra virtual-clinic doctors — with "All of India" to look further.
 export default function Consult() {
-  const { patient, home } = usePatient();
+  const { patient, home, profiles, switchProfile } = usePatient();
   const navigate = useNavigate();
   const location = useLocation();
   const upcoming = home?.upcoming || [];
@@ -22,6 +22,11 @@ export default function Consult() {
   const bookId = params.get('book');
   const [bookDoc, setBookDoc] = useState(null);
   const toast = useToast();
+  // From Saathi's booking card: book for the family member chosen there (switch first, so the booking goes to them).
+  useEffect(() => {
+    const want = start.profileId;
+    if (want && want !== patient?.id && profiles?.some((p) => p.id === want)) switchProfile(want, { stay: true });
+  }, [start.profileId, profiles?.length]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!bookId) return undefined;
     let alive = true;
@@ -62,7 +67,7 @@ export default function Consult() {
       {/* Keyed on the profile: the finder only reads its prefills on mount, and `patient` arrives after the
           first render on a cold load (and changes on a family-profile switch). */}
       <NearbyDoctors key={patient?.id || 'none'} full symptoms={start.symptoms || patient?.currentSymptoms?.text || ''} department={start.department || patient?.currentSymptoms?.department || ''} />
-      <BookingFlow doctor={bookDoc} onClose={() => setBookDoc(null)} />
+      <BookingFlow doctor={bookDoc} symptoms={start.chatNote || ''} onClose={() => setBookDoc(null)} />
     </div>
   );
 }

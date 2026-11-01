@@ -137,8 +137,8 @@ export function disconnectLive() {
   clearTimeout(retry);
 }
 
-// Streams the Saathi chat reply token by token.
-export async function streamChat(messages, lang, onDelta, signal) {
+// Streams the Saathi chat reply token by token. `onCard` gets doctor results / a booking card ({ doctors } | { book }).
+export async function streamChat(messages, lang, onDelta, signal, onCard) {
   const headers = { 'Content-Type': 'application/json' };
   if (session.token) headers.Authorization = `Bearer ${session.token}`;
   const res = await fetch('/api/chat', { method: 'POST', headers, body: JSON.stringify({ messages, lang }), signal });
@@ -162,6 +162,7 @@ export async function streamChat(messages, lang, onDelta, signal) {
         const obj = JSON.parse(payload);
         if (obj.delta) onDelta(obj.delta);
         if (obj.emergency) meta.emergency = true;
+        if ((obj.doctors || obj.book) && onCard) onCard(obj.doctors ? { doctors: obj.doctors } : { book: obj.book });
       } catch { /* ignore */ }
     }
   }

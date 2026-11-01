@@ -91,3 +91,27 @@
 .chat-go .tiny { width: 100%; }
 .chat-go button { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--green-2); background: var(--green-soft); border-radius: 99px; padding: 7px 12px; min-height: 36px; font-size: 0.82rem; font-weight: 600; cursor: pointer; color: var(--green-ink); }
 .chat-go button:hover { background: #d6ebe3; }
+
+/* Saathi doctor results and booking card (ChatCards.jsx) */
+.msg.has-cards { flex-direction: column; align-items: flex-start; gap: 8px; }
+.chat-cards, .chat-book { width: 100%; max-width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.chat-cards-note { font-size: 0.75rem; color: var(--ink-3); }
+.chat-doc { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fff; border: 1px solid var(--line); border-radius: 14px; }
+.chat-doc.top { border-color: var(--green); box-shadow: 0 0 0 1px var(--green) inset; }
+.chat-doc-main { flex: 1; min-width: 0; }
+.chat-doc-name { font-weight: 600; font-size: 0.9rem; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-doc-sub { font-size: 0.78rem; color: var(--ink-3); }
+.chat-doc-live { color: var(--green); font-weight: 600; }
+.chat-doc-key { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 3px; font-size: 0.78rem; color: var(--ink-2, var(--ink)); }
+.chat-doc-key span { display: inline-flex; align-items: center; gap: 3px; }
+.chat-doc-book, .chat-book-go { border: 0; border-radius: 999px; background: var(--green); color: #fff; font-weight: 600; cursor: pointer; }
+.chat-doc-book { padding: 8px 16px; font-size: 0.85rem; flex-shrink: 0; }
+.chat-book { padding: 12px; background: var(--green-soft); border: 1px solid var(--line); border-radius: 16px; }
+.chat-book-head { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; color: var(--ink); }
+.chat-book-row { display: flex; flex-direction: column; gap: 6px; }
+.chat-book-label { font-size: 0.78rem; font-weight: 600; color: var(--ink-2, var(--ink)); }
+.chat-book-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chat-book-chips button { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: #fff; font-size: 0.8rem; cursor: pointer; color: var(--ink); }
+.chat-book-chips button.on { background: var(--green); border-color: var(--green); color: #fff; }
+.chat-book textarea { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 0.85rem; resize: vertical; background: #fff; }
+.chat-book-go { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 14px; font-size: 0.9rem; }

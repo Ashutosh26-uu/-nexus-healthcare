@@ -805,6 +805,8 @@ app.post('/api/chat', chatLimiter, optionalAuth, (req, res) => {
       ctx.upcoming = db().consults.filter((c) => c.patientId === patient.id && c.status === 'scheduled').map(enrichConsult);
       ctx.prescriptions = db().prescriptions.filter((r) => r.patientId === patient.id).slice(0, 3);
     }
+    // Saathi can find doctors (the same ranking as the doctor finder) and open a booking card.
+    if (patient && ['patient', 'caregiver'].includes(req.user.role)) ctx.care = chatCare(req);
   }
   handleChat(req, res, ctx);
 });
@@ -1701,21 +1703,22 @@ const NEAR_RADIUS_KM = Number(process.env.NEAR_RADIUS_KM) || 20;
 // Doctors for these symptoms (or a department the patient picked) within 20 km of the patient — hospital
 // doctors, doctors running their own clinic, and Sehatra virtual-clinic doctors. `scope=all` lifts the radius
 // and lists every centre in the patient's country (used to change doctor / get a second opinion).
-app.get('/api/doctors/recommend', auth, role('patient', 'caregiver', 'kiosk_operator'), (req, res) => {
+// Also used by Saathi (the chat) to show doctors for what the person describes — same ranking as the finder.
+function recommendDoctors(req, query = req.query) {
   const d = db();
   const p = ['patient', 'caregiver'].includes(req.user.role) ? activePatient(req) : null;
-  const symptoms = clean(req.query.symptoms, 500) || p?.currentSymptoms?.text || '';
+  const symptoms = clean(query.symptoms, 500) || p?.currentSymptoms?.text || '';
   const t = engines.triage({ symptoms: symptoms || 'general check-up', age: ageOf(p?.dob) ?? undefined }, d.aiConfig);
-  const department = SPECIALTIES.includes(req.query.department) ? req.query.department : null;
+  const department = SPECIALTIES.includes(query.department) ? query.department : null;
   // ?abroad=1: verified doctors practising in OTHER countries (video second opinions) — distance doesn't apply.
-  const abroad = req.query.abroad === '1';
-  const scopeAll = req.query.scope === 'all' || abroad;
-  const radiusKm = Math.max(2, Math.min(200, Number(req.query.radiusKm) || NEAR_RADIUS_KM));
+  const abroad = query.abroad === '1';
+  const scopeAll = query.scope === 'all' || abroad;
+  const radiusKm = Math.max(2, Math.min(200, Number(query.radiusKm) || NEAR_RADIUS_KM));
   const country = countryOf(p);
-  const lat = Number(req.query.lat); const lng = Number(req.query.lng);
+  const lat = Number(query.lat); const lng = Number(query.lng);
   // A preferred location the patient picked (another city, a relative's town…) wins over device/home.
-  const chosen = req.query.district ? geo.byDistrict(String(req.query.district), String(req.query.state || '')) : null;
-  const device = !chosen && req.query.lat != null && geo.validCoord(lat, lng);
+  const chosen = query.district ? geo.byDistrict(String(query.district), String(query.state || '')) : null;
+  const device = !chosen && query.lat != null && geo.validCoord(lat, lng);
   const origin = chosen ? { lat: chosen.lat, lng: chosen.lng } : device ? { lat, lng } : patientPoint(p);
   const wanted = department || (t.specialty === 'Emergency' ? 'General Medicine' : t.specialty);
   // Index once per request instead of scanning facilities / beds / doctors for every row.
@@ -1724,7 +1727,7 @@ app.get('/api/doctors/recommend', auth, role('patient', 'caregiver', 'kiosk_oper
   const bedsByFac = new Map(); for (const b of d.beds) { if (!bedsByFac.has(b.facilityId)) bedsByFac.set(b.facilityId, []); bedsByFac.get(b.facilityId).push(b); }
   const docsByFac = new Map(); for (const x of d.doctors) if (x.verified && x.facilityId) { if (!docsByFac.has(x.facilityId)) docsByFac.set(x.facilityId, []); docsByFac.get(x.facilityId).push(x); }
   const inArea = (km) => scopeAll || km === null || km <= radiusKm;
-  const exclude = String(req.query.exclude || '');
+  const exclude = String(query.exclude || '');
   const list = d.doctors.filter((x) => x.verified && (abroad ? countryOf(x) !== country : countryOf(x) === country) && x.id !== exclude).map((doc) => {
     const a = availabilityOf(doc, { facilities: d.facilities });
     const fac = doc.facilityId ? facilityById(doc.facilityId) : null;
@@ -1769,12 +1772,44 @@ app.get('/api/doctors/recommend', auth, role('patient', 'caregiver', 'kiosk_oper
     };
   }).filter((f) => (f.matchedDepartments.length || f.doctorsOnNetwork || scopeAll) && inArea(f.distanceKm)).sort((a, b) => b.score - a.score).slice(0, scopeAll ? 40 : 8);
   const near = origin ? geo.nearestDistrict(origin.lat, origin.lng) : null;
-  res.json({
+  return {
     triage: { level: t.level, label: t.label, specialty: wanted, suggested: t.specialty, advice: t.advice, redFlags: t.redFlags, byDepartment: !!department },
     origin: { source: chosen ? 'chosen' : device ? 'device' : origin ? 'profile' : 'none', district: chosen?.district || (country === 'IN' ? near?.district : p?.district) || null },
     scope: scopeAll ? 'all' : 'near', radiusKm, country,
     doctors: list, eClinics, facilities, departments: SPECIALTIES,
-  });
+  };
+}
+// What the chat shows on a doctor card (public listing + why it fits). Nearby first; if nobody nearby fits,
+// doctors across the country (many consult by video).
+const chatDoctorCard = (x) => ({
+  id: x.id, name: x.name, specialty: x.specialty, fee: x.fee ?? null, online: Boolean(x.online), availability: x.availability,
+  rating: x.rating, reviewCount: x.reviewCount || 0, languages: x.languages || [], distanceKm: x.distanceKm ?? null,
+  practice: x.practice, at: x.at, reasons: x.reasons || [],
+});
+function chatCare(req) {
+  const search = (query, visit) => {
+    const r = recommendDoctors(req, query);
+    const list = r.doctors.filter((x) => visit !== 'in_person' || x.practice !== 'virtual').slice(0, 5).map(chatDoctorCard);
+    return { r, list };
+  };
+  return {
+    departments: SPECIALTIES,
+    find({ symptoms, department, visit }) {
+      const query = { symptoms, ...(department ? { department } : {}) };
+      let { r, list } = search(query, visit);
+      let scope = 'near';
+      if (!list.length) { ({ r, list } = search({ ...query, scope: 'all' }, visit)); scope = 'all'; }
+      return { scope, specialty: r.triage.specialty, level: r.triage.level, doctors: list };
+    },
+    doctor(id) {
+      const doc = db().doctors.find((x) => x.id === id && x.verified);
+      if (!doc) return null;
+      return chatDoctorCard({ ...publicDoctor(doc), ...doctorStats(doc), practice: practiceOf(doc, doc.facilityId ? db().facilities.find((f) => f.id === doc.facilityId) : null), reasons: [] });
+    },
+  };
+}
+app.get('/api/doctors/recommend', auth, role('patient', 'caregiver', 'kiosk_operator'), (req, res) => {
+  res.json(recommendDoctors(req));
 });
 
 // Reviews: a patient rates a completed visit once; the doctor's rating & satisfaction update instantly.

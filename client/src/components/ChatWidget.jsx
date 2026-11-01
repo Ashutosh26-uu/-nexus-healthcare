@@ -7,6 +7,7 @@ import { useI18n, tr } from '../i18n';
 import { cx } from './ui';
 import { useSupport } from '../config';
 import { listenSupported, speakSupported, listenOnce, speak, stopSpeaking, speechLang, voiceLangFor } from './speech';
+import { DoctorCards, BookCard } from './ChatCards';
 import './chat.css';
 import { emergencyNumber } from '../emergencyNumbers';
 
@@ -71,12 +72,12 @@ function renderMarkdown(text) {
 // Memoised so a streaming reply re-renders only the last bubble, not every message's markdown per token.
 // The greeting also gets `lang` so its translation refreshes on a language switch.
 // `onSpeak` is passed only when the reply is complete and this device can talk.
-const Message = memo(function Message({ m, first, index, speaking, onSpeak }) {
+const Message = memo(function Message({ m, first, index, speaking, onSpeak, onBook, onContinue }) {
   return (
-    <div className={cx('msg', m.role, m.error && 'error', 'notranslate')} translate="no" dir="auto">
-      {m.role === 'assistant' && m.content === '' ? (
+    <div className={cx('msg', m.role, m.error && 'error', m.cards?.length && 'has-cards', 'notranslate')} translate="no" dir="auto">
+      {m.role === 'assistant' && m.content === '' && !m.cards?.length ? (
         <span className="typing"><i /><i /><i /></span>
-      ) : (
+      ) : m.role === 'assistant' && m.content === '' ? null : (
         <div className="msg-text">
           {m.role === 'assistant' ? renderMarkdown(first ? tr(m.content) : m.content) : m.content}
           {onSpeak && m.role === 'assistant' && !m.error && (
@@ -86,9 +87,23 @@ const Message = memo(function Message({ m, first, index, speaking, onSpeak }) {
           )}
         </div>
       )}
+      {m.cards?.map((c, k) => (c.doctors
+        ? <DoctorCards key={k} data={c.doctors} onBook={(d) => onBook(index, d)} />
+        : <BookCard key={k} data={c.book} onContinue={onContinue} />))}
     </div>
   );
 });
+
+// What goes to the server: text only, plus a line naming the doctors that were on screen (with their ids),
+// so "book the first one" works in the next message. The cards themselves stay on this device.
+function forServer(m) {
+  if (m.role !== 'assistant' || !m.cards?.length) return { role: m.role, content: m.content };
+  const docs = m.cards.flatMap((c) => (c.doctors ? c.doctors.list : c.book ? [c.book.doctor] : []));
+  const seen = [...new Map(docs.map((d) => [d.id, d])).values()].map((d) => `${d.name} (${d.specialty}) [id: ${d.id}]`);
+  return { role: 'assistant', content: `${m.content}
+
+(Doctors shown as cards in the app: ${seen.join('; ')})`.trim() };
+}
 
 // Stored as { uid, messages } so one person's chat never shows up for the next person on this device.
 function loadStored() {
@@ -252,7 +267,7 @@ export default function ChatWidget() {
     abortRef.current = controller;
     let full = '';
     try {
-      const meta = await streamChat(next.filter((m, i) => !(i === 0 && m.role === 'assistant')), lang, (delta) => {
+      const meta = await streamChat(next.filter((m, i) => !(i === 0 && m.role === 'assistant')).map(forServer), lang, (delta) => {
         full += delta;
         setMessages((cur) => {
           const copy = cur.slice();
@@ -260,7 +275,14 @@ export default function ChatWidget() {
           copy[copy.length - 1] = { ...last, content: last.content + delta };
           return copy;
         });
-      }, controller.signal);
+      }, controller.signal, (card) => {
+        setMessages((cur) => {
+          const copy = cur.slice();
+          const last = copy[copy.length - 1];
+          copy[copy.length - 1] = { ...last, cards: [...(last.cards || []), card] };
+          return copy;
+        });
+      });
       if (meta?.emergency) setEmergency(true);
       // In an emergency the mic doesn't re-open: the person should be calling 108, not talking to Saathi.
       const again = talkRef.current && !meta?.emergency ? listen : undefined;
@@ -281,6 +303,24 @@ export default function ChatWidget() {
     }
   };
   sendRef.current = send;
+
+  // "Book" on a doctor card → a booking card right under it (who it's for + a note for the doctor).
+  const bookFrom = useCallback((index, doctor) => {
+    setMessages((cur) => {
+      const copy = cur.length ? cur.slice() : [greeting(user)];
+      const lastAsk = [...copy.slice(0, index)].reverse().find((m) => m.role === 'user')?.content || '';
+      const m = copy[index];
+      if (!m) return cur;
+      copy[index] = { ...m, cards: [...(m.cards || []), { book: { doctor, note: lastAsk.slice(0, 300) } }] };
+      return copy;
+    });
+  }, [user]);
+  // The app's own booking flow takes over: same checks, time slots and payment as booking from "Find a doctor".
+  const continueBooking = useCallback((doctor, note, profileId) => {
+    stopVoice();
+    setOpen(false);
+    navigate(`/patient/consult?book=${encodeURIComponent(doctor.id)}`, { state: { chatNote: note, profileId } });
+  }, [navigate, stopVoice]);
 
   const close = () => { stopVoice(); setOpen(false); };
 
@@ -337,6 +377,7 @@ export default function ChatWidget() {
               key={i} m={m} first={i === 0} lang={i === 0 ? lang : undefined} index={i}
               speaking={speakingAt === i}
               onSpeak={canSpeak && !(streaming && i === shown.length - 1) ? speakAt : undefined}
+              onBook={bookFrom} onContinue={continueBooking}
             />
           ))}
           {messages.length === 0 && (

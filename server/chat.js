@@ -289,6 +289,113 @@ async function fallbackText(message, ctx, lang) {
 ${note}`;
 }
 
+// ---------- Finding a doctor and booking, from the chat ----------
+// Only for a signed-in patient / caregiver. The model sees doctors' public listing (name, specialty, fee,
+// availability, rating, languages) — never the person's record. It can't book by itself: offer_booking puts a
+// card in the chat, and the person finishes in the app's normal booking flow (who it's for, video or visit,
+// time, payment), where every check of a normal booking applies.
+const CARE_PROMPT = `
+
+Finding a doctor and booking (this person is signed in):
+- When someone describes a health problem, first give the short guidance above (red flags → 108 first). If seeing a doctor makes sense, or they ask for one, call find_doctors with a short summary of the problem in English and the best department (or "unsure").
+- Doctors come only from find_doctors results — never name, invent or describe any other doctor, rating or fee. The app shows the results as cards with fees and times, so introduce them in a sentence or two (who fits best and why, using the reasons given) instead of listing every detail. If none were found, say so plainly and suggest the "Find a doctor" page; for anything urgent, the nearest hospital or 108.
+- Never call a doctor "the best" beyond the reasons in the results (specialty match, available now, rating from real reviews, speaks their language, nearby).
+- If they want to book (e.g. "book kar do", "yes, book Dr X"), call offer_booking with that doctor's id and a short note for the doctor in the person's own words (what is wrong, since when). If it isn't clear which doctor, ask. If you don't know what is wrong yet, ask that one thing first.
+- Don't ask for their name, age, phone, address or Health Passport — the app already has them. Who the visit is for (themselves or a family member), video or clinic visit, the time and payment are chosen on the booking card.
+- Never say a booking is done or confirmed: the person completes it on the card.`;
+
+const VISITS = ['any', 'video', 'in_person'];
+function careTools(departments) {
+  return [
+    {
+      name: 'find_doctors',
+      description: 'Find verified doctors on Sehatra for the signed-in person\'s health problem, ranked by specialty match, availability, real review ratings, language and distance. Returns up to 5 doctors, which the app also shows as cards.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          symptoms: { type: 'string', description: 'Short summary of the problem in English, e.g. "fever for 3 days with body ache".' },
+          department: { type: 'string', enum: [...departments, 'unsure'], description: 'Best-fitting department, or "unsure" to let the triage decide.' },
+          visit: { type: 'string', enum: VISITS, description: 'Video consult, in-person visit, or either. Use "any" unless the person said.' },
+        },
+        required: ['symptoms', 'department', 'visit'],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: 'offer_booking',
+      description: 'Show a booking card for one doctor from find_doctors. The person then picks who it is for, video or visit, the time, and pays in the app. This does not book by itself.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          doctor_id: { type: 'string', description: 'The id of a doctor from find_doctors.' },
+          note_for_doctor: { type: 'string', description: 'What is wrong and since when, in the person\'s own words — shown to the doctor.' },
+        },
+        required: ['doctor_id', 'note_for_doctor'],
+        additionalProperties: false,
+      },
+    },
+  ];
+}
+
+const sse = (res, obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+const forModel = (d) => ({
+  id: d.id, name: d.name, specialty: d.specialty, availableNow: Boolean(d.online), fee: d.fee ?? null,
+  rating: d.reviewCount ? d.rating : 'new (no reviews yet)', reviews: d.reviewCount || 0, languages: d.languages || [],
+  visit: d.practice === 'virtual' ? 'video only' : 'clinic visit or video', // Distance and the person's language come from their record: the model gets neither.
+  why: (d.reasons || []).filter((r) => !/km away/.test(r)).map((r) => (/^speaks /.test(r) ? "speaks the person's language" : r)),
+});
+function runCareTool(block, care, shown, res) {
+  const input = block.input && typeof block.input === 'object' ? block.input : {};
+  const fail = (msg) => ({ content: msg, is_error: true });
+  if (block.name === 'find_doctors') {
+    const symptoms = String(input.symptoms || '').trim().slice(0, 300);
+    if (symptoms.length < 3) return fail('symptoms is required');
+    const department = care.departments.includes(input.department) ? input.department : null;
+    const visit = VISITS.includes(input.visit) ? input.visit : 'any';
+    const r = care.find({ symptoms, department, visit });
+    r.doctors.forEach((d) => shown.set(d.id, d));
+    sse(res, { doctors: { list: r.doctors, scope: r.scope, specialty: r.specialty } });
+    return {
+      content: JSON.stringify({
+        found: r.doctors.length,
+        searched: r.scope === 'near' ? 'near the person' : 'across the country (none nearby)',
+        department: r.specialty,
+        ...(r.level === 'emergency' ? { warning: 'Triage flags this as possibly an emergency: tell them to call 108 or go to the nearest emergency department first.' } : {}),
+        doctors: r.doctors.map(forModel),
+      }),
+    };
+  }
+  if (block.name === 'offer_booking') {
+    const doc = shown.get(String(input.doctor_id || '')) || care.doctor(String(input.doctor_id || ''));
+    if (!doc) return fail('Unknown doctor id — use an id from find_doctors.');
+    const note = String(input.note_for_doctor || '').trim().slice(0, 500);
+    sse(res, { book: { doctor: doc, note } });
+    return { content: `Booking card for ${doc.name} is now showing in the chat. The person chooses who it is for, video or clinic visit and the time, then pays there. It is not booked yet.` };
+  }
+  return fail('Unknown tool');
+}
+// Built-in (no AI) answers: a clear "find me / book a doctor" request still gets real doctor cards.
+const DOCTOR_ASK = /\b(doctor|doc|dr\.?|consult|appointment|book|booking|dikha|dikhana|specialist)\b|डॉक्टर|डाक्टर|दिखा/i;
+const BOOK_ASK = /\b(book|booking|appointment|reserve)\b|बुक|अपॉइंटमेंट/i;
+// The doctors the app showed in earlier replies — the client (ChatWidget forServer) appends
+// "(Doctors shown as cards in the app: Name (Specialty) [id: …]; …)" to that reply.
+const SHOWN_MARK = '(Doctors shown as cards in the app: ';
+function pickShownDoctor(history, care) {
+  // The latest reply that showed doctors decides what "the first one" means.
+  let list = [];
+  for (let i = history.length - 2; i >= 0 && !list.length; i -= 1) {
+    const text = String(history[i].content);
+    if (history[i].role !== 'assistant' || !text.includes(SHOWN_MARK)) continue;
+    list = [...text.slice(text.lastIndexOf(SHOWN_MARK) + SHOWN_MARK.length - 2).matchAll(/(?:: |; )([^;[\]]+?) \[id: ([\w-]+)\]/g)].map((x) => ({ name: x[1].replace(/\s*\([^)]*\)\s*$/, '').trim(), id: x[2] }));
+  }
+  if (!list.length) return null;
+  const t = history[history.length - 1].content.toLowerCase();
+  const ord = /\b(first|1st|pehl|pahl|top)|पहल/.test(t) ? 0 : /\b(second|2nd|doosr|dusr)|दूसर/.test(t) ? 1 : /\b(third|3rd|teesr|tisr)|तीसर/.test(t) ? 2 : -1;
+  const byName = list.find((d) => d.name.toLowerCase().replace(/^dr\.?\s*/, '').split(/\s+/).some((w) => w.length >= 3 && t.includes(w)));
+  const choice = byName || list[ord >= 0 && ord < list.length ? ord : 0];
+  return care.doctor(choice.id);
+}
+
 async function handleChat(req, res, ctx) {
   const { messages = [] } = req.body || {};
   const lang = i18n.langInfo(req.body?.lang) ? req.body.lang : 'en';
@@ -331,6 +438,15 @@ async function handleChat(req, res, ctx) {
 
   const anthropic = req.chatOffline ? null : getClient(); // over the daily AI budget → built-in answers
   if (!anthropic) {
+    // "Book kar do" right after doctor cards → a booking card for the doctor they meant (first one unless named).
+    const picked = ctx?.care && BOOK_ASK.test(last.content) ? pickShownDoctor(history, ctx.care) : null;
+    if (picked) {
+      const earlier = history.slice(0, -1).filter((m) => m.role === 'user' && !BOOK_ASK.test(m.content)).slice(-2).map((m) => m.content.trim()).join('. ');
+      await streamFallback(res, (await localise('Sure — here is the booking card for {0}. Choose who it is for, then pick the time and confirm. Nothing is booked until you confirm.', qLang)).replace('{0}', `**${picked.name}**`));
+      sse(res, { book: { doctor: picked, note: earlier.slice(0, 300) } });
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    }
     let text = null;
     // Health questions → DxGPT (only the typed message is sent); app questions → built-in answers.
     if (!req.chatOffline && (dxgpt.enabled() || corti.configured()) && !isAppQuestion(last.content)) {
@@ -345,6 +461,17 @@ async function handleChat(req, res, ctx) {
       if (!isAppQuestion(last.content)) text += `\n\n${await localise(AI_NOTE, qLang)}`;
     }
     await streamFallback(res, text);
+    // A health worry, or a request for a doctor → real doctors for it, ranked like "Find a doctor".
+    if (ctx?.care && (DOCTOR_ASK.test(last.content) || !isAppQuestion(last.content))) {
+      const typed = history.filter((m) => m.role === 'user').slice(-3).map((m) => m.content.trim()).join('. ').slice(0, 300);
+      try {
+        const r = ctx.care.find({ symptoms: typed, department: null, visit: 'any' });
+        if (r.doctors.length) {
+          await streamFallback(res, `\n\n${await localise('Here are doctors who can help — tap **Book** on one to choose the time and confirm.', qLang)}`);
+          sse(res, { doctors: { list: r.doctors, scope: r.scope, specialty: r.specialty } });
+        }
+      } catch (e) { console.warn('[chat] doctor lookup failed:', e.message); }
+    }
     res.write('data: [DONE]\n\n');
     return res.end();
   }
@@ -352,50 +479,74 @@ async function handleChat(req, res, ctx) {
   // Anthropic requires the first message to be from the user.
   while (history.length && history[0].role !== 'user') history.shift();
 
+  // Signed-in patients and caregivers: Saathi can look up real doctors and open the app's booking flow.
+  const care = ctx?.care || null;
+  const tools = care ? careTools(care.departments) : undefined;
+  const convo = history.map((m) => ({ role: m.role, content: m.content }));
+  const write = (t) => res.write(`data: ${JSON.stringify({ delta: t })}\n\n`);
+  const shown = new Map(); // doctor id → card, from this reply's doctor searches
+  let current = null;
+  // res, not req: since Node 16 req emits 'close' once its body has been read (express.json already did),
+  // so the request's 'close' either aborted every answer at once or never fired on a real disconnect.
+  res.on('close', () => { if (!res.writableEnded) current?.abort(); });
+  // The start of the reply is held back until it can't be the off-topic marker, so the marker never shows.
+  let passing = false;
+  let wrote = false;
   try {
-    const stream = anthropic.beta.messages.stream({
-      model: process.env.CHAT_MODEL || 'claude-opus-5-5',
-      max_tokens: 2048,
-      output_config: { effort: 'low' },
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
-      system: `${SYSTEM_PROMPT}${genericContext(ctx)}
+    for (let round = 0; round < 4; round += 1) {
+      const stream = anthropic.beta.messages.stream({
+        model: process.env.CHAT_MODEL || 'claude-opus-5-5',
+        max_tokens: 2048,
+        output_config: { effort: 'low' },
+        betas: ['server-side-fallback-2026-07-01'],
+        fallbacks: 'default',
+        system: `${SYSTEM_PROMPT}${genericContext(ctx)}${care ? CARE_PROMPT : ''}
 
 The person has chosen ${langName} for the app, but always reply in exactly the language and script of their latest message — Hindi typed in English letters (Hinglish) gets Hinglish in English letters, Tamil script gets Tamil script, English gets English. Keep medical terms understandable for that language's speakers.`,
-      messages: history,
-    });
-    // res, not req: since Node 16 req emits 'close' once its body has been read (express.json already did),
-    // so the request's 'close' either aborted every answer at once or never fired on a real disconnect.
-    res.on('close', () => { if (!res.writableEnded) stream.abort(); });
-    // The start of the reply is held back until it can't be the off-topic marker, so the marker never shows.
-    const write = (t) => res.write(`data: ${JSON.stringify({ delta: t })}\n\n`);
-    let held = '';
-    let passing = false;
-    let offTopic = false;
-    for await (const event of stream) {
-      if (event.type !== 'content_block_delta' || event.delta.type !== 'text_delta') continue;
-      if (passing) { write(event.delta.text); continue; }
-      held += event.delta.text;
-      const s = held.trimStart();
-      if (s.startsWith(OFF_TOPIC_MARK)) { offTopic = true; break; }
-      if (s.length < OFF_TOPIC_MARK.length && OFF_TOPIC_MARK.startsWith(s)) continue;
-      passing = true;
-      write(held);
-    }
-    if (offTopic || (!passing && held.includes(OFF_TOPIC_MARK))) {
-      stream.abort();
-      await streamFallback(res, await localise(OFF_TOPIC_REPLY, lang));
-      res.write('data: [DONE]\n\n');
-      return res.end();
-    }
-    if (!passing && held) write(held);
-    const final = await stream.finalMessage();
-    if (final.stop_reason === 'refusal') {
-      res.write(`data: ${JSON.stringify({ delta: `\n\nI can't help with that one — please ${SUPPORT}.` })}\n\n`);
+        messages: convo,
+        ...(tools ? { tools } : {}),
+      });
+      current = stream;
+      // After a doctor search the model only continues its own answer — the marker can't appear there.
+      if (round > 0) passing = true;
+      let held = '';
+      let offTopic = false;
+      let gap = round > 0 && wrote; // new text after a tool call starts on its own paragraph
+      for await (const event of stream) {
+        if (event.type !== 'content_block_delta' || event.delta.type !== 'text_delta') continue;
+        if (passing) {
+          if (gap) { write('\n\n'); gap = false; }
+          write(event.delta.text); wrote = true; continue;
+        }
+        held += event.delta.text;
+        const s = held.trimStart();
+        if (s.startsWith(OFF_TOPIC_MARK)) { offTopic = true; break; }
+        if (s.length < OFF_TOPIC_MARK.length && OFF_TOPIC_MARK.startsWith(s)) continue;
+        passing = true;
+        write(held); wrote = true;
+      }
+      if (offTopic || (!passing && held.includes(OFF_TOPIC_MARK))) {
+        stream.abort();
+        await streamFallback(res, await localise(OFF_TOPIC_REPLY, lang));
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      }
+      if (!passing && held.trim()) { write(held); wrote = true; passing = true; }
+      const final = await stream.finalMessage();
+      if (final.stop_reason === 'refusal') {
+        write(`\n\nI can't help with that one — please ${SUPPORT}.`);
+        break;
+      }
+      if (final.stop_reason !== 'tool_use' || !care || res.writableEnded || res.destroyed) break;
+      // Thinking and tool-use blocks go back exactly as they came.
+      convo.push({ role: 'assistant', content: final.content });
+      const results = final.content.filter((b) => b.type === 'tool_use').map((b) => ({ type: 'tool_result', tool_use_id: b.id, ...runCareTool(b, care, shown, res) }));
+      convo.push({ role: 'user', content: results });
     }
   } catch (err) {
+    if (res.writableEnded || res.destroyed) return undefined;
     console.error('[chat] Claude error, using fallback:', err.message);
-    await streamFallback(res, await fallbackText(last.content, ctx, lang));
+    if (!wrote) await streamFallback(res, await fallbackText(last.content, ctx, lang));
   }
   res.write('data: [DONE]\n\n');
   res.end();
