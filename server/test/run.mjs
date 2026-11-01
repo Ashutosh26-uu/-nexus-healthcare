@@ -21,6 +21,7 @@ const env = {
   ...process.env, ...Object.fromEntries(blank.map((k) => [k, ''])),
   NODE_ENV: 'test', DATA_MODE: 'demo', PORT: String(PORT), DB_FILE: join(tmp, 'test.db'), APP_URL: base,
   DATA_ENCRYPTION_KEY: randomBytes(32).toString('hex'), JWT_SECRET: randomBytes(32).toString('hex'),
+  PUSH_TEST_HOST: `localhost:${Number(process.env.PUSH_TEST_PORT) || 4591}`, VAPID_PUBLIC_KEY: '', VAPID_PRIVATE_KEY: '',
 };
 const server = spawn(process.execPath, ['index.js'], { cwd: join(here, '..'), env, stdio: ['ignore', 'pipe', 'pipe'] });
 let log = '';

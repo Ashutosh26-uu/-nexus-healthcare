@@ -93,3 +93,32 @@ self.addEventListener('fetch', (e) => {
 });
 
 self.addEventListener('message', (e) => { if (e.data === 'skip-waiting') self.skipWaiting(); });
+
+// Push notifications (server/push.js). The message is already privacy-trimmed on the server: unless the person
+// turned on "show details", it only says there is a new update. Tapping it opens (or focuses) the app.
+self.addEventListener('push', (e) => {
+  let m = {};
+  try { m = e.data ? e.data.json() : {}; } catch { m = { body: e.data ? e.data.text() : '' }; }
+  const url = typeof m.url === 'string' && m.url.startsWith('/') ? m.url : '/';
+  e.waitUntil(self.registration.showNotification(m.title || 'Sehatra', {
+    body: m.body || '',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    tag: m.tag || 'update',
+    renotify: true,
+    requireInteraction: Boolean(m.urgent),
+    vibrate: m.urgent ? [300, 100, 300, 100, 300] : [100],
+    data: { url },
+  }));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = new URL(e.notification.data?.url || '/', self.location.origin).href;
+  e.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const open = wins.find((w) => new URL(w.url).origin === self.location.origin);
+    if (open) { await open.focus(); if (!open.url.startsWith(url)) await open.navigate(url).catch(() => {}); return; }
+    await self.clients.openWindow(url);
+  })());
+});

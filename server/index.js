@@ -294,9 +294,12 @@ function notifyPref(key, userId, ...rest) {
   if (userId && userById(userId)?.notifyPrefs?.[key] === false) return;
   notify(userId, ...rest);
 }
+// Set once push.js is loaded: every notification also goes to the person's phones / browsers.
+let pushHook = null;
 function notify(userId, title, body, kind) {
   if (!userId) return;
   touch(userId);
+  if (pushHook) pushHook(userId, title, body, kind).catch((e) => console.warn('[push]', e.message));
   const list = db().notifications;
   list.unshift({ id: store.id('n'), userId, title, body, kind, at: nowIso(), read: false });
   if (notifCounts.list !== list) {
@@ -8306,6 +8309,14 @@ const integrations = require('./integrations')(app, {
 require('./fhir')(app, { db, audit, labView, appUrl: () => APP_URL(), ...integrations });
 // Error monitoring (monitor.js): server + browser errors grouped for admins, with an email on a new kind.
 monitor.attach(app, { auth, role, db, store, notify, otp, security, broadcast, touch, nowIso });
+// Phone / browser push notifications (push.js): every notify() also reaches the person's subscribed devices.
+const PUSH_HOME = { patient: '/patient', caregiver: '/patient', kiosk_operator: '/kiosk', doctor: '/doctor', hospital_admin: '/hospital', lab_tech: '/lab', pharmacist: '/pharmacy', distributor: '/supply', delivery: '/dispatch', official: '/command', super_admin: '/admin' };
+const push = require('./push')(app, {
+  auth, db, store, nowIso, userById, home: (u) => PUSH_HOME[u.role] || '/',
+  contact: () => (process.env.ADMIN_EMAIL ? `mailto:${process.env.ADMIN_EMAIL.trim()}` : APP_URL()),
+  extraHosts: process.env.NODE_ENV !== 'production' && process.env.PUSH_TEST_HOST ? [process.env.PUSH_TEST_HOST] : [],
+});
+pushHook = push.send;
 // Purchase orders sent to suppliers (supplierpo.js): email / WhatsApp + a private link the supplier answers on.
 const supplierPo = require('./supplierpo')(app, {
   auth, role, db, store, notify, audit, broadcast, touchFacility, nowIso, clean, publicLimiter, otp, facilityUsers, security,

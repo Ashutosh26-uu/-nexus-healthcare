@@ -109,6 +109,7 @@ See [`.env.production.example`](.env.production.example) for the full, commented
 | `UPI_VPA` | optional | your UPI ID for the scan-to-pay QR |
 | `CORS_ORIGIN` | if needed | only if another origin calls the API |
 | `ANTHROPIC_API_KEY` | optional | smarter Saathi assistant & translations |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | optional | phone / browser push alerts. Without them the server makes a key pair once and keeps it in the database, so alerts work out of the box. Never change the pair once phones are subscribed — every device would have to turn alerts on again |
 
 ## 8. Monitoring, uptime and backups
 
