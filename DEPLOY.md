@@ -110,6 +110,7 @@ See [`.env.production.example`](.env.production.example) for the full, commented
 | `CORS_ORIGIN` | if needed | only if another origin calls the API |
 | `ANTHROPIC_API_KEY` | optional | smarter Saathi assistant & translations |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | optional | phone / browser push alerts. Without them the server makes a key pair once and keeps it in the database, so alerts work out of the box. Never change the pair once phones are subscribed — every device would have to turn alerts on again |
+| `NEON_AUTH_BASE_URL` | optional | turns on **Continue with Google** (Neon Auth). The branch's Auth URL from Neon Console → Auth — public, not a secret. Google only proves the email: people sign into their existing Sehatra account with that verified email, and roles and two-step login still apply. Setup: Neon Console → Auth → enable; add Google as a provider (your own Google OAuth client for production); add the site's address (e.g. https://sehatra-50047089327.development.catalystappsail.in) under trusted domains |
 
 ## 8. Monitoring, uptime and backups
 

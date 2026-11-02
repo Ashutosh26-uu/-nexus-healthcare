@@ -536,6 +536,8 @@ app.get('/api/public/config', (_req, res) => {
   res.json({
     appName: 'Sehatra', demo: DATA_MODE === 'demo', smsLive: o.live, emailLive: o.emailLive, upi: Boolean(process.env.UPI_VPA), version: require('../package.json').version,
     // The real support line / inbox, only when the operator configured them — null means "don't show a number".
+    // Neon Auth's URL when Google sign-in is set up (public — the browser talks to it directly).
+    neonAuthUrl: neonAuth.url(),
     support: { phone: clean(process.env.SUPPORT_PHONE, 30) || null, email: clean(process.env.SUPPORT_EMAIL, 120) || null, hours: clean(process.env.SUPPORT_HOURS, 60) || null },
   });
 });
@@ -867,6 +869,9 @@ app.post('/api/auth/login', loginIpLimiter, loginLimiter, async (req, res) => {
   loginFails.delete(fk);
   finishLogin(res, user);
 });
+
+// Continue with Google via Neon Auth (neonauth.js) — into the existing account with that verified email.
+const neonAuth = require('./neonauth')(app, { findUserByEmail, finishLogin, audit, limiter: loginIpLimiter });
 
 app.get('/api/auth/otp/config', (_req, res) => res.json(otp.publicConfig()));
 
