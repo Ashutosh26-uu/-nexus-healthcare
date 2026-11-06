@@ -7,8 +7,9 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const store = require('./db');
 const monitor = require('./monitor');
+const telemed = require('./telemed');
 const engines = require('./engines');
-const { handleChat, aiEnabled } = require('./chat');
+const { handleChat, aiEnabled, setFaqSource } = require('./chat');
 const crypto = require('crypto');
 const { AsyncLocalStorage } = require('async_hooks');
 const multer = require('multer');
@@ -797,7 +798,8 @@ app.post('/api/chat', chatLimiter, optionalAuth, (req, res) => {
     over = chatBudget.anon >= CHAT_AI_DAILY * CHAT_AI_ANON_SHARE;
     if (!over) chatBudget.anon += 1;
   }
-  req.chatOffline = over;
+  // No consent to Saathi AI (DPDP) → built-in answers only; nothing typed leaves our servers.
+  req.chatOffline = over || Boolean(req.user && !dpdp.aiAllowed(req.user));
   req.body.messages = msgs.slice(-12).map((m) => ({ role: m?.role === 'assistant' ? 'assistant' : 'user', content: String(m?.content ?? '').slice(0, 2000) }));
   let ctx = null;
   if (req.user) {
@@ -922,6 +924,8 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
   } catch {
     return res.status(400).json({ error: 'Your verification expired. Please verify your email again.' });
   }
+  const consent = dpdp.fromSignup(req.body); // DPDP: the notice is accepted before anything is stored
+  if (consent.error) return res.status(400).json({ error: consent.error, code: 'CONSENT_REQUIRED' });
   const cleanName = clean(name, 80);
   const dobT = Date.parse(dob);
   if (cleanName.length < 2 || !Number.isFinite(dobT) || dobT > Date.now() || dobT < Date.parse('1900-01-01')) return res.status(400).json({ error: 'Name and date of birth are required.' });
@@ -943,6 +947,7 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
     region: { state: clean(state, 80), district: clean(district, 80), country: ctry }, createdAt: nowIso(),
   };
   d.users.push(user);
+  dpdp.record(user, { ...consent, via: 'signup' });
   let patient;
   if (dup) {
     dup.userId = user.id;
@@ -976,6 +981,8 @@ app.post('/api/auth/register/quick', registerLimiter, async (req, res) => {
   } catch {
     return res.status(400).json({ error: 'Your verification expired. Please request a new code.' });
   }
+  const consent = dpdp.fromSignup(req.body); // DPDP: the notice is accepted before anything is stored
+  if (consent.error) return res.status(400).json({ error: consent.error, code: 'CONSENT_REQUIRED' });
   const cleanName = clean(name, 80);
   if (cleanName.length < 2) return res.status(400).json({ error: 'Please tell us your name.' });
   const loginEmail = verified.email || clean(email, 160).toLowerCase();
@@ -996,6 +1003,7 @@ app.post('/api/auth/register/quick', registerLimiter, async (req, res) => {
     ...(referral.referrer ? { referredBy: referral.referrer.id, referredAt: nowIso() } : {}),
   };
   d.users.push(user);
+  dpdp.record(user, { ...consent, via: 'signup' });
   const patient = {
     id: makePassportId(), userId: user.id, name: cleanName, dob: null, gender: 'Prefer not to say', language: clean(language, 40) || 'English', bloodGroup: 'Unknown',
     allergies: [], conditions: [], currentMeds: [], emergencyContacts: [], abha: '', pincode: '', district: '', state: '', country: clean(country, 2) || 'IN',
@@ -1931,6 +1939,7 @@ app.post('/api/consults', auth, role('kiosk_operator'), (req, res) => {
   }
   const consult = {
     id: store.id('con'), patientId: p.id, doctorId: doctor.id, kioskId: req.user.role === 'kiosk_operator' ? req.user.facilityId : null,
+    teleConsent: telemed.impliedConsent(req.user.id, req.user.role === 'kiosk_operator' ? 'kiosk' : 'booking'),
     status: type === 'scheduled' ? 'scheduled' : 'queued', mode, type,
     triage: triage || { level: 'routine', score: 20, symptoms: 'Not provided', note: 'Patient booked without triage.', specialty: doctor.specialty },
     vitals, createdAt: nowIso(), scheduledAt, messages: [], routing,
@@ -2127,6 +2136,7 @@ app.post('/api/consults/:id/cancel', auth, (req, res) => {
   }
   audit(req.user, 'cancelled_consult', c.patientId, 'consult', `${c.id}${refund ? ` · refund ₹${refund}` : ''}`);
   credits.sweep(db(), req.user); // credit spent on it returns (and a refunded first visit loses its referral reward)
+  membership.returnUsed(db()); // a plan-paid visit gets its consult back
   touchConsultParties(c);
   store.save();
   broadcast('consults', 'queue', `consult:${c.id}`);
@@ -2289,6 +2299,7 @@ app.get('/api/prescriptions/:id', auth, (req, res) => {
     items: r.items.map((it) => { const pr = catalog.priceOf(it.drug); const units = catalog.unitsFor(it); return { ...it, units, unit: pr?.unit || 'unit', estMrp: pr ? catalog.round(pr.mrp * units) : null }; }),
     doctor: { name: doc.name, qualification: doc.qualification, specialty: doc.specialty, regNo: doc.regNo, affiliation: withAvail(doc).affiliation },
     patient: { id: p.id, name: p.name, age: ageOf(p.dob), gender: p.gender, allergies: p.allergies || [], phone: enrichRx(r).patientPhone },
+    consultMode: r.consultMode || telemed.modeOf(r.consultId ? c : null),
     diagnosis: c.diagnosis || r.diagnosis || null, labTests: d.labOrders.filter((o) => o.rxId === r.id || (!o.rxId && o.patientId === r.patientId && o.doctorId === r.doctorId && Math.abs(new Date(o.createdAt) - new Date(r.createdAt)) < 3600000)).flatMap((o) => o.tests.map((t) => ({ ...t, labName: facilityName(o.labId) }))),
     followUp: r.followUpOn || d.consults.find((x) => x.patientId === r.patientId && x.doctorId === r.doctorId && x.status === 'scheduled' && x.createdAt >= r.createdAt)?.scheduledAt || null,
   });
@@ -3105,6 +3116,7 @@ app.post('/api/bookings', auth, role('patient', 'caregiver'), async (req, res) =
     id: store.id('con'), bookingNo: makeBookingNo(d), patientId: p.id, doctorId: doc.id, kioskId: null, status: 'awaiting_payment', type: now ? 'instant' : 'scheduled',
     mode: visitType === 'video' ? (['video', 'audio', 'chat'].includes(b.mode) ? b.mode : 'video') : 'in_person', visitType, location,
     triage: { level: t.level, score: t.score, symptoms, symptomDays, note: t.note, specialty: doc.specialty, redFlags: t.redFlags }, vitals: null,
+    teleConsent: visitType === 'clinic' ? null : telemed.impliedConsent(req.user.id, 'booking'),
     createdAt: nowIso(), scheduledAt, messages: [], routing: null, routedFrom: 'Booked by patient', fee: amount,
     payAtClinic: visitType === 'video' ? 0 : (doc.fee || 0),
   };
@@ -3176,6 +3188,7 @@ function pickRider(d, district) {
 }
 
 function finalizePayment(d, pay, user) {
+  if (pay.purpose === 'membership') return membership.onPaid(d, pay, user);
   if (pay.purpose === 'care_plan') {
     const pl = d.carePlans.find((x) => x.id === pay.refId);
     if (!pl) return;
@@ -3235,6 +3248,7 @@ function finalizePayment(d, pay, user) {
 // Is the thing being paid for still waiting for this payment? (Not cancelled, expired or already paid.)
 function payableProblem(d, pay) {
   if (pay.status === 'void') return 'This payment was cancelled.';
+  if (pay.purpose === 'membership') return membership.problem(d, pay);
   if (pay.purpose === 'care_plan') {
     const pl = d.carePlans.find((x) => x.id === pay.refId);
     if (!pl || pl.status === 'ended') return 'This care plan has ended.';
@@ -5459,7 +5473,10 @@ app.post('/api/prescriptions/check', auth, role('doctor'), (req, res) => {
   const { consented, bg } = recordAccess(req.user, doc, p);
   const treating = db().consults.some((c) => c.doctorId === doc.id && c.patientId === p.id && CALL_LIVE.includes(c.status));
   if (!consented && !bg && !treating) return res.status(403).json({ error: 'The patient hasn\'t approved this visit yet.' });
-  res.json(engines.checkPrescription(p, cleanRxItems(req.body.items)));
+  const items = cleanRxItems(req.body.items);
+  // In a teleconsultation, narcotic / psychotropic medicines are flagged as they're typed (telemed.js).
+  const consult = req.body?.consultId ? db().consults.find((x) => x.id === req.body.consultId && x.doctorId === doc.id && x.patientId === p.id) : null;
+  res.json([...telemed.warnings(consult, items), ...engines.checkPrescription(p, items)]);
 });
 
 app.post('/api/consults/:id/complete', auth, role('doctor'), (req, res) => {
@@ -5479,6 +5496,8 @@ app.post('/api/consults/:id/complete', auth, role('doctor'), (req, res) => {
   const followUpDays = followUpDaysOf(req.body?.followUpDays);
   const p = d.patients.find((x) => x.id === c.patientId);
   if (!p) return res.status(404).json({ error: 'Patient not found.' });
+  const tmBlock = telemed.blockReason(c, cleanRxItems(items));
+  if (tmBlock) return res.status(400).json({ error: tmBlock, code: 'TELEMED_PROHIBITED' });
   c.status = 'completed';
   c.completedAt = nowIso();
   c.notes = clean(notes, 4000);
@@ -5496,6 +5515,7 @@ app.post('/api/consults/:id/complete', auth, role('doctor'), (req, res) => {
     const warnings = engines.checkPrescription(p, validItems);
     rx = {
       id: store.id('rx'), consultId: c.id, patientId: p.id, doctorId: doc.id, items: validItems, advice: clean(advice, 600), warnings, status: 'issued', pharmacyId: null, fulfilment: null, createdAt: nowIso(), signature: `${doc.name} · ${doc.regNo}`,
+      consultMode: telemed.modeOf(c),
       complaint: c.triage?.symptoms || null, diagnosis: clean(diagnosis, 200) || null, dos: cleanList(req.body?.dos, 12), donts: cleanList(req.body?.donts, 12),
     };
     // Kiosk visits send the prescription straight to the attached/nearest pharmacy.
@@ -7795,6 +7815,7 @@ app.get('/api/admin/home', auth, role('super_admin'), (_req, res) => {
       breakGlassUnreviewed: d.audit.filter((a) => a.action === 'break_glass' && !a.reviewed).length,
       upiToConfirm: d.payments.filter((p) => p.status === 'claimed').length,
       storiesPending: d.stories.filter((s) => s.status === 'pending').length,
+      grievancesOpen: (d.grievances || []).filter((g) => g.status === 'open').length,
     },
     carePlans: careplans.outcomes(d.carePlans, Date.now(), planProgress),
     // Only what the server actually knows, in every mode — no uptime / latency / call-quality monitoring exists yet.
@@ -8317,6 +8338,8 @@ const circle = require('./circle')(app, {
   appUrl: () => APP_URL(),
 });
 // Notification preferences (Settings → Notifications): stored on the account, honoured by notifyPref().
+// Easy mode (bigger text, read aloud) follows the account to a new phone; each device can still change it.
+app.put('/api/me/easy', auth, (req, res) => { req.user.easyMode = req.body?.on === true; store.save(); res.json({ on: req.user.easyMode }); });
 app.get('/api/me/notify-prefs', auth, (req, res) => res.json(Object.fromEntries(NOTIFY_PREFS.map((k) => [k, req.user.notifyPrefs?.[k] !== false]))));
 app.put('/api/me/notify-prefs', auth, (req, res) => {
   const b = req.body || {};
@@ -8348,6 +8371,15 @@ const integrations = require('./integrations')(app, {
 // The same connectors in HL7 FHIR R4 (fhir.js), for hospital and lab software that speaks FHIR.
 require('./fhir')(app, { db, audit, labView, appUrl: () => APP_URL(), ...integrations });
 // Error monitoring (monitor.js): server + browser errors grouped for admins, with an email on a new kind.
+// Teach Saathi (saathifaq.js): the team's own answers, given word for word on a trigger word.
+const saathiFaq = require('./saathifaq')(app, { auth, role, db, store, audit, clean, nowIso, broadcast });
+setFaqSource(saathiFaq.answerFor);
+// Membership plans (membership.js): admin-published monthly plans with included video consults.
+const membership = require('./membership')(app, {
+  auth, role, db, store, notify, audit, clean, nowIso, broadcast, touch, payments, dataMode: DATA_MODE, finalizePayment, payableProblem, patientOwnerUserIds,
+});
+// DPDP Act (dpdp.js): privacy notice, consent records and withdrawal, grievances answered within 90 days.
+const dpdp = require('./dpdp')(app, { auth, role, db, store, notify, audit, clean, nowIso, broadcast, touch });
 monitor.attach(app, { auth, role, db, store, notify, otp, security, broadcast, touch, nowIso });
 // Phone / browser push notifications (push.js): every notify() also reaches the person's subscribed devices.
 const PUSH_HOME = { patient: '/patient', caregiver: '/patient', kiosk_operator: '/kiosk', doctor: '/doctor', hospital_admin: '/hospital', lab_tech: '/lab', pharmacist: '/pharmacy', distributor: '/supply', delivery: '/dispatch', official: '/command', super_admin: '/admin' };

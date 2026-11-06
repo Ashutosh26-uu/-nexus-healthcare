@@ -11,6 +11,7 @@ import { useI18n, LANGUAGES as APP_LANGS } from '../i18n';
 import { COUNTRIES, guessCountry } from '../i18n/countries';
 import './auth.css';
 import LanguageStrip from '../components/LanguageStrip';
+import { ConsentChoices, consentPayload, usePrivacyNotice } from '../components/PrivacyNotice';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -31,6 +32,9 @@ export default function Signup() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  // DPDP: the privacy notice is agreed before anything is sent; Saathi AI is a separate, optional choice.
+  const notice = usePrivacyNotice();
+  const [consent, setConsent] = useState({ care: false, ai: false });
   // Invite link (/signup?ref=CODE). Kept for this tab so a detour through "Sign in" doesn't lose it.
   const [ref] = useState(() => {
     const fromUrl = new URLSearchParams(location.search).get('ref');
@@ -56,6 +60,7 @@ export default function Signup() {
     if (form.name.trim().length < 2) return 'Please tell us your name.';
     if (!EMAIL_RE.test(form.email.trim())) return 'Please enter a valid email address.';
     if (digits.length < 6) return 'Please enter your mobile number.';
+    if (!consent.care) return 'Please read the privacy notice and tick that you agree.';
     return '';
   };
 
@@ -63,6 +68,7 @@ export default function Signup() {
     const r = await api.post('/auth/register/quick', {
       ticket: tk, name: form.name.trim(), email: form.email.trim(), phone: digits, dialCode: country.dial, country: country.iso,
       language: APP_LANGS.find((l) => l.code === lang)?.name || 'English', ...(inviter ? { ref } : {}),
+      consent: consentPayload(notice, consent, lang),
     });
     try { sessionStorage.removeItem('oc_ref'); } catch { /* ignore */ }
     await signIn(r.token);
@@ -114,6 +120,7 @@ export default function Signup() {
               <Field label="Mobile number" hint="So your doctor and pharmacy can reach you.">
                 <PhoneField country={country} onCountry={setCountry} value={form.phone} onChange={(v) => set('phone', v)} />
               </Field>
+              <ConsentChoices value={consent} onChange={setConsent} />
               {error && <div className="form-error">{error} {/sign in/i.test(error) && <Link to="/login">Sign in →</Link>}</div>}
               <Button type="submit" size="lg" variant="clay" block loading={busy}>{ticket ? <>Create my account <ArrowRight /></> : <>Send code <ArrowRight /></>}</Button>
               <p className="tiny muted center mb-0"><ShieldCheck size={13} style={{ display: 'inline', verticalAlign: '-2px' }} /> We email you a one-time code to make sure the address is really yours. No password needed.</p>

@@ -3,6 +3,7 @@ import { Coins, ShieldCheck, Gift, Lock } from 'lucide-react';
 import { Card, Empty, PreviewBadge } from '../../components/ui';
 import { PageHeader } from '../../components/PortalLayout';
 import { usePatient, firstName } from './shared';
+import MembershipCard from './MembershipCard';
 
 // Data donation + health credits isn't live yet: no research study is enrolling through Sehatra and no
 // reward can be redeemed anywhere. Until it is, this page says so plainly instead of showing sample studies,
@@ -14,6 +15,8 @@ export default function Wallet() {
     <div className="stack lg">
       <PageHeader eyebrow="Consent Wallet" title={profileKey === 'self' ? 'Your Data Wallet' : `${firstName(patient?.name)}’s Data Wallet`}
         subtitle="You own your data. One day you’ll be able to share it — only ever anonymised — with approved research, and earn health credits for it." />
+
+      <MembershipCard />
 
       <Card>
         <Empty icon={Coins} title={<>Data donation is coming soon <PreviewBadge>Coming soon</PreviewBadge></>}>

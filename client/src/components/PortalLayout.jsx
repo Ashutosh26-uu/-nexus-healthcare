@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Bell, LogOut, Menu, X, ChevronDown, ChevronRight, KeyRound, Cookie, MapPin, ShieldCheck, LayoutGrid, UserRound, Type, BellRing } from 'lucide-react';
-import { useEasyMode } from './easyMode';
+import { useEasyMode, syncEasyFromAccount } from './easyMode';
 import ListenButton from './ListenButton';
 import Logo from './Logo';
 import LanguagePicker from './LanguagePicker';
@@ -17,6 +17,8 @@ import './portal.css';
 const ResetPassword = lazy(() => import('./ResetPassword'));
 const TwoStepModal = lazy(() => import('./TwoStep'));
 const PushAlertsModal = lazy(() => import('./PushAlerts'));
+const PrivacyCenter = lazy(() => import('./PrivacyCenter'));
+const NoticeGate = lazy(() => import('./PrivacyNotice').then((m) => ({ default: m.NoticeGate })));
 
 /**
  * Shared shell for every portal.
@@ -33,6 +35,7 @@ export default function PortalLayout({ portal, nav, children, headerExtra, heade
   const [pwOpen, setPwOpen] = useState(false);
   const [mfaOpen, setMfaOpen] = useState(false);
   const [pushOpen, setPushOpen] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
   const [easy, toggleEasy] = useEasyMode();
   // Admins and officials can see many people's data: until two-step login is on, the menu button carries a dot.
   const nudgeMfa = ['super_admin', 'official'].includes(user?.role) && user?.mfaEnabled === false;
@@ -47,6 +50,7 @@ export default function PortalLayout({ portal, nav, children, headerExtra, heade
   useEffect(() => { setOpen(false); setBellOpen(false); setMenuOpen(false); }, [location.pathname]);
   // This browser already has phone alerts on → keep them attached to whoever is signed in now.
   useEffect(() => { if (user?.id) syncPush().catch(() => {}); }, [user?.id]);
+  useEffect(() => { if (user?.id) syncEasyFromAccount(user); }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   // Floating buttons (Saathi, SOS) sit above the tab bar while it is showing.
   useEffect(() => {
     if (!tabs?.length) return undefined;
@@ -199,6 +203,7 @@ export default function PortalLayout({ portal, nav, children, headerExtra, heade
                 <button className="menu-item" onClick={() => { setPwOpen(true); setMenuOpen(false); }}><KeyRound size={16} /> Change password</button>
                 <button className="menu-item" onClick={() => { setMfaOpen(true); setMenuOpen(false); }}><ShieldCheck size={16} /> Two-step login <span className={cx('badge tiny', user?.mfaEnabled ? 'green' : nudgeMfa ? 'sun' : '')} style={{ marginInlineStart: 'auto' }}>{user?.mfaEnabled ? 'On' : 'Off'}</span></button>
                 <button className="menu-item" onClick={() => { setPushOpen(true); setMenuOpen(false); }}><BellRing size={16} /> Phone alerts</button>
+                <button className="menu-item" onClick={() => { setPrivacyOpen(true); setMenuOpen(false); }}><ShieldCheck size={16} /> Privacy &amp; consent</button>
                 {['patient', 'caregiver'].includes(user?.role) && <button className="menu-item" onClick={() => { openLocationSettings(); setMenuOpen(false); }}><MapPin size={16} /> My location</button>}
                 <button className="menu-item" onClick={toggleEasy} aria-pressed={easy}><Type size={16} /> Bigger text &amp; read aloud <span className={cx('badge tiny', easy ? 'green' : '')}>{easy ? 'On' : 'Off'}</span></button>
                 <button className="menu-item" onClick={() => { openCookieSettings(); setMenuOpen(false); }}><Cookie size={16} /> Cookie preferences</button>
@@ -243,6 +248,9 @@ export default function PortalLayout({ portal, nav, children, headerExtra, heade
       <PasswordModal open={pwOpen} onClose={() => setPwOpen(false)} />
       {mfaOpen && <Suspense fallback={null}><TwoStepModal open={mfaOpen} onClose={() => setMfaOpen(false)} /></Suspense>}
       {pushOpen && <Suspense fallback={null}><PushAlertsModal open={pushOpen} onClose={() => setPushOpen(false)} /></Suspense>}
+      {privacyOpen && <Suspense fallback={null}><PrivacyCenter open={privacyOpen} onClose={() => setPrivacyOpen(false)} /></Suspense>}
+      {/* DPDP: every account sees the current privacy notice once and makes its choice. */}
+      <Suspense fallback={null}><NoticeGate /></Suspense>
     </div>
   );
 }

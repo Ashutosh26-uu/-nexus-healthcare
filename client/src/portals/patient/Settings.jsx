@@ -9,6 +9,7 @@ import AadhaarVerify from '../../components/AadhaarVerify';
 import { usePatient, firstName, splitList, BLOOD_GROUPS, PageSkeleton } from './shared';
 import { LANGUAGES as APP_LANGUAGES, useI18n, codeForName } from '../../i18n';
 import { useEasyMode } from '../../components/easyMode';
+import { offlineEnabled, setOfflineEnabled } from '../../offlineCopy';
 
 const NOTIFS = [
   { key: 'consults', label: 'Consult reminders', hint: '30 minutes and 5 minutes before a booked consult' },
@@ -206,6 +207,7 @@ export default function Settings() {
               <div className="grow"><div className="small strong">Ask for a code at kiosks</div><div className="tiny muted">When an E-Clinic finds you by mobile number, we email you a 6-digit code and your passport opens only after you tell it to the operator. Showing your Health Passport card always works without a code.</div></div>
               <Switch checked={privacy.kioskOtp} onChange={(v) => setPrivacy('kioskOtp', v, 'Preference saved')} label="Ask for an emailed code at kiosks" />
             </div>
+            <OfflineRow />
           </div>
         </Card>
       </div>
@@ -256,5 +258,18 @@ function EasyCard() {
         <span className="small grow">Bigger text, bigger buttons, and a <strong>Listen</strong> button that reads each page aloud. Only on this phone.</span>
       </div>
     </Card>
+  );
+}
+
+// Opt-in copy of the emergency card, medicines, prescriptions and visits on this phone (offlineCopy.js).
+function OfflineRow() {
+  const [on, setOn] = useState(offlineEnabled);
+  const { reloadHome } = usePatient();
+  const change = (v) => { setOfflineEnabled(v); setOn(v); if (v) reloadHome?.(); };
+  return (
+    <div className="list-item">
+      <div className="grow"><div className="small strong">Keep an offline copy on this phone</div><div className="tiny muted">Your emergency card, medicines, latest prescriptions and upcoming visits open even with no internet. Saved only on this phone; deleted when you sign out. Turn off on a shared phone.</div></div>
+      <Switch checked={on} onChange={change} label="Keep an offline copy on this phone" />
+    </div>
   );
 }

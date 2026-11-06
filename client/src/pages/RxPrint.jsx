@@ -66,11 +66,12 @@ export default function RxPrint() {
           <div><span>Health Passport</span><strong className="mono">{rx.patient?.id}</strong></div>
           <div><span>Date</span><strong>{fmtDate(rx.createdAt)}</strong></div>
           <div><span>Rx No.</span><strong className="mono">{rx.id}</strong></div>
+          {rx.consultMode && <div><span>Consultation</span><strong>{rx.consultMode}</strong></div>}
           {rx.patient?.allergies?.length > 0 && <div className="rxp-allergy"><span>Allergies</span><strong>{rx.patient.allergies.join(', ')}</strong></div>}
         </section>
 
         {rx.complaint && <p className="rxp-dx"><span>Complaint:</span> {rx.complaint}</p>}
-        {rx.diagnosis && <p className="rxp-dx"><span>Diagnosis:</span> {rx.diagnosis}</p>}
+        {rx.diagnosis && <p className="rxp-dx"><span>{/^Teleconsultation/.test(rx.consultMode || '') ? 'Provisional diagnosis:' : 'Diagnosis:'}</span> {rx.diagnosis}</p>}
 
         <div className="rxp-rx">℞</div>
         <table className="rxp-table">

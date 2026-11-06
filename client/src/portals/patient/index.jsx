@@ -13,6 +13,8 @@ import { SosButton } from './Sos';
 import WelcomeTips from './WelcomeTips';
 import { useI18n, codeForName } from '../../i18n';
 import './patient.css';
+import { saveOfflineCopy } from '../../offlineCopy';
+import { useAuth } from '../../auth';
 
 // Only Home is in the first load; every other page (and the doctor finder, booking, payment and call code they
 // pull in) is fetched on demand. Code is cached by the browser; data is still fetched live on every visit.
@@ -60,6 +62,9 @@ export default function PatientApp() {
   }, [goTo]);
   const [profileKey, setProfileKey] = useState(() => session.profile || 'self');
   const home = useLive('/patient/home', HOME_TOPICS, [profileKey]);
+  const { user } = useAuth();
+  // Opt-in offline copy (Settings → Privacy) refreshes whenever the home data does.
+  useEffect(() => { saveOfflineCopy(home.data); }, [home.data]);
   // Once Home is showing, quietly load the screens people open most, so even their first tap is instant.
   const homeReady = Boolean(home.data);
   useEffect(() => {
@@ -182,7 +187,8 @@ export default function PatientApp() {
         <CompleteProfilePrompt />
 
         {/* After the "complete your profile" prompt, never on top of it. */}
-        {home.data?.patient && !incomplete && <WelcomeTips name={firstName((home.data.profiles || []).find((x) => x.self)?.name || home.data.patient.name)} />}
+        {/* Tips wait until the privacy notice has been answered — one dialog at a time. */}
+        {home.data?.patient && !incomplete && user?.consent && <WelcomeTips name={firstName((home.data.profiles || []).find((x) => x.self)?.name || home.data.patient.name)} />}
       </PortalLayout>
     </PatientContext.Provider>
   );

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ShieldCheck, Smartphone, CreditCard, CheckCircle2, Info, Gift, Loader2 } from 'lucide-react';
+import { ShieldCheck, Smartphone, CreditCard, CheckCircle2, Info, Gift, Loader2, BadgeCheck } from 'lucide-react';
 import { api, subscribe } from '../../api';
 import { Button, Switch, fmtMoney, safeUrl } from '../../components/ui';
 import QR from '../../components/QR';
@@ -43,6 +43,24 @@ export default function PaymentStep({ payment: initial, onPaid, onError, breakdo
     api.get('/credits').then((r) => alive && setCredit(r.balance || 0)).catch(() => {});
     return () => { alive = false; };
   }, [payment.id, creditable]);
+
+  // A video consult the person's Sehatra plan covers: pay it from the month's included consults.
+  const [plan, setPlan] = useState(null);
+  useEffect(() => {
+    if (payment.purpose !== 'consult' || payment.status !== 'created') return undefined;
+    let alive = true;
+    api.get(`/payments/${payment.id}/membership`).then((r) => alive && setPlan(r.covered ? r : null)).catch(() => {});
+    return () => { alive = false; };
+  }, [payment.id, payment.purpose, payment.status]);
+  const usePlan = async () => {
+    if (busy) return;
+    setBusy(true); setError('');
+    try {
+      const r = await api.post(`/payments/${payment.id}/membership`);
+      setPayment(r.payment);
+      if (r.payment.status === 'paid') onPaid(r.payment);
+    } catch (e) { setError(e.message); if (e.status === 409) onError?.(e); } finally { setBusy(false); }
+  };
 
   const applyCredit = async (on) => {
     if (busy) return;
@@ -107,6 +125,17 @@ export default function PaymentStep({ payment: initial, onPaid, onError, breakdo
         {breakdown && <span className="tiny muted">Medicines {fmtMoney(breakdown.medicines)} + delivery {fmtMoney(breakdown.deliveryFee)}</span>}
         {payment.creditApplied > 0 && <span className="tiny muted">{fmtMoney(gross)} − {fmtMoney(payment.creditApplied)} Sehatra credit</span>}
       </div>
+
+      {plan && !(payment.creditApplied > 0) && (
+        <div className="pt-pay-credit">
+          <BadgeCheck size={18} />
+          <span className="grow">
+            <strong className="small block">Use my {plan.planName} plan</strong>
+            <span className="tiny muted">{plan.consultsLeft} included consult{plan.consultsLeft === 1 ? '' : 's'} left this month — nothing to pay</span>
+          </span>
+          <Button size="sm" loading={busy} onClick={usePlan}>Use plan</Button>
+        </div>
+      )}
 
       {creditable && offer > 0 && (
         <div className="pt-pay-credit">

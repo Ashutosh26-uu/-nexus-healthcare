@@ -166,7 +166,7 @@ export default function RxComposer({ consult, record, override, done, onDone, on
     if (!drugs.length) { setWarnings([]); return undefined; }
     let alive = true;
     setChecking(true);
-    api.post('/prescriptions/check', { patientId: consult.patientId, items: drugs.map((drug) => ({ drug })) })
+    api.post('/prescriptions/check', { patientId: consult.patientId, consultId: consult.id, items: drugs.map((drug) => ({ drug })) })
       .then((w) => alive && setWarnings(w))
       .catch(() => {})
       .finally(() => alive && setChecking(false));

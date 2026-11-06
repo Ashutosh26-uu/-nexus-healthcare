@@ -206,7 +206,7 @@ export function Modal({ open, onClose, title, subtitle, children, footer, wide }
             <h3>{title}</h3>
             {subtitle && <p className="muted small mb-0" style={{ marginTop: 4 }}>{subtitle}</p>}
           </div>
-          <button className="icon-btn" onClick={onClose} aria-label="Close"><X /></button>
+          {onClose && <button className="icon-btn" onClick={onClose} aria-label="Close"><X /></button>}
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}

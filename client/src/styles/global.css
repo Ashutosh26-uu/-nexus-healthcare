@@ -581,3 +581,27 @@ html.easy .page-title { font-size: 2rem; }
   .lang-strip-list { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
   .lang-strip-list > * { flex: none; }
 }
+
+/* DPDP privacy notice and consent tick-boxes (PrivacyNotice.jsx) */
+.consent-line { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.consent-line input { margin-top: 3px; width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--green); }
+.privacy-notice h4 { margin: 14px 0 6px; font-size: 0.95rem; }
+.privacy-notice h4:first-child { margin-top: 0; }
+.privacy-notice ul { margin: 0; padding-inline-start: 18px; }
+.privacy-notice li { margin: 4px 0; }
+
+/* Offline copy (OfflineCopy.jsx) */
+.offline-copy { max-width: 560px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.offline-head { display: flex; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 14px; background: var(--sun-soft); color: var(--ink); }
+.offline-card { padding: 16px; }
+.offline-card h3 { margin: 0 0 10px; font-size: 1rem; }
+.offline-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin-bottom: 10px; }
+.offline-grid span { display: block; font-size: 0.72rem; color: var(--ink-3); }
+.offline-call { display: flex; align-items: center; gap: 8px; padding: 10px 12px; margin-top: 8px; border-radius: 12px; background: var(--green-soft); color: var(--green-ink); font-weight: 600; text-decoration: none; }
+.offline-call.sos { background: var(--rose-soft); color: #9b2c22; }
+.offline-rx { padding: 8px 0; border-top: 1px solid var(--line); }
+.offline-rx:first-of-type { border-top: 0; }
+.offline-rx ul { margin: 4px 0 0; padding-inline-start: 18px; font-size: 0.85rem; }
+
+/* The privacy notice sits above the cookie banner: it is the first thing a person must answer. */
+.modal-backdrop:has(.privacy-gate) { z-index: 950; }

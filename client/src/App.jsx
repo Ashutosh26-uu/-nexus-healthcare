@@ -8,6 +8,8 @@ import { ConsentProvider } from './consent';
 import Landing, { About } from './pages/Landing';
 import { reportError } from './errorReport';
 import NotFound from './pages/NotFound';
+import OfflineCopy from './components/OfflineCopy';
+import { readOfflineCopy } from './offlineCopy';
 
 const Login = lazy(() => import('./pages/Login'));
 
@@ -97,6 +99,8 @@ function RequireRole({ roles, children }) {
   if (loading) return <Loading />;
   // Still holding a token but the server isn't answering: auth keeps retrying, so don't send them to /login.
   if (!user && unreachable) {
+    // Offline with a saved copy (patients who turned it on): show it instead of a spinner.
+    if (roles.some((r) => r === 'patient' || r === 'caregiver') && readOfflineCopy().length) return <OfflineCopy onRetry={() => refresh()} />;
     return (
       <div className="card" style={{ maxWidth: 420, width: 'calc(100% - 32px)', boxSizing: 'border-box', margin: '15vh auto', padding: 28, textAlign: 'center' }} role="status">
         <div className="spinner" style={{ margin: '0 auto 16px' }} />

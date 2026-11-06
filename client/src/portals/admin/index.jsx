@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { LayoutDashboard, BadgeCheck, Users as UsersIcon, SlidersHorizontal, MonitorSmartphone, Activity, ScrollText, Languages, Network, Workflow, IndianRupee, MessageSquareQuote } from 'lucide-react';
+import { LayoutDashboard, BadgeCheck, Users as UsersIcon, SlidersHorizontal, MonitorSmartphone, Activity, ScrollText, Languages, Network, Workflow, IndianRupee, MessageSquareQuote, MessageSquareWarning, BadgeIndianRupee, GraduationCap } from 'lucide-react';
 import PortalLayout from '../../components/PortalLayout';
 import { useLive } from '../../live';
 import Overview from './Overview';
@@ -14,6 +14,9 @@ import Content from './Content';
 import Automations from './Automations';
 import Payments from './Payments';
 import Stories from './Stories';
+import Grievances from './Grievances';
+import MemberPlans from './MemberPlans';
+import TeachSaathi from './TeachSaathi';
 import './admin.css';
 
 export default function AdminApp() {
@@ -24,13 +27,16 @@ export default function AdminApp() {
     { to: '/admin/onboarding', label: 'Onboarding', icon: BadgeCheck, badge: c?.pendingVerification || null },
     { to: '/admin/users', label: 'Users & roles', icon: UsersIcon },
     { to: '/admin/payments', label: 'UPI payments', icon: IndianRupee, badge: c?.upiToConfirm || null },
+    { to: '/admin/plans', label: 'Membership plans', icon: BadgeIndianRupee },
     { to: '/admin/ai', label: 'AI configuration', icon: SlidersHorizontal },
+    { to: '/admin/saathi', label: 'Teach Saathi', icon: GraduationCap },
     { to: '/admin/kiosks', label: 'Kiosk fleet', icon: MonitorSmartphone, badge: c ? (c.kiosksTotal - c.kiosksOnline) || null : null },
     { to: '/admin/monitoring', label: 'Monitoring', icon: Activity },
     { to: '/admin/automations', label: 'Automations (n8n)', icon: Workflow },
     { to: '/admin/federated', label: 'Federated AI', icon: Network },
     { to: '/admin/audit', label: 'Audit & compliance', icon: ScrollText, badge: c?.breakGlassUnreviewed || null },
     { to: '/admin/content', label: 'Content & languages', icon: Languages },
+    { to: '/admin/grievances', label: 'Privacy complaints', icon: MessageSquareWarning, badge: c?.grievancesOpen || null },
     { to: '/admin/stories', label: 'Stories', icon: MessageSquareQuote, badge: c?.storiesPending || null },
   ];
   // Only facts the server knows: how long it has been up and how many consults are live.
@@ -58,6 +64,9 @@ export default function AdminApp() {
           <Route path="audit" element={<Audit />} />
           <Route path="content" element={<Content />} />
           <Route path="stories" element={<Stories />} />
+          <Route path="grievances" element={<Grievances />} />
+          <Route path="plans" element={<MemberPlans />} />
+          <Route path="saathi" element={<TeachSaathi />} />
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Routes>
       </div>

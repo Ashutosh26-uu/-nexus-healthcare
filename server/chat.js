@@ -430,6 +430,14 @@ async function handleChat(req, res, ctx) {
     return res.end();
   }
 
+  // Answers the Sehatra team taught Saathi (Admin → Teach Saathi) win over everything but emergencies.
+  const taught = faqSource?.(last.content);
+  if (taught) {
+    await streamFallback(res, await localise(taught, qLang));
+    res.write('data: [DONE]\n\n');
+    return res.end();
+  }
+
   if (isOffTopic(last.content)) {
     await streamFallback(res, await localise(OFF_TOPIC_REPLY, qLang));
     res.write('data: [DONE]\n\n');
@@ -552,4 +560,7 @@ The person has chosen ${langName} for the app, but always reply in exactly the l
   res.end();
 }
 
-module.exports = { handleChat, aiEnabled: () => Boolean(process.env.ANTHROPIC_API_KEY) || dxgpt.enabled() || corti.configured(), isAppQuestion };
+let faqSource = null;
+const setFaqSource = (fn) => { faqSource = fn; };
+
+module.exports = { handleChat, setFaqSource, aiEnabled: () => Boolean(process.env.ANTHROPIC_API_KEY) || dxgpt.enabled() || corti.configured(), isAppQuestion };

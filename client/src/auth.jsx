@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { api, session, disconnectLive } from './api';
 import { forgetKeys } from './e2e';
 import { forgetPush } from './push';
+import { clearOfflineCopy } from './offlineCopy';
 
 const AuthContext = createContext(null);
 
@@ -89,6 +90,7 @@ export function AuthProvider({ children }) {
     retry.current.attempt = 0;
     disconnectLive();
     forgetPush(); // this browser stops getting the account's phone alerts
+    clearOfflineCopy(); // the opt-in offline copy never outlives the sign-in
     forgetKeys(); // encrypted-chat keys on this device; the passphrase brings them back
     // Anything a shared device kept for this person goes too (kiosk visit in progress, lab signer pick, Saathi chat,
     // family and place picks) — on every sign-out, including an automatic one when the session expires.

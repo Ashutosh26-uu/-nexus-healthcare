@@ -426,7 +426,7 @@ export default function ChatWidget() {
           )}
           <button type="submit" disabled={!input.trim() || streaming || listening} aria-label="Send"><SendHorizontal size={18} /></button>
         </form>
-        <div className="chat-foot">Saathi gives general guidance, not a diagnosis. In an emergency call 108.</div>
+        <div className="chat-foot">Saathi gives general guidance, not a diagnosis. In an emergency call 108.{!user ? " What you type is sent to our AI service to answer — please don't share names, numbers or IDs." : !user.consent?.ai ? ' Saathi AI is off, so answers are built-in — turn it on from the account menu → Privacy & consent.' : ''}</div>
       </div>
     </>
   );
