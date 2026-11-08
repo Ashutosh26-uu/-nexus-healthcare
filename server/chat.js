@@ -193,7 +193,8 @@ function plainMath(t) {
 }
 const brandSafe = (t) => plainMath(t).replace(VENDOR_NAMES, 'Saathi');
 
-async function healthReply(message, ctx, lang, seed) {
+// `langText` is the person's latest message: the reply is in its language, even if earlier ones were in another.
+async function healthReply(message, ctx, lang, seed, langText = message) {
   let r;
   try {
     r = await dxgpt.answer(message, seed); // walks through every DxGPT key until one has quota
@@ -211,9 +212,9 @@ async function healthReply(message, ctx, lang, seed) {
     r = text.includes(OFF_TOPIC_MARK) ? { kind: 'off-topic', lang: '' } : { kind: 'answer', text: brandSafe(text), lang: '' };
   }
   // Not a health question → the polite no, without the health footer or AI note.
-  if (r.kind === 'off-topic') return localise(OFF_TOPIC_REPLY, replyLang(r.lang, message, lang));
+  if (r.kind === 'off-topic') return localise(OFF_TOPIC_REPLY, replyLang(r.lang, langText, lang));
   // Our own lines (intro, tips, footer, AI note) go in the same language as the answer itself.
-  const L = replyLang(r.lang, message, lang);
+  const L = replyLang(r.lang, langText, lang);
   const t = (s) => localise(s, L);
   // The engine answers Hinglish questions in Devanagari — write it in English letters, as it was asked.
   const own = (s) => (L === 'hi-Latn' ? romanize(brandSafe(s)) : brandSafe(s));
@@ -396,6 +397,18 @@ function pickShownDoctor(history, care) {
   return care.doctor(choice.id);
 }
 
+// The latest user messages (up to 3) written in the same language as the newest one, oldest first.
+function sameLangTail(history, target, appLang) {
+  const out = [];
+  const users = history.filter((m) => m.role === 'user');
+  for (let i = users.length - 1; i >= 0 && out.length < 3; i -= 1) {
+    const t = users[i].content.trim();
+    if (out.length && replyLang('', t, appLang) !== target) break;
+    out.unshift(t);
+  }
+  return out;
+}
+
 async function handleChat(req, res, ctx) {
   const { messages = [] } = req.body || {};
   const lang = i18n.langInfo(req.body?.lang) ? req.body.lang : 'en';
@@ -458,9 +471,10 @@ async function handleChat(req, res, ctx) {
     let text = null;
     // Health questions → DxGPT (only the typed message is sent); app questions → built-in answers.
     if (!req.chatOffline && (dxgpt.enabled() || corti.configured()) && !isAppQuestion(last.content)) {
-      // The person's own last few messages, so a follow-up ("he is 4, since 6 hours") keeps its context.
-      const typed = history.filter((m) => m.role === 'user').slice(-3).map((m) => m.content.trim()).join('\n');
-      try { text = await healthReply(typed, ctx, lang, ctx?.user?.id || req.ip); } catch (e) { console.warn('[chat] DxGPT unavailable, using a built-in answer:', e.message); }
+      // The person's own last few messages, so a follow-up ("he is 4, since 6 hours") keeps its context — only the
+      // ones in the same language as the latest, so switching from Hinglish to English gets an English answer.
+      const typed = sameLangTail(history, qLang, lang).join('\n');
+      try { text = await healthReply(typed, ctx, lang, ctx?.user?.id || req.ip, last.content); } catch (e) { console.warn('[chat] DxGPT unavailable, using a built-in answer:', e.message); }
     }
     if (res.writableEnded || res.destroyed) return undefined; // the chat was closed while we waited
     if (!text) {
@@ -563,4 +577,4 @@ The person has chosen ${langName} for the app, but always reply in exactly the l
 let faqSource = null;
 const setFaqSource = (fn) => { faqSource = fn; };
 
-module.exports = { handleChat, setFaqSource, aiEnabled: () => Boolean(process.env.ANTHROPIC_API_KEY) || dxgpt.enabled() || corti.configured(), isAppQuestion };
+module.exports = { handleChat, setFaqSource, sameLangTail, replyLang, aiEnabled: () => Boolean(process.env.ANTHROPIC_API_KEY) || dxgpt.enabled() || corti.configured(), isAppQuestion };

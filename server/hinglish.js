@@ -11,7 +11,8 @@ const MARKERS = new Set(('mujhe mujhko mera meri mere hai hae hain hoon hu hun k
   + 'hota hoti hote dikha dikhaye unko usko bacche bachche baccha beta beti maa papa ghar khana pani paani '
   + 'ek koi tum tumhe tumko tumhara tumhari hum humko hamara hamari yeh ye woh wo kaun kon kisne kisko banaya banai sunao suna '
   + 'bolo bol kaha kahan kyon kyunki lekin magar agar toh phir fir zara thoda jaldi pata samajh madad chahta chahti').split(' '));
-const ENGLISH_TOO = new Set(['me', 'main', 'to', 'so', 'he', 'is', 'in', 'a', 'i']);
+// Also ordinary English words: "Sir, I have a fever" must not read as Hinglish.
+const ENGLISH_TOO = new Set(['me', 'main', 'to', 'so', 'he', 'is', 'in', 'a', 'i', 'sir', 'pet', 'papa', 'beta', 'lag', 'fir', 'agar', 'din', 'ghar']);
 
 function isHinglish(text) {
   const s = String(text || '');

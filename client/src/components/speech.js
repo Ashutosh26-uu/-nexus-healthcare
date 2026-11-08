@@ -1,6 +1,7 @@
 // Talking Saathi: speech in (dictation) and speech out (read aloud). Both use the browser's own speech
 // services — nothing extra is installed or paid for, and the buttons hide where the browser lacks them.
 import { useEffect, useRef, useState } from 'react';
+import { looksHinglish, hinglishForSpeech } from './hinglishSpeech';
 
 const INDIAN = new Set(['hi', 'bn', 'ta', 'te', 'mr', 'gu', 'kn', 'ml', 'pa', 'or', 'as', 'ur']);
 // Speech language from an app language code (hi → hi-IN, ta → ta-IN …). English is Indian English: it
@@ -58,6 +59,8 @@ export function voiceLangFor(text, appLang) {
     if (code === 'bn' && appLang === 'as') return speechLang('as');
     return speechLang(code);
   }
+  // Hinglish (Hindi in English letters) is read by a Hindi voice — an English one mangles bukhar into bokhar.
+  if (looksHinglish(text)) return 'hi-IN';
   return !appLang || appLang === 'en' || INDIAN.has(appLang) ? 'en-IN' : speechLang(appLang);
 }
 
@@ -117,9 +120,16 @@ export function stopSpeaking() {
 export function speak(text, tag, { onEnd } = {}) {
   if (!synth) return false;
   stopSpeaking();
-  const words = cleanForSpeech(text);
+  // Hinglish going to a Hindi voice: its Hindi words are written in Devanagari first, so they're said right.
+  const latinHindi = /^hi/i.test(tag) && !/[ऀ-ॿ]/.test(text) && looksHinglish(text);
+  let words = cleanForSpeech(latinHindi ? hinglishForSpeech(text) : text);
   if (!words) return false;
-  const { voice, known } = pickVoice(tag);
+  let { voice, known } = pickVoice(tag);
+  if (!voice && known && latinHindi) { // no Hindi voice on this phone: the Indian English one still beats silence
+    ({ voice, known } = pickVoice('en-IN'));
+    tag = 'en-IN';
+    words = cleanForSpeech(text);
+  }
   if (!voice && known) return false; // reading Hindi with an English voice is gibberish — say so instead
   const mine = ++token;
   const parts = chunks(words);

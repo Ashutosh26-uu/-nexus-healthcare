@@ -187,7 +187,9 @@ export default function ChatWidget() {
     setVoiceNote('');
     try {
       recRef.current = listenOnce({
-        lang: speechLang(langRef.current),
+        // English and Hindi users: Indian English recognition writes both English and Hinglish speech in English
+        // letters, so Saathi can tell which one was spoken and answer in it. Other languages use their own.
+        lang: ['en', 'hi'].includes(langRef.current) ? 'en-IN' : speechLang(langRef.current),
         onInterim: (t) => setInput(t),
         onEnd: (said) => {
           recRef.current = null;
